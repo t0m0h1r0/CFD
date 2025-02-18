@@ -9,17 +9,17 @@ from ..common.types import Grid, BoundaryCondition
 from ..common.grid import GridManager
 
 class SpatialDiscretizationBase(ABC):
-    """空間離散化スキームの基底クラス"""
+    """Base class for spatial discretization schemes."""
     
     def __init__(self, 
                  grid_manager: GridManager,
                  boundary_conditions: Optional[dict[str, BoundaryCondition]] = None):
         """
-        空間離散化スキームの初期化
+        Initialize spatial discretization scheme.
         
         Args:
-            grid_manager: 格子管理オブジェクト
-            boundary_conditions: 各境界の境界条件を定義する辞書
+            grid_manager: Grid management object
+            boundary_conditions: Dictionary of boundary conditions for each boundary
         """
         self.grid_manager = grid_manager
         self.boundary_conditions = boundary_conditions or {}
@@ -29,14 +29,14 @@ class SpatialDiscretizationBase(ABC):
                   field: ArrayLike,
                   direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
-        場の空間微分を計算
+        Compute spatial derivatives of the field.
         
         Args:
-            field: 入力場
-            direction: 微分方向 ('x', 'y', 'z')
+            field: Input field to differentiate
+            direction: Direction of differentiation ('x', 'y', or 'z')
             
         Returns:
-            (一階微分, 二階微分) のタプル
+            Tuple of (first_derivative, second_derivative)
         """
         pass
     
@@ -46,71 +46,32 @@ class SpatialDiscretizationBase(ABC):
                                 derivatives: Tuple[ArrayLike, ArrayLike],
                                 direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
-        計算された微分に境界条件を適用
+        Apply boundary conditions to the computed derivatives.
         
         Args:
-            field: 入力場
-            derivatives: (一階微分, 二階微分) のタプル
-            direction: 境界条件を適用する方向
+            field: Input field
+            derivatives: Tuple of (first_derivative, second_derivative)
+            direction: Direction of differentiation
             
         Returns:
-            境界条件適用後の (一階微分, 二階微分) のタプル
+            Tuple of corrected (first_derivative, second_derivative)
         """
         pass
-    
-    def validate_direction(self, direction: str) -> None:
-        """
-        微分方向の妥当性チェック
-        
-        Args:
-            direction: 指定された方向
-            
-        Raises:
-            ValueError: 無効な方向が指定された場合
-        """
-        if direction not in ['x', 'y', 'z']:
-            raise ValueError(f"Invalid direction: {direction}. Must be 'x', 'y', or 'z'")
-        
-    def get_grid_spacing(self, direction: str) -> float:
-        """
-        指定方向の格子間隔を取得
-        
-        Args:
-            direction: 格子間隔を取得する方向
-            
-        Returns:
-            格子間隔
-        """
-        self.validate_direction(direction)
-        return self.grid_manager.get_grid_spacing(direction)
-    
-    def get_grid_points(self, direction: str) -> int:
-        """
-        指定方向の格子点数を取得
-        
-        Args:
-            direction: 格子点数を取得する方向
-            
-        Returns:
-            格子点数
-        """
-        self.validate_direction(direction)
-        return self.grid_manager.get_grid_points(direction)
 
 class CompactDifferenceBase(SpatialDiscretizationBase):
-    """コンパクト差分スキームの基底クラス"""
+    """Base class for compact difference schemes."""
     
     def __init__(self,
                  grid_manager: GridManager,
                  boundary_conditions: Optional[dict[str, BoundaryCondition]] = None,
                  coefficients: Optional[dict] = None):
         """
-        コンパクト差分スキームの初期化
+        Initialize compact difference scheme.
         
         Args:
-            grid_manager: 格子管理オブジェクト
-            boundary_conditions: 境界条件の辞書
-            coefficients: 差分係数の辞書
+            grid_manager: Grid management object
+            boundary_conditions: Dictionary of boundary conditions
+            coefficients: Dictionary of difference coefficients
         """
         super().__init__(grid_manager, boundary_conditions)
         self.coefficients = coefficients or {}
@@ -118,19 +79,18 @@ class CompactDifferenceBase(SpatialDiscretizationBase):
     def build_coefficient_matrices(self, 
                                  direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
-        コンパクトスキームの係数行列を構築
+        Build coefficient matrices for the compact scheme.
         
         Args:
-            direction: 係数行列を構築する方向
+            direction: Direction for which to build matrices
             
         Returns:
-            (左辺行列, 右辺行列) のタプル
+            Tuple of (lhs_matrix, rhs_matrix)
         """
-        self.validate_direction(direction)
-        dx = self.get_grid_spacing(direction)
-        n_points = self.get_grid_points(direction)
+        dx = self.grid_manager.get_grid_spacing(direction)
+        n_points = self.grid_manager.get_grid_points(direction)
         
-        # 行列の初期化
+        # Initialize matrices
         lhs = jnp.zeros((2*n_points, 2*n_points))
         rhs = jnp.zeros((2*n_points, n_points))
         
@@ -142,14 +102,14 @@ class CompactDifferenceBase(SpatialDiscretizationBase):
                     rhs: ArrayLike,
                     field: ArrayLike) -> Tuple[ArrayLike, ArrayLike]:
         """
-        コンパクト差分系を解く
+        Solve the compact difference system.
         
         Args:
-            lhs: 左辺行列
-            rhs: 右辺行列
-            field: 入力場
+            lhs: Left-hand side matrix
+            rhs: Right-hand side matrix
+            field: Input field
             
         Returns:
-            (一階微分, 二階微分) のタプル
+            Tuple of (first_derivative, second_derivative)
         """
         pass
