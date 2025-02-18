@@ -74,43 +74,47 @@ class CombinedCompactDifference(CompactDifferenceBase):
         lhs = jnp.zeros((2*n_points, 2*n_points), dtype=jnp.float64)
         rhs = jnp.zeros((2*n_points, n_points), dtype=jnp.float64)
         
-        # 内部ステンシルの構築
-        def safe_set(mat, row, col, value):
-            """
-            安全な行列要素設定のヘルパー関数
-            
-            スカラー値を配列の特定の位置に安全に設定する
-            """
-            if 0 <= row < mat.shape[0] and 0 <= col < mat.shape[1]:
-                value_scalar = jnp.array(value, dtype=mat.dtype)
-                return mat.at[row, col].set(value_scalar)
-            return mat
+        # 行列の更新を効率的に行うための関数
+        def update_matrices(lhs_update=None, rhs_update=None):
+            nonlocal lhs, rhs
+            if lhs_update is not None:
+                lhs = lhs_update
+            if rhs_update is not None:
+                rhs = rhs_update
+            return lhs, rhs
         
-        for i in range(1, n_points-1):
-            # 一階微分方程式
-            lhs = safe_set(lhs, 2*i, 2*i, 1.0)
-            lhs = safe_set(lhs, 2*i, 2*(i-1), b1)
-            lhs = safe_set(lhs, 2*i, 2*(i+1), b1)
+        # 内部ステンシルの構築
+        def build_interior_stencil(lhs, rhs):
+            for i in range(1, n_points-1):
+                # 一階微分方程式
+                lhs = lhs.at[2*i, 2*i].set(1.0)
+                lhs = lhs.at[2*i, 2*(i-1)].set(b1)
+                lhs = lhs.at[2*i, 2*(i+1)].set(b1)
+                
+                # 境界項の処理
+                lhs = lhs.at[2*i, 2*(i-1)+1].set(c1/dx)
+                lhs = lhs.at[2*i, 2*(i+1)+1].set(-c1/dx)
+                
+                rhs = rhs.at[2*i, i-1].set(-a1/(2*dx))
+                rhs = rhs.at[2*i, i+1].set(a1/(2*dx))
+                
+                # 二階微分方程式
+                lhs = lhs.at[2*i+1, 2*i+1].set(1.0)
+                lhs = lhs.at[2*i+1, 2*(i-1)+1].set(c2)
+                lhs = lhs.at[2*i+1, 2*(i+1)+1].set(c2)
+                
+                # 境界項の処理
+                lhs = lhs.at[2*i+1, 2*(i-1)].set(b2/dx)
+                lhs = lhs.at[2*i+1, 2*(i+1)].set(-b2/dx)
+                
+                rhs = rhs.at[2*i+1, i-1].set(a2/dx**2)
+                rhs = rhs.at[2*i+1, i].set(-2*a2/dx**2)
+                rhs = rhs.at[2*i+1, i+1].set(a2/dx**2)
             
-            # 境界項の慎重な処理
-            lhs = safe_set(lhs, 2*i, 2*(i-1)+1, c1/dx)
-            lhs = safe_set(lhs, 2*i, 2*(i+1)+1, -c1/dx)
-            
-            rhs = safe_set(rhs, 2*i, i-1, -a1/(2*dx))
-            rhs = safe_set(rhs, 2*i, i+1, a1/(2*dx))
-            
-            # 二階微分方程式
-            lhs = safe_set(lhs, 2*i+1, 2*i+1, 1.0)
-            lhs = safe_set(lhs, 2*i+1, 2*(i-1)+1, c2)
-            lhs = safe_set(lhs, 2*i+1, 2*(i+1)+1, c2)
-            
-            # 境界項の慎重な処理
-            lhs = safe_set(lhs, 2*i+1, 2*(i-1), b2/dx)
-            lhs = safe_set(lhs, 2*i+1, 2*(i+1), -b2/dx)
-            
-            rhs = safe_set(rhs, 2*i+1, i-1, a2/dx**2)
-            rhs = safe_set(rhs, 2*i+1, i, -2*a2/dx**2)
-            rhs = safe_set(rhs, 2*i+1, i+1, a2/dx**2)
+            return lhs, rhs
+        
+        # 行列の構築
+        lhs, rhs = build_interior_stencil(lhs, rhs)
         
         return lhs, rhs
 
