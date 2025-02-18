@@ -1,0 +1,212 @@
+
+--- Running Test: Combined Compact Difference - Func1 X-Derivative ---
+
+Grid Diagnostic Information:
+X grid shape: (64, 64)
+Y grid shape: (64, 64)
+X grid range: [0.0, 1.0]
+Y grid range: [0.0, 1.0]
+
+Field Diagnostic Information:
+Field shape: (64, 64)
+Field min: -8.739560541926039e-08
+Field max: 0.9993784427642822
+
+Derivative Diagnostic Information:
+Numerical derivative shape: (64, 64)
+Analytical derivative shape: (64, 64)
+Numerical derivative min: -3.1432101726531982
+Numerical derivative max: 3.1432173252105713
+Analytical derivative min: -3.1406161785125732
+Analytical derivative max: 3.1406161785125732
+
+Error Diagnostic Information:
+Maximum absolute difference: 3.1432173252105713
+Mean absolute difference: 1.9987655878067017
+
+--- Running Test: Combined Compact Difference - Func1 Y-Derivative ---
+
+Grid Diagnostic Information:
+X grid shape: (64, 64)
+Y grid shape: (64, 64)
+X grid range: [0.0, 1.0]
+Y grid range: [0.0, 1.0]
+
+Field Diagnostic Information:
+Field shape: (64, 64)
+Field min: -8.739560541926039e-08
+Field max: 0.9993784427642822
+
+Derivative Diagnostic Information:
+Numerical derivative shape: (64, 64)
+Analytical derivative shape: (64, 64)
+Numerical derivative min: -3.1432101726531982
+Numerical derivative max: 3.1432173252105713
+Analytical derivative min: -3.1406161785125732
+Analytical derivative max: 3.1406161785125732
+
+Error Diagnostic Information:
+Maximum absolute difference: 0.002601146697998047
+Mean absolute difference: 0.0005494358483701944
+
+--- Running Test: Combined Compact Difference - Func2 X-Derivative ---
+
+Grid Diagnostic Information:
+X grid shape: (64, 64)
+Y grid shape: (64, 64)
+X grid range: [0.0, 1.0]
+Y grid range: [0.0, 1.0]
+
+Field Diagnostic Information:
+Field shape: (64, 64)
+Field min: 0.5403022766113281
+Field max: 2.7182817459106445
+
+Derivative Diagnostic Information:
+Numerical derivative shape: (64, 64)
+Analytical derivative shape: (64, 64)
+Numerical derivative min: -2.2875235080718994
+Numerical derivative max: 2.2530553906108253e-05
+Analytical derivative min: 0.5403022766113281
+Analytical derivative max: 2.7182817459106445
+
+Error Diagnostic Information:
+Maximum absolute difference: 3.844038248062134
+Mean absolute difference: 2.2356433868408203
+
+--- Running Test: Combined Compact Difference - Func2 Y-Derivative ---
+
+Grid Diagnostic Information:
+X grid shape: (64, 64)
+Y grid shape: (64, 64)
+X grid range: [0.0, 1.0]
+Y grid range: [0.0, 1.0]
+
+Field Diagnostic Information:
+Field shape: (64, 64)
+Field min: 0.5403022766113281
+Field max: 2.7182817459106445
+
+Derivative Diagnostic Information:
+Numerical derivative shape: (64, 64)
+Analytical derivative shape: (64, 64)
+Numerical derivative min: -2.2875235080718994
+Numerical derivative max: 2.2530553906108253e-05
+Analytical derivative min: -2.2873551845550537
+Analytical derivative max: -0.0
+
+Error Diagnostic Information:
+Maximum absolute difference: 0.00017786026000976562
+Mean absolute difference: 3.407082840567455e-05
+
+Spatial Discretization Test Results for Combined Compact Difference:
+Func1 X-Derivative: FAILED (Error: 1.000828)
+Func1 Y-Derivative: FAILED (Error: 0.000828)
+Func2 X-Derivative: FAILED (Error: 1.414143)
+Func2 Y-Derivative: PASSED (Error: 0.000078)
+
+--- Running Test: Compact Difference - Func1 X-Derivative ---
+
+Grid Diagnostic Information:
+X grid shape: (64, 64)
+Y grid shape: (64, 64)
+X grid range: [0.0, 1.0]
+Y grid range: [0.0, 1.0]
+
+Field Diagnostic Information:
+Field shape: (64, 64)
+Field min: -8.739560541926039e-08
+Field max: 0.9993784427642822
+
+Derivative Diagnostic Information:
+Numerical derivative shape: (64, 64)
+Analytical derivative shape: (64, 64)
+Numerical derivative min: -3.1432101726531982
+Numerical derivative max: 3.1432173252105713
+Analytical derivative min: -3.1406161785125732
+Analytical derivative max: 3.1406161785125732
+
+Error Diagnostic Information:
+Maximum absolute difference: 3.1432173252105713
+Mean absolute difference: 1.9987655878067017
+
+--- Running Test: Compact Difference - Func1 Y-Derivative ---
+
+Grid Diagnostic Information:
+X grid shape: (64, 64)
+Y grid shape: (64, 64)
+X grid range: [0.0, 1.0]
+Y grid range: [0.0, 1.0]
+
+Field Diagnostic Information:
+Field shape: (64, 64)
+Field min: -8.739560541926039e-08
+Field max: 0.9993784427642822
+
+Derivative Diagnostic Information:
+Numerical derivative shape: (64, 64)
+Analytical derivative shape: (64, 64)
+Numerical derivative min: -3.1432101726531982
+Numerical derivative max: 3.1432173252105713
+Analytical derivative min: -3.1406161785125732
+Analytical derivative max: 3.1406161785125732
+
+Error Diagnostic Information:
+Maximum absolute difference: 0.002601146697998047
+Mean absolute difference: 0.0005494358483701944
+
+--- Running Test: Compact Difference - Func2 X-Derivative ---
+
+Grid Diagnostic Information:
+X grid shape: (64, 64)
+Y grid shape: (64, 64)
+X grid range: [0.0, 1.0]
+Y grid range: [0.0, 1.0]
+
+Field Diagnostic Information:
+Field shape: (64, 64)
+Field min: 0.5403022766113281
+Field max: 2.7182817459106445
+
+Derivative Diagnostic Information:
+Numerical derivative shape: (64, 64)
+Analytical derivative shape: (64, 64)
+Numerical derivative min: -2.2875235080718994
+Numerical derivative max: 2.2530553906108253e-05
+Analytical derivative min: 0.5403022766113281
+Analytical derivative max: 2.7182817459106445
+
+Error Diagnostic Information:
+Maximum absolute difference: 3.844038248062134
+Mean absolute difference: 2.2356433868408203
+
+--- Running Test: Compact Difference - Func2 Y-Derivative ---
+
+Grid Diagnostic Information:
+X grid shape: (64, 64)
+Y grid shape: (64, 64)
+X grid range: [0.0, 1.0]
+Y grid range: [0.0, 1.0]
+
+Field Diagnostic Information:
+Field shape: (64, 64)
+Field min: 0.5403022766113281
+Field max: 2.7182817459106445
+
+Derivative Diagnostic Information:
+Numerical derivative shape: (64, 64)
+Analytical derivative shape: (64, 64)
+Numerical derivative min: -2.2875235080718994
+Numerical derivative max: 2.2530553906108253e-05
+Analytical derivative min: -2.2873551845550537
+Analytical derivative max: -0.0
+
+Error Diagnostic Information:
+Maximum absolute difference: 0.00017786026000976562
+Mean absolute difference: 3.407082840567455e-05
+
+Spatial Discretization Test Results for Compact Difference:
+Func1 X-Derivative: FAILED (Error: 1.000828)
+Func1 Y-Derivative: FAILED (Error: 0.000828)
+Func2 X-Derivative: FAILED (Error: 1.414143)
+Func2 Y-Derivative: PASSED (Error: 0.000078)

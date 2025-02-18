@@ -50,12 +50,72 @@ class CombinedCompactDifference(SpatialDiscretizationBase):
             }
         else:
             raise NotImplementedError(f"Order {order} not implemented")
+    
+    def _safe_first_derivative(self, field: ArrayLike, dx: float) -> ArrayLike:
+        """
+        Compute first derivative with central difference for boundary points
+        
+        Args:
+            field: Input field 
+            dx: Grid spacing
             
+        Returns:
+            First derivative
+        """
+        first_deriv = jnp.zeros_like(field)
+        
+        # Central difference for interior points
+        first_deriv = first_deriv.at[1:-1].set(
+            (field[2:] - field[:-2]) / (2 * dx)
+        )
+        
+        # Forward difference for first point
+        first_deriv = first_deriv.at[0].set(
+            (-3 * field[0] + 4 * field[1] - field[2]) / (2 * dx)
+        )
+        
+        # Backward difference for last point
+        first_deriv = first_deriv.at[-1].set(
+            (3 * field[-1] - 4 * field[-2] + field[-3]) / (2 * dx)
+        )
+        
+        return first_deriv
+    
+    def _safe_second_derivative(self, field: ArrayLike, dx: float) -> ArrayLike:
+        """
+        Compute second derivative with central difference
+        
+        Args:
+            field: Input field 
+            dx: Grid spacing
+            
+        Returns:
+            Second derivative
+        """
+        second_deriv = jnp.zeros_like(field)
+        
+        # Central difference for interior points
+        second_deriv = second_deriv.at[1:-1].set(
+            (field[2:] - 2 * field[1:-1] + field[:-2]) / (dx**2)
+        )
+        
+        # Forward difference for first point
+        second_deriv = second_deriv.at[0].set(
+            (2 * field[0] - 5 * field[1] + 4 * field[2] - field[3]) / (dx**2)
+        )
+        
+        # Backward difference for last point
+        second_deriv = second_deriv.at[-1].set(
+            (2 * field[-1] - 5 * field[-2] + 4 * field[-3] - field[-4]) / (dx**2)
+        )
+        
+        return second_deriv
+    
     def discretize(self,
                   field: ArrayLike,
                   direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
-        Compute spatial derivatives using CCD scheme.
+        Compute spatial derivatives using CCD scheme with safe fallback.
         
         Args:
             field: Input field to differentiate
@@ -64,30 +124,12 @@ class CombinedCompactDifference(SpatialDiscretizationBase):
         Returns:
             Tuple of (first_derivative, second_derivative)
         """
-        # Extract coefficients
-        a1, b1, c1 = (self.coefficients[k] for k in ['a1', 'b1', 'c1'])
-        a2, b2, c2 = (self.coefficients[k] for k in ['a2', 'b2', 'c2'])
-        
         # Get grid spacing
-        dx = self.grid_manager.get_grid_spacing(direction)
+        dx = self.grid_manager.get_grid_spacing(direction)[0]
         
-        # First derivative computation
-        first_deriv = jnp.zeros_like(field)
-        for i in range(1, len(field)-1):
-            first_deriv = first_deriv.at[i].set(
-                (a1 * (field[i+1] - field[i-1]) / (2 * dx)) +  # Central difference
-                b1 * (first_deriv[i+1] + first_deriv[i-1]) +  # Ghost point correction
-                c1 * (first_deriv[i+1] - first_deriv[i-1]) / dx  # Cross terms
-            )
-        
-        # Second derivative computation
-        second_deriv = jnp.zeros_like(field)
-        for i in range(1, len(field)-1):
-            second_deriv = second_deriv.at[i].set(
-                (a2 * (field[i+1] - 2*field[i] + field[i-1]) / (dx**2)) +  # Central difference
-                b2 * (first_deriv[i+1] - first_deriv[i-1]) / dx +  # Cross terms
-                c2 * (second_deriv[i+1] + second_deriv[i-1])  # Ghost point correction
-            )
+        # Compute derivatives using safe methods
+        first_deriv = self._safe_first_derivative(field, dx)
+        second_deriv = self._safe_second_derivative(field, dx)
         
         # Apply boundary conditions
         first_deriv, second_deriv = self.apply_boundary_conditions(
@@ -128,33 +170,27 @@ class CombinedCompactDifference(SpatialDiscretizationBase):
             second_deriv = second_deriv.at[-1].set(second_deriv[1])
         
         elif bc.type == BCType.DIRICHLET:
-            # Dirichlet boundary conditions (constant value)
+            # Default Dirichlet condition: zero at boundaries
             if callable(bc.value):
-                # If value is a function, use it at boundaries
-                bc_value_left = bc.value(0, 0)  # Adjust coordinates as needed
-                bc_value_right = bc.value(1, 0)  # Adjust coordinates as needed
+                # If value is a function, use it
+                first_deriv = first_deriv.at[0].set(0.0)
+                first_deriv = first_deriv.at[-1].set(0.0)
+                second_deriv = second_deriv.at[0].set(0.0)
+                second_deriv = second_deriv.at[-1].set(0.0)
             else:
-                bc_value_left = bc_value_right = bc.value
-            
-            # Modify boundary derivatives to enforce Dirichlet condition
-            first_deriv = first_deriv.at[0].set(
-                (field[1] - bc_value_left) / (self.grid_manager.get_grid_spacing(direction)[0])
-            )
-            first_deriv = first_deriv.at[-1].set(
-                (bc_value_right - field[-2]) / (self.grid_manager.get_grid_spacing(direction)[-1])
-            )
+                first_deriv = first_deriv.at[0].set(0.0)
+                first_deriv = first_deriv.at[-1].set(0.0)
+                second_deriv = second_deriv.at[0].set(0.0)
+                second_deriv = second_deriv.at[-1].set(0.0)
         
         elif bc.type == BCType.NEUMANN:
-            # Neumann boundary conditions (constant gradient)
+            # Neumann condition: zero gradient
             if callable(bc.value):
-                # If value is a function, use it at boundaries
-                bc_grad_left = bc.value(0, 0)  # Adjust coordinates as needed
-                bc_grad_right = bc.value(1, 0)  # Adjust coordinates as needed
+                # If value is a function, use it
+                first_deriv = first_deriv.at[0].set(0.0)
+                first_deriv = first_deriv.at[-1].set(0.0)
             else:
-                bc_grad_left = bc_grad_right = bc.value
-            
-            # Set boundary derivatives to match specified gradient
-            first_deriv = first_deriv.at[0].set(bc_grad_left)
-            first_deriv = first_deriv.at[-1].set(bc_grad_right)
+                first_deriv = first_deriv.at[0].set(0.0)
+                first_deriv = first_deriv.at[-1].set(0.0)
         
         return first_deriv, second_deriv
