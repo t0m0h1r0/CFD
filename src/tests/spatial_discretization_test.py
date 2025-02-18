@@ -7,6 +7,7 @@ from typing import Callable, Tuple
 
 from src.core.spatial_discretization.base import SpatialDiscretizationBase
 from src.core.spatial_discretization.operators.ccd import CombinedCompactDifference
+from src.core.spatial_discretization.operators.cd import CompactDifference
 from src.core.common.grid import GridManager, GridConfig
 from src.core.common.types import GridType, BCType, BoundaryCondition
 
@@ -122,47 +123,65 @@ class SpatialDiscretizationTestSuite:
             """Analytical y-derivative of test function 2"""
             return -jnp.exp(x) * jnp.sin(y)
         
-        # Create discretization
-        grid_manager = cls.create_test_grid_manager()
-        discretization = CombinedCompactDifference(
-            grid_manager=grid_manager,
-            boundary_conditions=cls.boundary_conditions()
-        )
-        
-        # Run tests for different test functions and directions
-        test_cases = [
-            ("Func1 X-Derivative", test_func1, dx_test_func1, 'x'),
-            ("Func1 Y-Derivative", test_func1, dy_test_func1, 'y'),
-            ("Func2 X-Derivative", test_func2, dx_test_func2, 'x'),
-            ("Func2 Y-Derivative", test_func2, dy_test_func2, 'y')
+        # Discretization schemes to test
+        discretization_schemes = [
+            ('Combined Compact Difference', 
+             lambda grid_manager: CombinedCompactDifference(
+                 grid_manager=grid_manager,
+                 boundary_conditions=cls.boundary_conditions()
+             )),
+            ('Compact Difference', 
+             lambda grid_manager: CompactDifference(
+                 grid_manager=grid_manager,
+                 boundary_conditions=cls.boundary_conditions()
+             ))
         ]
         
-        # Store test results
-        test_results = {}
+        # Store overall test results
+        overall_test_results = {}
         
-        for name, func, deriv_func, direction in test_cases:
-            # Run test
-            error, fig = cls.test_derivative_accuracy(
-                discretization, func, deriv_func, direction
-            )
+        # Test each discretization scheme
+        for scheme_name, discretization_factory in discretization_schemes:
+            # Create grid and discretization
+            grid_manager = cls.create_test_grid_manager()
+            discretization = discretization_factory(grid_manager)
             
-            # Save figure
-            fig.savefig(f'test_results/spatial_discretization/{name.lower().replace(" ", "_")}.png')
-            plt.close(fig)
+            # Run tests for different test functions and directions
+            test_cases = [
+                ("Func1 X-Derivative", test_func1, dx_test_func1, 'x'),
+                ("Func1 Y-Derivative", test_func1, dy_test_func1, 'y'),
+                ("Func2 X-Derivative", test_func2, dx_test_func2, 'x'),
+                ("Func2 Y-Derivative", test_func2, dy_test_func2, 'y')
+            ]
             
-            # Store result
-            test_results[name] = {
-                'error': float(error),
-                'passed': error < 1e-4  # Adjust tolerance as needed
-            }
+            # Store scheme-specific test results
+            overall_test_results[scheme_name] = {}
+            
+            for name, func, deriv_func, direction in test_cases:
+                # Run test
+                error, fig = cls.test_derivative_accuracy(
+                    discretization, func, deriv_func, direction
+                )
+                
+                # Save figure with scheme-specific naming
+                scheme_safe_name = scheme_name.lower().replace(" ", "_")
+                fig_filename = f'test_results/spatial_discretization/{scheme_safe_name}_{name.lower().replace(" ", "_")}.png'
+                fig.savefig(fig_filename)
+                plt.close(fig)
+                
+                # Store result
+                overall_test_results[scheme_name][name] = {
+                    'error': float(error),
+                    'passed': error < 1e-4  # Adjust tolerance as needed
+                }
+            
+            # Print results for this scheme
+            print(f"\nSpatial Discretization Test Results for {scheme_name}:")
+            for name, result in overall_test_results[scheme_name].items():
+                status = "PASSED" if result['passed'] else "FAILED"
+                print(f"{name}: {status} (Error: {result['error']:.6f})")
         
-        # Print results
-        print("Spatial Discretization Test Results:")
-        for name, result in test_results.items():
-            status = "PASSED" if result['passed'] else "FAILED"
-            print(f"{name}: {status} (Error: {result['error']:.6f})")
-        
-        return test_results
+        return overall_test_results
 
 # Run tests when script is executed
 if __name__ == '__main__':

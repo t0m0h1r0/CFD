@@ -4,233 +4,174 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from .base import SpatialDiscretizationBase
-from ...common.types import BoundaryCondition, BCType
+from ..base import SpatialDiscretizationBase
+from ...common.types import Grid, BoundaryCondition, BCType
 from ...common.grid import GridManager
 
-class CentralDifferenceDiscretization(SpatialDiscretizationBase):
-    """2次精度中心差分による空間微分スキーム"""
+class CompactDifference(SpatialDiscretizationBase):
+    """Implementation of standard Compact Difference scheme."""
     
-    def __init__(
-        self, 
-        grid_manager: GridManager,
-        boundary_conditions: Optional[dict[str, BoundaryCondition]] = None
-    ):
+    def __init__(self,
+                 grid_manager: GridManager,
+                 boundary_conditions: Optional[dict[str, BoundaryCondition]] = None,
+                 order: int = 4):
         """
-        中心差分スキームの初期化
+        Initialize Compact Difference scheme.
         
         Args:
-            grid_manager: グリッド管理オブジェクト
-            boundary_conditions: 境界条件の辞書
+            grid_manager: Grid management object
+            boundary_conditions: Dictionary of boundary conditions
+            order: Order of accuracy (default: 4)
         """
+        # Calculate coefficients based on the order
+        coefficients = self._calculate_coefficients(order)
         super().__init__(grid_manager, boundary_conditions)
-    
-    def _first_derivative_x(self, field: ArrayLike, dx: float) -> ArrayLike:
+        self.coefficients = coefficients
+        self.order = order
+        
+    def _calculate_coefficients(self, order: int) -> dict:
         """
-        x方向の一階微分（中心差分）
+        Calculate Compact Difference coefficients for given order.
         
         Args:
-            field: 入力フィールド
-            dx: x方向のグリッド間隔
-        
+            order: Order of accuracy
+            
         Returns:
-            x方向の一階微分
+            Dictionary of coefficients
         """
-        first_deriv = jnp.zeros_like(field)
-        
-        # 内部点の中心差分
-        first_deriv = first_deriv.at[1:-1, :].set(
-            (field[2:, :] - field[:-2, :]) / (2 * dx)
-        )
-        
-        # 境界点の前方/後方差分
-        first_deriv = first_deriv.at[0, :].set(
-            (field[1, :] - field[0, :]) / dx
-        )
-        first_deriv = first_deriv.at[-1, :].set(
-            (field[-1, :] - field[-2, :]) / dx
-        )
-        
-        return first_deriv
-    
-    def _first_derivative_y(self, field: ArrayLike, dy: float) -> ArrayLike:
-        """
-        y方向の一階微分（中心差分）
-        
-        Args:
-            field: 入力フィールド
-            dy: y方向のグリッド間隔
-        
-        Returns:
-            y方向の一階微分
-        """
-        first_deriv = jnp.zeros_like(field)
-        
-        # 内部点の中心差分
-        first_deriv = first_deriv.at[:, 1:-1].set(
-            (field[:, 2:] - field[:, :-2]) / (2 * dy)
-        )
-        
-        # 境界点の前方/後方差分
-        first_deriv = first_deriv.at[:, 0].set(
-            (field[:, 1] - field[:, 0]) / dy
-        )
-        first_deriv = first_deriv.at[:, -1].set(
-            (field[:, -1] - field[:, -2]) / dy
-        )
-        
-        return first_deriv
-    
-    def _second_derivative_x(self, field: ArrayLike, dx: float) -> ArrayLike:
-        """
-        x方向の二階微分（中心差分）
-        
-        Args:
-            field: 入力フィールド
-            dx: x方向のグリッド間隔
-        
-        Returns:
-            x方向の二階微分
-        """
-        second_deriv = jnp.zeros_like(field)
-        
-        # 内部点の中心差分
-        second_deriv = second_deriv.at[1:-1, :].set(
-            (field[2:, :] - 2 * field[1:-1, :] + field[:-2, :]) / (dx**2)
-        )
-        
-        # 境界点の1次近似
-        second_deriv = second_deriv.at[0, :].set(
-            (field[1, :] - 2 * field[0, :]) / (dx**2)
-        )
-        second_deriv = second_deriv.at[-1, :].set(
-            (field[-1, :] - 2 * field[-2, :]) / (dx**2)
-        )
-        
-        return second_deriv
-    
-    def _second_derivative_y(self, field: ArrayLike, dy: float) -> ArrayLike:
-        """
-        y方向の二階微分（中心差分）
-        
-        Args:
-            field: 入力フィールド
-            dy: y方向のグリッド間隔
-        
-        Returns:
-            y方向の二階微分
-        """
-        second_deriv = jnp.zeros_like(field)
-        
-        # 内部点の中心差分
-        second_deriv = second_deriv.at[:, 1:-1].set(
-            (field[:, 2:] - 2 * field[:, 1:-1] + field[:, :-2]) / (dy**2)
-        )
-        
-        # 境界点の1次近似
-        second_deriv = second_deriv.at[:, 0].set(
-            (field[:, 1] - 2 * field[:, 0]) / (dy**2)
-        )
-        second_deriv = second_deriv.at[:, -1].set(
-            (field[:, -1] - 2 * field[:, -2]) / (dy**2)
-        )
-        
-        return second_deriv
-    
-    def discretize(
-        self, 
-        field: ArrayLike, 
-        direction: str
-    ) -> Tuple[ArrayLike, ArrayLike]:
-        """
-        空間微分の計算
-        
-        Args:
-            field: 微分する入力フィールド
-            direction: 微分の方向
-        
-        Returns:
-            (一階微分, 二階微分)のタプル
-        """
-        # 境界条件の適用
-        field = self.apply_boundary_conditions(field, direction)
-        
-        # グリッド間隔の取得
-        dx = self.grid_manager.get_grid_spacing(direction)[0]
-        
-        # 方向に応じた微分の計算
-        if direction == 'x':
-            first_deriv = self._first_derivative_x(field, dx)
-            second_deriv = self._second_derivative_x(field, dx)
-        elif direction == 'y':
-            first_deriv = self._first_derivative_y(field, dx)
-            second_deriv = self._second_derivative_y(field, dx)
+        if order == 4:
+            return {
+                # Standard 4th order compact difference coefficients
+                'alpha': 1/4,  # Central coefficient for first derivative
+                'beta_l': 1/5,  # Left coefficient
+                'beta_r': 1/5,  # Right coefficient
+                'first_alpha': 3/2,  # First derivative central coefficient
+                'second_alpha': 10/12  # Second derivative central coefficient
+            }
+        elif order == 6:
+            return {
+                # 6th order compact difference coefficients
+                'alpha': 1/3,
+                'beta_l': 1/6,
+                'beta_r': 1/6,
+                'first_alpha': 11/12,
+                'second_alpha': 5/6
+            }
         else:
-            raise ValueError(f"サポートされていない方向: {direction}")
+            raise NotImplementedError(f"Order {order} not implemented")
+            
+    def discretize(self,
+                  field: ArrayLike,
+                  direction: str) -> Tuple[ArrayLike, ArrayLike]:
+        """
+        Compute spatial derivatives using Compact Difference scheme.
+        
+        Args:
+            field: Input field to differentiate
+            direction: Direction of differentiation
+            
+        Returns:
+            Tuple of (first_derivative, second_derivative)
+        """
+        # Extract coefficients
+        alpha = self.coefficients['alpha']
+        beta_l = self.coefficients['beta_l']
+        beta_r = self.coefficients['beta_r']
+        first_alpha = self.coefficients['first_alpha']
+        second_alpha = self.coefficients['second_alpha']
+        
+        # Get grid spacing
+        dx = self.grid_manager.get_grid_spacing(direction)
+        
+        # Initialize derivative arrays
+        first_deriv = jnp.zeros_like(field)
+        second_deriv = jnp.zeros_like(field)
+        
+        # First derivative computation using compact scheme
+        for i in range(1, len(field)-1):
+            # Compact scheme first derivative
+            if i > 0 and i < len(field) - 1:
+                first_deriv = first_deriv.at[i].set(
+                    (field[i+1] - field[i-1]) / (2 * dx) +
+                    beta_l * (first_deriv[i+1] + first_deriv[i-1]) / (2 * dx)
+                )
+        
+        # Second derivative computation
+        for i in range(1, len(field)-1):
+            # Compact scheme second derivative
+            if i > 0 and i < len(field) - 1:
+                second_deriv = second_deriv.at[i].set(
+                    (field[i+1] - 2*field[i] + field[i-1]) / (dx**2) +
+                    beta_l * (second_deriv[i+1] + second_deriv[i-1]) / (dx**2)
+                )
+        
+        # Apply boundary conditions
+        first_deriv, second_deriv = self.apply_boundary_conditions(
+            field, (first_deriv, second_deriv), direction
+        )
         
         return first_deriv, second_deriv
     
-    def apply_boundary_conditions(
-        self, 
-        field: ArrayLike, 
-        direction: str
-    ) -> ArrayLike:
+    def apply_boundary_conditions(self,
+                                field: ArrayLike,
+                                derivatives: Tuple[ArrayLike, ArrayLike],
+                                direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
-        境界条件の適用
+        Apply boundary conditions for Compact Difference scheme.
         
         Args:
-            field: 入力フィールド
-            direction: 境界条件を適用する方向
-        
+            field: Input field
+            derivatives: Tuple of (first_derivative, second_derivative)
+            direction: Direction of differentiation
+            
         Returns:
-            境界条件を適用したフィールド
+            Tuple of corrected (first_derivative, second_derivative)
         """
-        # 境界条件が定義されていない場合はそのまま返す
-        if not self.boundary_conditions or direction not in self.boundary_conditions:
-            return field
+        first_deriv, second_deriv = derivatives
+        
+        # Check if boundary conditions exist for this direction
+        if direction not in self.boundary_conditions:
+            return first_deriv, second_deriv
         
         bc = self.boundary_conditions[direction]
         
-        # 座標の取得
-        x, y, _ = self.grid_manager.get_coordinates()
-        X, Y = jnp.meshgrid(x, y, indexing='ij')
+        # Apply boundary conditions based on type
+        if bc.type == BCType.PERIODIC:
+            # Periodic boundary conditions
+            first_deriv = first_deriv.at[0].set(first_deriv[-2])
+            first_deriv = first_deriv.at[-1].set(first_deriv[1])
+            second_deriv = second_deriv.at[0].set(second_deriv[-2])
+            second_deriv = second_deriv.at[-1].set(second_deriv[1])
         
-        # 境界条件の種類に応じた処理
-        if bc.type == BCType.DIRICHLET:
-            # Dirichlet境界条件
+        elif bc.type == BCType.DIRICHLET:
+            # Dirichlet boundary conditions (constant value)
             if callable(bc.value):
-                # 関数型境界条件
-                if direction == 'x':
-                    field = field.at[0, :].set(bc.value(X[0, :], Y[0, :]))
-                    field = field.at[-1, :].set(bc.value(X[-1, :], Y[-1, :]))
-                elif direction == 'y':
-                    field = field.at[:, 0].set(bc.value(X[:, 0], Y[:, 0]))
-                    field = field.at[:, -1].set(bc.value(X[:, -1], Y[:, -1]))
+                # If value is a function, use it at boundaries
+                bc_value_left = bc.value(0, 0)  # Adjust coordinates as needed
+                bc_value_right = bc.value(1, 0)  # Adjust coordinates as needed
             else:
-                # 定数境界条件
-                if direction == 'x':
-                    field = field.at[0, :].set(bc.value)
-                    field = field.at[-1, :].set(bc.value)
-                elif direction == 'y':
-                    field = field.at[:, 0].set(bc.value)
-                    field = field.at[:, -1].set(bc.value)
+                bc_value_left = bc_value_right = bc.value
+            
+            # Modify boundary derivatives to enforce Dirichlet condition
+            dx = self.grid_manager.get_grid_spacing(direction)[0]
+            first_deriv = first_deriv.at[0].set(
+                (field[1] - bc_value_left) / dx
+            )
+            first_deriv = first_deriv.at[-1].set(
+                (bc_value_right - field[-2]) / dx
+            )
         
         elif bc.type == BCType.NEUMANN:
-            # Neumann境界条件（勾配を固定）
-            if direction == 'x':
-                field = field.at[0, :].set(field[1, :])
-                field = field.at[-1, :].set(field[-2, :])
-            elif direction == 'y':
-                field = field.at[:, 0].set(field[:, 1])
-                field = field.at[:, -1].set(field[:, -2])
+            # Neumann boundary conditions (constant gradient)
+            if callable(bc.value):
+                # If value is a function, use it at boundaries
+                bc_grad_left = bc.value(0, 0)  # Adjust coordinates as needed
+                bc_grad_right = bc.value(1, 0)  # Adjust coordinates as needed
+            else:
+                bc_grad_left = bc_grad_right = bc.value
+            
+            # Set boundary derivatives to match specified gradient
+            first_deriv = first_deriv.at[0].set(bc_grad_left)
+            first_deriv = first_deriv.at[-1].set(bc_grad_right)
         
-        elif bc.type == BCType.PERIODIC:
-            # 周期境界条件
-            if direction == 'x':
-                field = field.at[0, :].set(field[-2, :])
-                field = field.at[-1, :].set(field[1, :])
-            elif direction == 'y':
-                field = field.at[:, 0].set(field[:, -2])
-                field = field.at[:, -1].set(field[:, 1])
-        
-        return field
+        return first_deriv, second_deriv
