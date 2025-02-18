@@ -36,7 +36,7 @@ class ButcherTableau:
     
     @staticmethod
     def fehlberg() -> Tuple['ButcherTableau', jnp.ndarray]:
-        """Create Fehlberg RK4(5) tableau with error estimator."""
+        """Create Fehlberg RK4(5) tableau for error estimation."""
         a = jnp.zeros((6, 6))
         a = a.at[1, 0].set(1/4)
         a = a.at[2, 0:2].set(jnp.array([3/32, 9/32]))
@@ -50,6 +50,30 @@ class ButcherTableau:
         c = jnp.array([0, 1/4, 3/8, 12/13, 1, 1/2])
         
         return ButcherTableau(a=a, b=b4, c=c, order=4), b5
+
+def _compute_state_error(y_high: State, y_low: State) -> float:
+    """Compute error between two states."""
+    if isinstance(y_high, tuple) and isinstance(y_low, tuple):
+        # For tuple states (e.g., position-velocity pairs)
+        return jnp.sqrt(sum(
+            jnp.sum((h - l) ** 2)
+            for h, l in zip(y_high, y_low)
+        ))
+    else:
+        # For scalar or array states
+        return jnp.linalg.norm(jnp.array(y_high) - jnp.array(y_low))
+
+def _compute_state_scale(y: State, atol: float, rtol: float) -> float:
+    """Compute scaling factor for error estimation."""
+    if isinstance(y, tuple):
+        # For tuple states
+        return jnp.sqrt(sum(
+            jnp.sum((atol + rtol * jnp.abs(yi)) ** 2)
+            for yi in y
+        ))
+    else:
+        # For scalar or array states
+        return atol + rtol * jnp.linalg.norm(jnp.array(y))
 
 def _rk_step(system_fn, tableau: ButcherTableau, t: float, y: State, dt: float) -> State:
     """Helper function for Runge-Kutta step that can be jitted."""
@@ -193,8 +217,8 @@ class FehlbergRK45(RungeKutta[State, Derivative]):
         y_high = _rk_step(system, tableau_high, t, y, dt)
         
         # Compute error estimate
-        error = jnp.linalg.norm(y_high - y_low)
-        scale = self.atol + jnp.linalg.norm(y_high) * self.rtol
+        error = _compute_state_error(y_high, y_low)
+        scale = _compute_state_scale(y_high, self.atol, self.rtol)
         error_normalized = error / scale
         
         # Adjust time step if needed
