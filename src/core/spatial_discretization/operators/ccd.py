@@ -12,9 +12,9 @@ class CombinedCompactDifference(CompactDifferenceBase):
     """Implementation of Combined Compact Difference (CCD) scheme."""
     
     def __init__(self,
-                 grid_manager: GridManager,
-                 boundary_conditions: Optional[dict[str, BoundaryCondition]] = None,
-                 order: int = 6):
+                grid_manager: GridManager,
+                boundary_conditions: Optional[dict[str, BoundaryCondition]] = None,
+                order: int = 6):
         """
         Initialize CCD scheme.
         
@@ -51,7 +51,7 @@ class CombinedCompactDifference(CompactDifferenceBase):
             raise NotImplementedError(f"Order {order} not implemented")
             
     def build_coefficient_matrices(self, 
-                                 direction: str) -> Tuple[ArrayLike, ArrayLike]:
+                                direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
         Build CCD coefficient matrices.
         
@@ -61,7 +61,13 @@ class CombinedCompactDifference(CompactDifferenceBase):
         Returns:
             Tuple of (lhs_matrix, rhs_matrix)
         """
-        dx = self.grid_manager.get_grid_spacing(direction)
+        # グリッド間隔を取得し、もし配列なら最初の要素を使ってスカラーに変換
+        dx_val = self.grid_manager.get_grid_spacing(direction)
+        if hasattr(dx_val, 'ndim') and dx_val.ndim > 0:
+            dx = dx_val[0]
+        else:
+            dx = dx_val
+        
         n_points = self.grid_manager.get_grid_points(direction)
         
         # Get coefficients
@@ -124,8 +130,8 @@ class CombinedCompactDifference(CompactDifferenceBase):
         return first_deriv, second_deriv
         
     def discretize(self,
-                  field: ArrayLike,
-                  direction: str) -> Tuple[ArrayLike, ArrayLike]:
+                field: ArrayLike,
+                direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
         Compute spatial derivatives using CCD scheme.
         
@@ -168,7 +174,11 @@ class CombinedCompactDifference(CompactDifferenceBase):
             return derivatives
             
         bc = self.boundary_conditions[direction]
-        dx = self.grid_manager.get_grid_spacing(direction)
+        dx_val = self.grid_manager.get_grid_spacing(direction)
+        if hasattr(dx_val, 'ndim') and dx_val.ndim > 0:
+            dx = dx_val[0]
+        else:
+            dx = dx_val
         
         # Apply boundary conditions based on type
         if bc.type == "dirichlet":
