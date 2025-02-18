@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Optional
 
 from src.core.spatial_discretization.base import SpatialDiscretizationBase
 from src.core.spatial_discretization.operators.ccd import CombinedCompactDifference
@@ -12,14 +12,19 @@ from src.core.common.grid import GridManager, GridConfig
 from src.core.common.types import GridType, BCType, BoundaryCondition
 
 class SpatialDiscretizationTestSuite:
-    """Spatial Discretization Scheme Test Suite with Enhanced Debugging"""
+    """Spatial Discretization Scheme Test Suite with Precise Verification"""
     
     @staticmethod
-    def create_test_grid_manager(nx: int = 64, ny: int = 64, 
-                                 xmin: float = 0.0, xmax: float = 1.0,
-                                 ymin: float = 0.0, ymax: float = 1.0) -> GridManager:
+    def create_test_grid_manager(
+        nx: int = 64, 
+        ny: int = 64, 
+        xmin: float = 0.0, 
+        xmax: float = 1.0,
+        ymin: float = 0.0, 
+        ymax: float = 1.0
+    ) -> GridManager:
         """
-        Create a test grid with configurable dimensions
+        Create a uniform test grid with precise configuration
         
         Args:
             nx: Number of grid points in x direction
@@ -40,9 +45,12 @@ class SpatialDiscretizationTestSuite:
         return GridManager(grid_config)
     
     @staticmethod
-    def create_meshgrid(grid_manager: GridManager, indexing: str = 'ij') -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def create_meshgrid(
+        grid_manager: GridManager, 
+        indexing: str = 'ij'
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
-        Create a meshgrid from grid manager
+        Create a meshgrid from grid manager with precise indexing
         
         Args:
             grid_manager: Grid management object
@@ -53,6 +61,72 @@ class SpatialDiscretizationTestSuite:
         """
         x, y, _ = grid_manager.get_coordinates()
         return jnp.meshgrid(x, y, indexing=indexing)
+    
+    @staticmethod
+    def compute_analytical_derivative(
+        func: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+        x: jnp.ndarray, 
+        y: jnp.ndarray, 
+        direction: str, 
+        h: float = 1e-8
+    ) -> jnp.ndarray:
+        """
+        Compute highly accurate finite difference derivative
+        
+        Args:
+            func: Function to differentiate
+            x: X coordinates
+            y: Y coordinates
+            direction: Differentiation direction ('x' or 'y')
+            h: Small perturbation for finite difference
+        
+        Returns:
+            Analytical derivative using central difference
+        """
+        if direction == 'x':
+            # Central difference for x-derivative
+            f_plus = func(x + h, y)
+            f_minus = func(x - h, y)
+            return (f_plus - f_minus) / (2 * h)
+        elif direction == 'y':
+            # Central difference for y-derivative
+            f_plus = func(x, y + h)
+            f_minus = func(x, y - h)
+            return (f_plus - f_minus) / (2 * h)
+        else:
+            raise ValueError(f"Invalid direction: {direction}")
+    
+    @staticmethod
+    def test_functions() -> list:
+        """
+        Provide a comprehensive set of test functions
+        
+        Returns:
+            List of test functions
+        """
+        return [
+            # Test function 1: Sinusoidal function
+            {
+                'func': lambda x, y: jnp.sin(jnp.pi * x) * jnp.sin(jnp.pi * y),
+                'dx': lambda x, y: jnp.pi * jnp.cos(jnp.pi * x) * jnp.sin(jnp.pi * y),
+                'dy': lambda x, y: jnp.pi * jnp.sin(jnp.pi * x) * jnp.cos(jnp.pi * y),
+                'name': 'Sinusoidal'
+            },
+            # Test function 2: Exponential function
+            {
+                'func': lambda x, y: jnp.exp(x) * jnp.cos(y),
+                'dx': lambda x, y: jnp.exp(x) * jnp.cos(y),
+                'dy': lambda x, y: -jnp.exp(x) * jnp.sin(y),
+                'name': 'Exponential'
+            },
+            # Test function 3: Polynomial function
+            {
+                'func': lambda x, y: x**2 * y**3,
+                'dx': lambda x, y: 2 * x * y**3,
+                'dy': lambda x, y: 3 * x**2 * y**2,
+                'name': 'Polynomial'
+            }
+        ]
     
     @staticmethod
     def boundary_conditions() -> dict[str, BoundaryCondition]:
@@ -68,80 +142,70 @@ class SpatialDiscretizationTestSuite:
     def test_derivative_accuracy(
         cls, 
         discretization: SpatialDiscretizationBase, 
-        test_func: Callable, 
-        derivative_func: Callable, 
+        test_func: dict,
         direction: str
     ) -> Tuple[float, plt.Figure, bool]:
         """
-        Test the accuracy of spatial derivatives with enhanced debugging
+        Test the accuracy of spatial derivatives with comprehensive verification
         
         Args:
             discretization: Spatial discretization scheme
-            test_func: Function to differentiate
-            derivative_func: Analytical derivative function
+            test_func: Test function dictionary
             direction: Differentiation direction
         
         Returns:
             Tuple of (relative error, visualization figure, pass/fail flag)
         """
-        # Create grid manager with exact grid configuration
-        grid_manager = cls.create_test_grid_manager()
+        # Create grid manager with high-resolution configuration
+        grid_manager = cls.create_test_grid_manager(nx=128, ny=128)
         
-        # Create meshgrid with 'ij' indexing
+        # Create meshgrid with precise indexing
         X, Y = cls.create_meshgrid(grid_manager, indexing='ij')
         
-        # Verify grid properties
-        print("\nGrid Diagnostic Information:")
-        print(f"X grid shape: {X.shape}")
-        print(f"Y grid shape: {Y.shape}")
-        print(f"X grid range: [{X.min()}, {X.max()}]")
-        print(f"Y grid range: [{Y.min()}, {Y.max()}]")
-        
-        # Compute field using correct grid
-        field = test_func(X, Y)
-        
-        # Verify field properties
-        print("\nField Diagnostic Information:")
-        print(f"Field shape: {field.shape}")
-        print(f"Field min: {field.min()}")
-        print(f"Field max: {field.max()}")
+        # Compute field
+        field = test_func['func'](X, Y)
         
         # Compute numerical derivatives
         numerical_deriv, _ = discretization.discretize(field, direction)
         
-        # Compute analytical derivatives
-        analytical_deriv = derivative_func(X, Y)
+        # Compute highly accurate analytical derivative
+        if direction == 'x':
+            analytical_deriv = test_func['dx'](X, Y)
+        else:
+            analytical_deriv = test_func['dy'](X, Y)
         
-        # Additional checks
-        print("\nDerivative Diagnostic Information:")
-        print(f"Numerical derivative shape: {numerical_deriv.shape}")
-        print(f"Analytical derivative shape: {analytical_deriv.shape}")
-        print(f"Numerical derivative min: {numerical_deriv.min()}")
-        print(f"Numerical derivative max: {numerical_deriv.max()}")
-        print(f"Analytical derivative min: {analytical_deriv.min()}")
-        print(f"Analytical derivative max: {analytical_deriv.max()}")
+        # Compute verification derivative using finite difference
+        verification_deriv = cls.compute_analytical_derivative(
+            test_func['func'], X, Y, direction
+        )
         
-        # Robust error calculation
+        # Compute various error metrics
         abs_diff = jnp.abs(numerical_deriv - analytical_deriv)
-        max_diff = jnp.max(abs_diff)
-        mean_diff = jnp.mean(abs_diff)
-        rms_diff = jnp.sqrt(jnp.mean(abs_diff**2))
+        verification_diff = jnp.abs(numerical_deriv - verification_deriv)
         
-        # Normalize by the magnitude of the analytical derivative
+        max_abs_diff = jnp.max(abs_diff)
+        max_verification_diff = jnp.max(verification_diff)
+        mean_abs_diff = jnp.mean(abs_diff)
+        
+        # Normalize by the magnitude of the derivative
         norm_factor = jnp.max(jnp.abs(analytical_deriv)) + 1e-10
-        relative_error = max_diff / norm_factor
+        relative_error = max_abs_diff / norm_factor
+        verification_error = max_verification_diff / norm_factor
         
-        print("\nError Diagnostic Information:")
-        print(f"Maximum absolute difference: {max_diff}")
-        print(f"Mean absolute difference: {mean_diff}")
-        print(f"RMS difference: {rms_diff}")
-        print(f"Normalized maximum difference: {relative_error}")
+        # Detailed diagnostics
+        print(f"\n--- {test_func['name']} Function Derivative Test ---")
+        print(f"Direction: {direction}")
+        print(f"Max Absolute Difference: {max_abs_diff}")
+        print(f"Verification Difference: {max_verification_diff}")
+        print(f"Mean Absolute Difference: {mean_abs_diff}")
+        print(f"Relative Error: {relative_error}")
+        print(f"Verification Error: {verification_error}")
         
-        # More stringent error criteria
+        # Comprehensive pass criteria
         passed = (
             relative_error < 1e-3 and  # Relative error
-            mean_diff / norm_factor < 1e-3 and  # Mean relative error
-            rms_diff / norm_factor < 1e-3  # RMS relative error
+            verification_error < 1e-3 and  # Verification error
+            mean_abs_diff / norm_factor < 1e-3  # Mean relative error
         )
         
         # Visualization
@@ -159,40 +223,10 @@ class SpatialDiscretizationTestSuite:
         ax3.set_title(f'Absolute Error ({direction.upper()} Derivative)')
         fig.colorbar(im3, ax=ax3)
         
-        plt.suptitle(f'Derivative Test - {direction.upper()}')
+        plt.suptitle(f'Derivative Test - {test_func["name"]} Function')
         plt.tight_layout()
         
         return relative_error, fig, passed
-    
-    @staticmethod
-    def test_func1(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """Test function 1: sin(πx)sin(πy)"""
-        return jnp.sin(jnp.pi * x) * jnp.sin(jnp.pi * y)
-    
-    @staticmethod
-    def dx_test_func1(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """Analytical x-derivative of test function 1"""
-        return jnp.pi * jnp.cos(jnp.pi * x) * jnp.sin(jnp.pi * y)
-    
-    @staticmethod
-    def dy_test_func1(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """Analytical y-derivative of test function 1"""
-        return jnp.pi * jnp.sin(jnp.pi * x) * jnp.cos(jnp.pi * y)
-    
-    @staticmethod
-    def test_func2(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """Test function 2: exp(x)cos(y)"""
-        return jnp.exp(x) * jnp.cos(y)
-    
-    @staticmethod
-    def dx_test_func2(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """Analytical x-derivative of test function 2"""
-        return jnp.exp(x) * jnp.cos(y)
-    
-    @staticmethod
-    def dy_test_func2(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """Analytical y-derivative of test function 2"""
-        return -jnp.exp(x) * jnp.sin(y)
     
     @classmethod
     def run_tests(cls):
@@ -223,35 +257,33 @@ class SpatialDiscretizationTestSuite:
             grid_manager = cls.create_test_grid_manager()
             discretization = discretization_factory(grid_manager)
             
-            # Run tests for different test functions and directions
-            test_cases = [
-                ("Func1 X-Derivative", cls.test_func1, cls.dx_test_func1, 'x'),
-                ("Func1 Y-Derivative", cls.test_func1, cls.dy_test_func1, 'y'),
-                ("Func2 X-Derivative", cls.test_func2, cls.dx_test_func2, 'x'),
-                ("Func2 Y-Derivative", cls.test_func2, cls.dy_test_func2, 'y')
-            ]
+            # Test functions
+            test_functions = cls.test_functions()
             
+            # Store scheme-specific results
             overall_test_results[scheme_name] = {}
             
-            for name, func, deriv_func, direction in test_cases:
-                print(f"\n--- Running Test: {scheme_name} - {name} ---")
-                
-                # Run test
-                error, fig, passed = cls.test_derivative_accuracy(
-                    discretization, func, deriv_func, direction
-                )
-                
-                # Save figure
-                scheme_safe_name = scheme_name.lower().replace(" ", "_")
-                fig_filename = f'test_results/spatial_discretization/{scheme_safe_name}_{name.lower().replace(" ", "_")}.png'
-                fig.savefig(fig_filename)
-                plt.close(fig)
-                
-                # Store result
-                overall_test_results[scheme_name][name] = {
-                    'error': float(error),
-                    'passed': passed
-                }
+            # Test each function in both x and y directions
+            for test_func in test_functions:
+                for direction in ['x', 'y']:
+                    test_name = f"{test_func['name']} {direction.upper()}-Derivative"
+                    
+                    # Run test
+                    error, fig, passed = cls.test_derivative_accuracy(
+                        discretization, test_func, direction
+                    )
+                    
+                    # Save figure
+                    scheme_safe_name = scheme_name.lower().replace(" ", "_")
+                    fig_filename = f'test_results/spatial_discretization/{scheme_safe_name}_{test_name.lower().replace(" ", "_")}.png'
+                    fig.savefig(fig_filename)
+                    plt.close(fig)
+                    
+                    # Store result
+                    overall_test_results[scheme_name][test_name] = {
+                        'error': float(error),
+                        'passed': passed
+                    }
             
             # Print results for this scheme
             print(f"\nSpatial Discretization Test Results for {scheme_name}:")

@@ -31,7 +31,7 @@ class CompactDifference(SpatialDiscretizationBase):
         
     def _calculate_coefficients(self, order: int) -> dict:
         """
-        Calculate Compact Difference coefficients for given order.
+        Calculate Compact Difference coefficients based on order.
         
         Args:
             order: Order of accuracy
@@ -41,16 +41,16 @@ class CompactDifference(SpatialDiscretizationBase):
         """
         if order == 4:
             return {
-                # Standard 4th order compact difference coefficients
-                'alpha': 1/4,  # Central coefficient for first derivative
+                # Optimized 4th-order compact difference coefficients
+                'alpha': 1/4,   # Central coefficient for first derivative
                 'beta_l': 1/5,  # Left coefficient
                 'beta_r': 1/5,  # Right coefficient
-                'first_alpha': 3/2,  # First derivative central coefficient
-                'second_alpha': 10/12  # Second derivative central coefficient
+                'first_alpha': 3/2,   # First derivative coefficient
+                'second_alpha': 10/12  # Second derivative coefficient
             }
         elif order == 6:
             return {
-                # 6th order compact difference coefficients
+                # 6th-order compact difference coefficients
                 'alpha': 1/3,
                 'beta_l': 1/6,
                 'beta_r': 1/6,
@@ -60,12 +60,12 @@ class CompactDifference(SpatialDiscretizationBase):
         else:
             raise NotImplementedError(f"Order {order} not implemented")
     
-    def _safe_first_derivative(self, field: ArrayLike, dx: float) -> ArrayLike:
+    def _first_derivative_central(self, field: ArrayLike, dx: float) -> ArrayLike:
         """
-        Compute first derivative with central difference for boundary points
+        Compute first derivative using central difference method.
         
         Args:
-            field: Input field 
+            field: Input field
             dx: Grid spacing
             
         Returns:
@@ -90,12 +90,12 @@ class CompactDifference(SpatialDiscretizationBase):
         
         return first_deriv
     
-    def _safe_second_derivative(self, field: ArrayLike, dx: float) -> ArrayLike:
+    def _second_derivative_central(self, field: ArrayLike, dx: float) -> ArrayLike:
         """
-        Compute second derivative with central difference
+        Compute second derivative using central difference method.
         
         Args:
-            field: Input field 
+            field: Input field
             dx: Grid spacing
             
         Returns:
@@ -124,7 +124,7 @@ class CompactDifference(SpatialDiscretizationBase):
                   field: ArrayLike,
                   direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
-        Compute spatial derivatives using Compact Difference scheme with safe fallback.
+        Compute spatial derivatives using Compact Difference scheme.
         
         Args:
             field: Input field to differentiate
@@ -136,9 +136,9 @@ class CompactDifference(SpatialDiscretizationBase):
         # Get grid spacing
         dx = self.grid_manager.get_grid_spacing(direction)[0]
         
-        # Compute derivatives using safe methods
-        first_deriv = self._safe_first_derivative(field, dx)
-        second_deriv = self._safe_second_derivative(field, dx)
+        # Compute derivatives
+        first_deriv = self._first_derivative_central(field, dx)
+        second_deriv = self._second_derivative_central(field, dx)
         
         # Apply boundary conditions
         first_deriv, second_deriv = self.apply_boundary_conditions(
@@ -179,27 +179,23 @@ class CompactDifference(SpatialDiscretizationBase):
             second_deriv = second_deriv.at[-1].set(second_deriv[1])
         
         elif bc.type == BCType.DIRICHLET:
-            # Default Dirichlet condition: zero at boundaries
+            # Dirichlet boundary condition
             if callable(bc.value):
-            # If value is a function, use it
-                first_deriv = first_deriv.at[0].set(0.0)
-                first_deriv = first_deriv.at[-1].set(0.0)
-                second_deriv = second_deriv.at[0].set(0.0)
-                second_deriv = second_deriv.at[-1].set(0.0)
+                bc_value_left = bc.value(0, 0)
+                bc_value_right = bc.value(1, 0)
             else:
-                first_deriv = first_deriv.at[0].set(0.0)
-                first_deriv = first_deriv.at[-1].set(0.0)
-                second_deriv = second_deriv.at[0].set(0.0)
-                second_deriv = second_deriv.at[-1].set(0.0)
+                bc_value_left = bc_value_right = bc.value
+            
+            # Enforce derivative conditions
+            first_deriv = first_deriv.at[0].set(0.0)
+            first_deriv = first_deriv.at[-1].set(0.0)
+            second_deriv = second_deriv.at[0].set(0.0)
+            second_deriv = second_deriv.at[-1].set(0.0)
         
         elif bc.type == BCType.NEUMANN:
-            # Neumann condition: zero gradient
-            if callable(bc.value):
-                # If value is a function, use it
-                first_deriv = first_deriv.at[0].set(0.0)
-                first_deriv = first_deriv.at[-1].set(0.0)
-            else:
-                first_deriv = first_deriv.at[0].set(0.0)
-                first_deriv = first_deriv.at[-1].set(0.0)
+            # Neumann boundary condition (zero gradient)
+            # Use zero first derivative at boundaries
+            first_deriv = first_deriv.at[0].set(0.0)
+            first_deriv = first_deriv.at[-1].set(0.0)
         
         return first_deriv, second_deriv
