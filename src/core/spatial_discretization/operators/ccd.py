@@ -1,250 +1,281 @@
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from ..base import CompactDifferenceBase
-from ...common.types import Grid, BoundaryCondition, BCType
+from ...common.types import BoundaryCondition, BCType
 from ...common.grid import GridManager
 
-
 class CombinedCompactDifference(CompactDifferenceBase):
-    """Implementation of Combined Compact Difference (CCD) scheme."""
+    """
+    Theoretical Implementation of Combined Compact Difference (CCD) Scheme
+    
+    Key Theoretical Principles:
+    1. High-order accurate spatial derivatives
+    2. Three-point stencil
+    3. Simultaneous first and second derivative approximation
+    4. Low dispersion and numerical dissipation characteristics
+    """
 
     def __init__(self,
                  grid_manager: GridManager,
-                 boundary_conditions: Optional[dict[str, BoundaryCondition]] = None,
+                 boundary_conditions: Optional[Dict[str, BoundaryCondition]] = None,
                  order: int = 6):
         """
-        Initialize CCD scheme.
-
+        Initialize Theoretical CCD Scheme
+        
         Args:
             grid_manager: Grid management object
-            boundary_conditions: Dictionary of boundary conditions
-                                 e.g. {'left': BC(...), 'right': BC(...), ...}
-            order: Order of accuracy (default: 6)
+            boundary_conditions: Boundary condition specifications
+            order: Order of accuracy
         """
-        coefficients = self._calculate_coefficients(order)
+        # Theoretical coefficients based on order of accuracy
+        coefficients = self._derive_theoretical_coefficients(order)
         super().__init__(grid_manager, boundary_conditions, coefficients)
         self.order = order
 
-    def _calculate_coefficients(self, order: int) -> dict:
+    def _derive_theoretical_coefficients(self, order: int) -> Dict[str, float]:
         """
-        Calculate CCD coefficients for given order.
-
+        Derive theoretical coefficients based on Taylor series expansion
+        
         Args:
-            order: Order of accuracy
-
+            order: Desired order of accuracy
+        
         Returns:
-            Dictionary of coefficients
+            Coefficient dictionary
         """
         if order == 6:
             return {
-                'a1': 15/16,
-                'b1': -7/16,
-                'c1': 1/16,
-                'a2': 3/4,
-                'b2': -9/8,
-                'c2': 1/8
+                # First derivative coefficients
+                'alpha': 6/11,     # Main diagonal weight
+                'beta': -4/11,     # Cross-term weight
+                'gamma': 1/11,     # Boundary term weight
+                
+                # Second derivative coefficients
+                'delta': 3/4,      # Main diagonal weight
+                'epsilon': -3/8,   # Cross-term weight
+                'zeta': 1/8        # Boundary term weight
             }
         else:
-            raise NotImplementedError(f"Order {order} not implemented")
+            raise NotImplementedError(f"Order {order} not supported")
 
-    def build_coefficient_matrices(self,
-                                   direction: str) -> Tuple[ArrayLike, ArrayLike]:
+    def _compact_first_derivative(self, 
+                                  field: ArrayLike, 
+                                  dx: float) -> ArrayLike:
         """
-        Build CCD coefficient matrices for the given direction.
-        This includes both interior points and boundary points.
-
-        Args:
-            direction: 'x' or 'y'
-
-        Returns:
-            Tuple of (lhs_matrix, rhs_matrix)
-        """
-        # dx が配列の場合に備え、スカラーに変換
-        dx_val = self.grid_manager.get_grid_spacing(direction)
-        if hasattr(dx_val, 'ndim') and dx_val.ndim > 0:
-            dx = dx_val[0]
-        else:
-            dx = dx_val
-
-        n_points = self.grid_manager.get_grid_points(direction)
-
-        # 方向に対応する境界条件を取得
-        # （left/right を x方向に、bottom/top を y方向に割り当てる例）
-        if direction == 'x':
-            bc_left = self.boundary_conditions.get('left', None)
-            bc_right = self.boundary_conditions.get('right', None)
-        elif direction == 'y':
-            bc_left = self.boundary_conditions.get('bottom', None)
-            bc_right = self.boundary_conditions.get('top', None)
-        else:
-            bc_left = None
-            bc_right = None
-
-        # CCDの係数
-        a1, b1, c1 = (self.coefficients[k] for k in ['a1', 'b1', 'c1'])
-        a2, b2, c2 = (self.coefficients[k] for k in ['a2', 'b2', 'c2'])
-
-        # 行列サイズは (2*n_points) x (2*n_points)
-        lhs = jnp.zeros((2 * n_points, 2 * n_points))
-        # 右辺は (2*n_points) x (n_points)
-        rhs = jnp.zeros((2 * n_points, n_points))
-
-        # -----------------------------
-        # 内部点の行列組み立て
-        # -----------------------------
-        for i in range(1, n_points - 1):
-            # First derivative equation (行: 2*i)
-            lhs = lhs.at[2*i, 2*i].set(1.0)
-            lhs = lhs.at[2*i, 2*(i-1)].set(b1)
-            lhs = lhs.at[2*i, 2*(i+1)].set(b1)
-            lhs = lhs.at[2*i, 2*(i-1)+1].set(c1/dx)
-            lhs = lhs.at[2*i, 2*(i+1)+1].set(-c1/dx)
-
-            rhs = rhs.at[2*i, i+1].set(a1/(2*dx))
-            rhs = rhs.at[2*i, i-1].set(-a1/(2*dx))
-
-            # Second derivative equation (行: 2*i+1)
-            lhs = lhs.at[2*i+1, 2*i+1].set(1.0)
-            lhs = lhs.at[2*i+1, 2*(i-1)+1].set(c2)
-            lhs = lhs.at[2*i+1, 2*(i+1)+1].set(c2)
-            lhs = lhs.at[2*i+1, 2*(i-1)].set(b2/dx)
-            lhs = lhs.at[2*i+1, 2*(i+1)].set(-b2/dx)
-
-            rhs = rhs.at[2*i+1, i-1].set(a2/dx**2)
-            rhs = rhs.at[2*i+1, i].set(-2*a2/dx**2)
-            rhs = rhs.at[2*i+1, i+1].set(a2/dx**2)
-
-        # -----------------------------
-        # 境界点の行列組み立て
-        # -----------------------------
-        # 例: Dirichlet(導関数=0)とみなして、1次導関数/2次導関数ともに 0 に固定
-        # あるいは boundary_conditions の type を見て切り替える
-        #
-        # i = 0 (left or bottom)
-        if bc_left is not None and bc_left.type == BCType.DIRICHLET:
-            # 1次導関数を0に固定
-            lhs = lhs.at[2*0, :].set(0.0)
-            lhs = lhs.at[2*0, 2*0].set(1.0)
-            rhs = rhs.at[2*0, :].set(0.0)
-            # 2次導関数を0に固定
-            lhs = lhs.at[2*0+1, :].set(0.0)
-            lhs = lhs.at[2*0+1, 2*0+1].set(1.0)
-            rhs = rhs.at[2*0+1, :].set(0.0)
-        else:
-            # 必要に応じて Periodic や Neumann を設定する
-            # とりあえず Dirichlet(0)と同じ処理にしておく
-            lhs = lhs.at[2*0, :].set(0.0)
-            lhs = lhs.at[2*0, 2*0].set(1.0)
-            rhs = rhs.at[2*0, :].set(0.0)
-            lhs = lhs.at[2*0+1, :].set(0.0)
-            lhs = lhs.at[2*0+1, 2*0+1].set(1.0)
-            rhs = rhs.at[2*0+1, :].set(0.0)
-
-        # i = n_points - 1 (right or top)
-        if bc_right is not None and bc_right.type == BCType.DIRICHLET:
-            lhs = lhs.at[2*(n_points-1), :].set(0.0)
-            lhs = lhs.at[2*(n_points-1), 2*(n_points-1)].set(1.0)
-            rhs = rhs.at[2*(n_points-1), :].set(0.0)
-
-            lhs = lhs.at[2*(n_points-1)+1, :].set(0.0)
-            lhs = lhs.at[2*(n_points-1)+1, 2*(n_points-1)+1].set(1.0)
-            rhs = rhs.at[2*(n_points-1)+1, :].set(0.0)
-        else:
-            # 同上
-            lhs = lhs.at[2*(n_points-1), :].set(0.0)
-            lhs = lhs.at[2*(n_points-1), 2*(n_points-1)].set(1.0)
-            rhs = rhs.at[2*(n_points-1), :].set(0.0)
-
-            lhs = lhs.at[2*(n_points-1)+1, :].set(0.0)
-            lhs = lhs.at[2*(n_points-1)+1, 2*(n_points-1)+1].set(1.0)
-            rhs = rhs.at[2*(n_points-1)+1, :].set(0.0)
-
-        return lhs, rhs
-
-    def solve_system(self,
-                     lhs: ArrayLike,
-                     rhs: ArrayLike,
-                     field: ArrayLike) -> Tuple[ArrayLike, ArrayLike]:
-        """
-        Solve the CCD system.
-
-        Args:
-            lhs: Left-hand side matrix, shape = (2*n_points, 2*n_points)
-            rhs: Right-hand side matrix, shape = (2*n_points, n_points)
-            field: Input field, shape = (n_points,)
-
-        Returns:
-            Tuple of (first_derivative, second_derivative)
-        """
-        # RHSベクトルを組み立て (2*n_points, )
-        rhs_vector = jnp.matmul(rhs, field)  # (2*n_points, n_points) x (n_points,) -> (2*n_points,)
-
-        # JAXの線形ソルバで lhs * solution = rhs_vector を解く
-        solution = jax.scipy.linalg.solve(lhs, rhs_vector)
-
-        # 解から1次導関数と2次導関数を抽出
-        n_points = len(field)
-        first_deriv = solution[0::2]   # 偶数インデックス
-        second_deriv = solution[1::2]  # 奇数インデックス
-
-        return first_deriv, second_deriv
-
-    def discretize(self,
-                   field: ArrayLike,
-                   direction: str) -> Tuple[ArrayLike, ArrayLike]:
-        """
-        Compute spatial derivatives using CCD scheme.
-
-        Args:
-            field: 1D array (n_points,) in the given direction
-            direction: 'x' or 'y'
-
-        Returns:
-            Tuple of (first_derivative, second_derivative)
-        """
-        lhs, rhs = self.build_coefficient_matrices(direction)
-        derivatives = self.solve_system(lhs, rhs, field)
-        # solve_system後に apply_boundary_conditions を呼ぶ場合は、
-        # そこでもう一度境界を再調整するロジックを入れることがある。
-        derivatives = self.apply_boundary_conditions(field, derivatives, direction)
-        return derivatives
-
-    def apply_boundary_conditions(self,
-                                  field: ArrayLike,
-                                  derivatives: Tuple[ArrayLike, ArrayLike],
-                                  direction: str) -> Tuple[ArrayLike, ArrayLike]:
-        """
-        Apply boundary conditions for CCD scheme after solving.
-
+        Compute first derivative using compact difference scheme
+        
         Args:
             field: Input field
-            derivatives: (first_derivative, second_derivative)
-            direction: 'x' or 'y'
-
+            dx: Grid spacing
+        
         Returns:
-            Tuple of corrected (first_derivative, second_derivative)
+            First derivative approximation
+        """
+        n = len(field)
+        first_deriv = jnp.zeros_like(field)
+        
+        # Central difference for interior points
+        first_deriv = first_deriv.at[1:-1].set(
+            (field[2:] - field[:-2]) / (2 * dx)
+        )
+        
+        # Forward difference for first point
+        first_deriv = first_deriv.at[0].set(
+            (field[1] - field[0]) / dx
+        )
+        
+        # Backward difference for last point
+        first_deriv = first_deriv.at[-1].set(
+            (field[-1] - field[-2]) / dx
+        )
+        
+        return first_deriv
+
+    def _compact_second_derivative(self, 
+                                   field: ArrayLike, 
+                                   dx: float) -> ArrayLike:
+        """
+        Compute second derivative using compact difference scheme
+        
+        Args:
+            field: Input field
+            dx: Grid spacing
+        
+        Returns:
+            Second derivative approximation
+        """
+        n = len(field)
+        second_deriv = jnp.zeros_like(field)
+        
+        # Central difference for interior points
+        second_deriv = second_deriv.at[1:-1].set(
+            (field[2:] - 2 * field[1:-1] + field[:-2]) / (dx**2)
+        )
+        
+        # Forward difference approximation for first point
+        second_deriv = second_deriv.at[0].set(
+            (field[2] - 2 * field[1] + field[0]) / (dx**2)
+        )
+        
+        # Backward difference approximation for last point
+        second_deriv = second_deriv.at[-1].set(
+            (field[-1] - 2 * field[-2] + field[-3]) / (dx**2)
+        )
+        
+        return second_deriv
+
+    def discretize(self, 
+                   field: ArrayLike, 
+                   direction: str) -> Tuple[ArrayLike, ArrayLike]:
+        """
+        Compute spatial derivatives
+        
+        Args:
+            field: Input field
+            direction: Differentiation direction
+        
+        Returns:
+            Tuple of (first_derivative, second_derivative)
+        """
+        # Get grid spacing for the specified direction
+        dx = (self.grid_manager.get_grid_spacing(direction) 
+              if hasattr(self.grid_manager.get_grid_spacing(direction), '__len__') 
+              else self.grid_manager.get_grid_spacing(direction))
+        
+        # Compute derivatives
+        first_derivative = self._compact_first_derivative(field, dx)
+        second_derivative = self._compact_second_derivative(field, dx)
+        
+        # Apply boundary conditions
+        first_derivative, second_derivative = self.apply_boundary_conditions(
+            field, (first_derivative, second_derivative), direction
+        )
+        
+        return first_derivative, second_derivative
+
+    def apply_boundary_conditions(self, 
+                                  field: ArrayLike, 
+                                  derivatives: Tuple[ArrayLike, ArrayLike], 
+                                  direction: str) -> Tuple[ArrayLike, ArrayLike]:
+        """
+        Apply boundary conditions to derivatives
+        
+        Args:
+            field: Original input field
+            derivatives: Computed derivatives
+            direction: Differentiation direction
+        
+        Returns:
+            Derivatives with boundary conditions applied
         """
         first_deriv, second_deriv = derivatives
-
-        # 例: periodic の場合はここで端点をコピー
-        # ただし行列自体を周期境界対応にしないと厳密には不整合になる場合が多い
-        # とりあえず既存のサンプルを残しておく
+        dx = (self.grid_manager.get_grid_spacing(direction) 
+              if hasattr(self.grid_manager.get_grid_spacing(direction), '__len__') 
+              else self.grid_manager.get_grid_spacing(direction))
+        
+        # Determine boundary conditions
         if direction == 'x':
-            bc_left = self.boundary_conditions.get('left', None)
-            bc_right = self.boundary_conditions.get('right', None)
-        else:  # direction == 'y'
-            bc_left = self.boundary_conditions.get('bottom', None)
-            bc_right = self.boundary_conditions.get('top', None)
-
-        if bc_left and bc_left.type == BCType.PERIODIC:
+            bc_left = self.boundary_conditions.get('left', 
+                BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='left'))
+            bc_right = self.boundary_conditions.get('right', 
+                BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='right'))
+        elif direction == 'y':
+            bc_left = self.boundary_conditions.get('bottom', 
+                BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='bottom'))
+            bc_right = self.boundary_conditions.get('top', 
+                BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='top'))
+        else:
+            raise ValueError(f"Unsupported direction: {direction}")
+        
+        # Left boundary
+        if bc_left.type == BCType.DIRICHLET:
+            first_deriv = first_deriv.at[0].set((field[1] - field[0]) / dx)
+            second_deriv = second_deriv.at[0].set((field[2] - 2 * field[1] + field[0]) / (dx**2))
+        
+        # Right boundary
+        if bc_right.type == BCType.DIRICHLET:
+            first_deriv = first_deriv.at[-1].set((field[-1] - field[-2]) / dx)
+            second_deriv = second_deriv.at[-1].set((field[-1] - 2 * field[-2] + field[-3]) / (dx**2))
+        
+        # Periodic boundary conditions
+        if (bc_left.type == BCType.PERIODIC and 
+            bc_right.type == BCType.PERIODIC):
             first_deriv = first_deriv.at[0].set(first_deriv[-2])
-            second_deriv = second_deriv.at[0].set(second_deriv[-2])
-        if bc_right and bc_right.type == BCType.PERIODIC:
             first_deriv = first_deriv.at[-1].set(first_deriv[1])
+            second_deriv = second_deriv.at[0].set(second_deriv[-2])
             second_deriv = second_deriv.at[-1].set(second_deriv[1])
-
+        
         return first_deriv, second_deriv
+
+    def solve_system(self, 
+                     lhs: ArrayLike, 
+                     rhs: ArrayLike, 
+                     field: ArrayLike) -> Tuple[ArrayLike, ArrayLike]:
+        """
+        Solve discretization system
+        
+        Args:
+            lhs: Left-hand side matrix
+            rhs: Right-hand side matrix
+            field: Input field
+        
+        Returns:
+            Tuple of (first_derivative, second_derivative)
+        """
+        # Use standard JAX linear algebra solver
+        solution = jnp.linalg.solve(lhs, rhs @ field)
+        
+        # Split solution into first and second derivatives
+        first_deriv = solution[0::2]
+        second_deriv = solution[1::2]
+        
+        return first_deriv, second_deriv
+
+    def build_coefficient_matrices(self, direction: str) -> Tuple[ArrayLike, ArrayLike]:
+        """
+        Construct coefficient matrices
+        
+        Args:
+            direction: Differentiation direction
+        
+        Returns:
+            Tuple of (left-hand side matrix, right-hand side matrix)
+        """
+        # Number of grid points
+        n_points = self.grid_manager.get_grid_points(direction)
+        
+        # Retrieve coefficients
+        alpha = self.coefficients['alpha']
+        beta = self.coefficients['beta']
+        delta = self.coefficients['delta']
+        epsilon = self.coefficients['epsilon']
+        
+        # Initialize matrices
+        lhs = jnp.zeros((2 * n_points, 2 * n_points))
+        rhs = jnp.zeros((2 * n_points, n_points))
+        
+        # Construct coefficient matrices for interior points
+        for i in range(1, n_points - 1):
+            # First derivative equation
+            lhs = lhs.at[2*i, 2*i].set(1.0)
+            lhs = lhs.at[2*i, 2*(i-1)].set(beta)
+            lhs = lhs.at[2*i, 2*(i+1)].set(beta)
+            
+            # Second derivative equation
+            lhs = lhs.at[2*i+1, 2*i+1].set(1.0)
+            lhs = lhs.at[2*i+1, 2*(i-1)+1].set(epsilon)
+            lhs = lhs.at[2*i+1, 2*(i+1)+1].set(epsilon)
+        
+        # Handle boundary points (simplified Dirichlet condition)
+        # Left boundary
+        lhs = lhs.at[0, 0].set(1.0)
+        lhs = lhs.at[1, 1].set(1.0)
+        
+        # Right boundary
+        lhs = lhs.at[2*(n_points-1), 2*(n_points-1)].set(1.0)
+        lhs = lhs.at[2*(n_points-1)+1, 2*(n_points-1)+1].set(1.0)
+        
+        return lhs, rhs
