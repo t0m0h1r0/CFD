@@ -1,42 +1,44 @@
 from typing import Tuple, Optional
 
 import jax
+jax.config.update('jax_enable_x64', True)  # 64ビット精度を有効化
+
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from ..base import CompactDifferenceBase
-from ...common.types import BoundaryCondition
+from ...common.types import Grid, BoundaryCondition, BCType
 from ...common.grid import GridManager
 
 class CombinedCompactDifference(CompactDifferenceBase):
-    """Implementation of Combined Compact Difference (CCD) scheme."""
+    """結合コンパクト差分(CCD)スキームの実装"""
     
     def __init__(self,
                  grid_manager: GridManager,
                  boundary_conditions: Optional[dict[str, BoundaryCondition]] = None,
                  order: int = 6):
         """
-        Initialize CCD scheme.
+        CCDスキームの初期化
         
         Args:
-            grid_manager: Grid management object
-            boundary_conditions: Dictionary of boundary conditions
-            order: Order of accuracy (default: 6)
+            grid_manager: グリッド管理オブジェクト
+            boundary_conditions: 境界条件の辞書
+            order: 精度の次数 (デフォルト: 6)
         """
-        # Calculate coefficients based on the order
+        # 次数に基づいて係数を計算
         coefficients = self._calculate_coefficients(order)
         super().__init__(grid_manager, boundary_conditions, coefficients)
         self.order = order
         
     def _calculate_coefficients(self, order: int) -> dict:
         """
-        Calculate CCD coefficients for given order.
+        与えられた次数のCCD係数を計算
         
         Args:
-            order: Order of accuracy
+            order: 精度の次数
             
         Returns:
-            Dictionary of coefficients
+            係数の辞書
         """
         if order == 6:
             return {
@@ -53,114 +55,129 @@ class CombinedCompactDifference(CompactDifferenceBase):
     def build_coefficient_matrices(self, 
                                  direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
-        Build CCD coefficient matrices.
+        CCD係数行列の構築
         
         Args:
-            direction: Direction for which to build matrices
+            direction: 行列を構築する方向
             
         Returns:
-            Tuple of (lhs_matrix, rhs_matrix)
+            (左辺行列, 右辺行列)のタプル
         """
         dx = self.grid_manager.get_grid_spacing(direction)
         n_points = self.grid_manager.get_grid_points(direction)
         
-        # Get coefficients
+        # 係数の取得
         a1, b1, c1 = (self.coefficients[k] for k in ['a1', 'b1', 'c1'])
         a2, b2, c2 = (self.coefficients[k] for k in ['a2', 'b2', 'c2'])
         
-        # Initialize matrices
-        lhs = jnp.zeros((2*n_points, 2*n_points))
-        rhs = jnp.zeros((2*n_points, n_points))
+        # ゼロ行列の初期化
+        lhs = jnp.zeros((2*n_points, 2*n_points), dtype=jnp.float64)
+        rhs = jnp.zeros((2*n_points, n_points), dtype=jnp.float64)
         
-        # Build interior stencils
+        # 内部ステンシルの構築
+        def safe_set(mat, row, col, value):
+            """
+            安全な行列要素設定のヘルパー関数
+            
+            スカラー値を配列の特定の位置に安全に設定する
+            """
+            if 0 <= row < mat.shape[0] and 0 <= col < mat.shape[1]:
+                value_scalar = jnp.array(value, dtype=mat.dtype)
+                return mat.at[row, col].set(value_scalar)
+            return mat
+        
         for i in range(1, n_points-1):
-            # First derivative equation
-            lhs = lhs.at[2*i, 2*i].set(1.0)
-            lhs = lhs.at[2*i, 2*(i-1)].set(b1)
-            lhs = lhs.at[2*i, 2*(i+1)].set(b1)
-            lhs = lhs.at[2*i, 2*(i-1)+1].set(c1/dx)
-            lhs = lhs.at[2*i, 2*(i+1)+1].set(-c1/dx)
+            # 一階微分方程式
+            lhs = safe_set(lhs, 2*i, 2*i, 1.0)
+            lhs = safe_set(lhs, 2*i, 2*(i-1), b1)
+            lhs = safe_set(lhs, 2*i, 2*(i+1), b1)
             
-            rhs = rhs.at[2*i, i+1].set(a1/(2*dx))
-            rhs = rhs.at[2*i, i-1].set(-a1/(2*dx))
+            # 境界項の慎重な処理
+            lhs = safe_set(lhs, 2*i, 2*(i-1)+1, c1/dx)
+            lhs = safe_set(lhs, 2*i, 2*(i+1)+1, -c1/dx)
             
-            # Second derivative equation
-            lhs = lhs.at[2*i+1, 2*i+1].set(1.0)
-            lhs = lhs.at[2*i+1, 2*(i-1)+1].set(c2)
-            lhs = lhs.at[2*i+1, 2*(i+1)+1].set(c2)
-            lhs = lhs.at[2*i+1, 2*(i-1)].set(b2/dx)
-            lhs = lhs.at[2*i+1, 2*(i+1)].set(-b2/dx)
+            rhs = safe_set(rhs, 2*i, i-1, -a1/(2*dx))
+            rhs = safe_set(rhs, 2*i, i+1, a1/(2*dx))
             
-            rhs = rhs.at[2*i+1, i-1].set(a2/dx**2)
-            rhs = rhs.at[2*i+1, i].set(-2*a2/dx**2)
-            rhs = rhs.at[2*i+1, i+1].set(a2/dx**2)
+            # 二階微分方程式
+            lhs = safe_set(lhs, 2*i+1, 2*i+1, 1.0)
+            lhs = safe_set(lhs, 2*i+1, 2*(i-1)+1, c2)
+            lhs = safe_set(lhs, 2*i+1, 2*(i+1)+1, c2)
             
+            # 境界項の慎重な処理
+            lhs = safe_set(lhs, 2*i+1, 2*(i-1), b2/dx)
+            lhs = safe_set(lhs, 2*i+1, 2*(i+1), -b2/dx)
+            
+            rhs = safe_set(rhs, 2*i+1, i-1, a2/dx**2)
+            rhs = safe_set(rhs, 2*i+1, i, -2*a2/dx**2)
+            rhs = safe_set(rhs, 2*i+1, i+1, a2/dx**2)
+        
         return lhs, rhs
+
+    def discretize(self,
+                  field: ArrayLike,
+                  direction: str) -> Tuple[ArrayLike, ArrayLike]:
+        """
+        CCDスキームを用いた空間微分の計算
+        
+        Args:
+            field: 微分する入力フィールド
+            direction: 微分の方向
+            
+        Returns:
+            (一階微分, 二階微分)のタプル
+        """
+        # 係数行列の構築
+        lhs, rhs = self.build_coefficient_matrices(direction)
+        
+        # システムの解法
+        derivatives = self.solve_system(lhs, rhs, field)
+        
+        # 境界条件の適用
+        derivatives = self.apply_boundary_conditions(field, derivatives, direction)
+        
+        return derivatives
 
     def solve_system(self,
                     lhs: ArrayLike,
                     rhs: ArrayLike,
                     field: ArrayLike) -> Tuple[ArrayLike, ArrayLike]:
         """
-        Solve the CCD system.
+        CCDシステムの解法
         
         Args:
-            lhs: Left-hand side matrix
-            rhs: Right-hand side matrix
-            field: Input field
+            lhs: 左辺行列
+            rhs: 右辺行列
+            field: 入力フィールド
             
         Returns:
-            Tuple of (first_derivative, second_derivative)
+            (一階微分, 二階微分)のタプル
         """
-        # Solve the system using JAX's linear solver
+        # JAXの線形ソルバーを使用してシステムを解く
         rhs_vector = jnp.matmul(rhs, field)
         solution = jax.scipy.linalg.solve(lhs, rhs_vector)
         
-        # Extract derivatives
+        # 微分の抽出
         n_points = len(field)
         first_deriv = solution[::2]
         second_deriv = solution[1::2]
         
         return first_deriv, second_deriv
         
-    def discretize(self,
-                  field: ArrayLike,
-                  direction: str) -> Tuple[ArrayLike, ArrayLike]:
-        """
-        Compute spatial derivatives using CCD scheme.
-        
-        Args:
-            field: Input field to differentiate
-            direction: Direction of differentiation
-            
-        Returns:
-            Tuple of (first_derivative, second_derivative)
-        """
-        # Build coefficient matrices
-        lhs, rhs = self.build_coefficient_matrices(direction)
-        
-        # Solve the system
-        derivatives = self.solve_system(lhs, rhs, field)
-        
-        # Apply boundary conditions
-        derivatives = self.apply_boundary_conditions(field, derivatives, direction)
-        
-        return derivatives
-        
     def apply_boundary_conditions(self,
                                 field: ArrayLike,
                                 derivatives: Tuple[ArrayLike, ArrayLike],
                                 direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
-        Apply boundary conditions for CCD scheme.
+        CCDスキームの境界条件の適用
         
         Args:
-            field: Input field
-            derivatives: Tuple of (first_derivative, second_derivative)
-            direction: Direction of differentiation
+            field: 入力フィールド
+            derivatives: (一階微分, 二階微分)のタプル
+            direction: 微分の方向
             
         Returns:
-            Tuple of corrected (first_derivative, second_derivative)
+            補正された(一階微分, 二階微分)のタプル
         """
         first_deriv, second_deriv = derivatives
         
@@ -168,20 +185,19 @@ class CombinedCompactDifference(CompactDifferenceBase):
             return derivatives
             
         bc = self.boundary_conditions[direction]
-        dx = self.grid_manager.get_grid_spacing(direction)
         
-        # Apply boundary conditions based on type
-        if bc.type == "dirichlet":
-            # Implementation for Dirichlet BCs
-            pass
-        elif bc.type == "neumann":
-            # Implementation for Neumann BCs
-            pass
-        elif bc.type == "periodic":
-            # Implementation for periodic BCs
+        # 境界条件の種類に応じた処理
+        if bc.type == BCType.PERIODIC:
+            # 周期境界条件
             first_deriv = first_deriv.at[0].set(first_deriv[-2])
             first_deriv = first_deriv.at[-1].set(first_deriv[1])
             second_deriv = second_deriv.at[0].set(second_deriv[-2])
             second_deriv = second_deriv.at[-1].set(second_deriv[1])
+        elif bc.type == BCType.DIRICHLET:
+            # Dirichlet境界条件のプレースホルダー
+            pass
+        elif bc.type == BCType.NEUMANN:
+            # Neumann境界条件のプレースホルダー
+            pass
             
         return first_deriv, second_deriv

@@ -1,4 +1,4 @@
-from typing import Tuple, Union, Literal, TypeVar, Protocol
+from typing import Tuple, Union, Literal, TypeVar, Protocol, Callable
 from dataclasses import dataclass
 from enum import Enum
 
