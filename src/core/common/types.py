@@ -1,7 +1,16 @@
-from typing import Tuple, Union, Literal, TypeVar, Protocol, Callable
+from typing import (
+    Tuple, 
+    Union, 
+    Literal, 
+    TypeVar, 
+    Protocol, 
+    Callable,  # Add Callable import
+    Optional
+)
 from dataclasses import dataclass
 from enum import Enum
 
+import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 # Type aliases

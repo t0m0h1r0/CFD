@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
+import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from ..common.types import BoundaryCondition
+from ..common.types import Grid, BoundaryCondition
 from ..common.grid import GridManager
 
 class SpatialDiscretizationBase(ABC):
@@ -54,61 +55,5 @@ class SpatialDiscretizationBase(ABC):
             
         Returns:
             Tuple of corrected (first_derivative, second_derivative)
-        """
-        pass
-
-class CompactDifferenceBase(SpatialDiscretizationBase):
-    """Base class for compact difference schemes."""
-    
-    def __init__(self,
-                 grid_manager: GridManager,
-                 boundary_conditions: Optional[dict[str, BoundaryCondition]] = None,
-                 coefficients: Optional[dict] = None):
-        """
-        Initialize compact difference scheme.
-        
-        Args:
-            grid_manager: Grid management object
-            boundary_conditions: Dictionary of boundary conditions
-            coefficients: Dictionary of difference coefficients
-        """
-        super().__init__(grid_manager, boundary_conditions)
-        self.coefficients = coefficients or {}
-        
-    def build_coefficient_matrices(self, 
-                                 direction: str) -> Tuple[ArrayLike, ArrayLike]:
-        """
-        Build coefficient matrices for the compact scheme.
-        
-        Args:
-            direction: Direction for which to build matrices
-            
-        Returns:
-            Tuple of (lhs_matrix, rhs_matrix)
-        """
-        dx = self.grid_manager.get_grid_spacing(direction)
-        n_points = self.grid_manager.get_grid_points(direction)
-        
-        # Initialize matrices
-        lhs = jnp.zeros((2*n_points, 2*n_points))
-        rhs = jnp.zeros((2*n_points, n_points))
-        
-        return lhs, rhs
-    
-    @abstractmethod
-    def solve_system(self,
-                    lhs: ArrayLike,
-                    rhs: ArrayLike,
-                    field: ArrayLike) -> Tuple[ArrayLike, ArrayLike]:
-        """
-        Solve the compact difference system.
-        
-        Args:
-            lhs: Left-hand side matrix
-            rhs: Right-hand side matrix
-            field: Input field
-            
-        Returns:
-            Tuple of (first_derivative, second_derivative)
         """
         pass
