@@ -74,42 +74,33 @@ class CombinedCompactDifference(CompactDifferenceBase):
         lhs = jnp.zeros((2*n_points, 2*n_points), dtype=jnp.float64)
         rhs = jnp.zeros((2*n_points, n_points), dtype=jnp.float64)
         
-        # 行列の更新を効率的に行うための関数
-        def update_matrices(lhs_update=None, rhs_update=None):
-            nonlocal lhs, rhs
-            if lhs_update is not None:
-                lhs = lhs_update
-            if rhs_update is not None:
-                rhs = rhs_update
-            return lhs, rhs
-        
-        # 内部ステンシルの構築
         def build_interior_stencil(lhs, rhs):
+            """内部ステンシルの構築"""
             for i in range(1, n_points-1):
                 # 一階微分方程式
-                lhs = lhs.at[2*i, 2*i].set(1.0)
-                lhs = lhs.at[2*i, 2*(i-1)].set(b1)
-                lhs = lhs.at[2*i, 2*(i+1)].set(b1)
+                lhs = lhs.at[2*i, 2*i].set(jnp.array(1.0, dtype=lhs.dtype))
+                lhs = lhs.at[2*i, 2*(i-1)].set(jnp.array(b1, dtype=lhs.dtype))
+                lhs = lhs.at[2*i, 2*(i+1)].set(jnp.array(b1, dtype=lhs.dtype))
                 
                 # 境界項の処理
-                lhs = lhs.at[2*i, 2*(i-1)+1].set(c1/dx)
-                lhs = lhs.at[2*i, 2*(i+1)+1].set(-c1/dx)
+                lhs = lhs.at[2*i, 2*(i-1)+1].set(jnp.array(c1/dx, dtype=lhs.dtype))
+                lhs = lhs.at[2*i, 2*(i+1)+1].set(jnp.array(-c1/dx, dtype=lhs.dtype))
                 
-                rhs = rhs.at[2*i, i-1].set(-a1/(2*dx))
-                rhs = rhs.at[2*i, i+1].set(a1/(2*dx))
+                rhs = rhs.at[2*i, i-1].set(jnp.array(-a1/(2*dx), dtype=rhs.dtype))
+                rhs = rhs.at[2*i, i+1].set(jnp.array(a1/(2*dx), dtype=rhs.dtype))
                 
                 # 二階微分方程式
-                lhs = lhs.at[2*i+1, 2*i+1].set(1.0)
-                lhs = lhs.at[2*i+1, 2*(i-1)+1].set(c2)
-                lhs = lhs.at[2*i+1, 2*(i+1)+1].set(c2)
+                lhs = lhs.at[2*i+1, 2*i+1].set(jnp.array(1.0, dtype=lhs.dtype))
+                lhs = lhs.at[2*i+1, 2*(i-1)+1].set(jnp.array(c2, dtype=lhs.dtype))
+                lhs = lhs.at[2*i+1, 2*(i+1)+1].set(jnp.array(c2, dtype=lhs.dtype))
                 
                 # 境界項の処理
-                lhs = lhs.at[2*i+1, 2*(i-1)].set(b2/dx)
-                lhs = lhs.at[2*i+1, 2*(i+1)].set(-b2/dx)
+                lhs = lhs.at[2*i+1, 2*(i-1)].set(jnp.array(b2/dx, dtype=lhs.dtype))
+                lhs = lhs.at[2*i+1, 2*(i+1)].set(jnp.array(-b2/dx, dtype=lhs.dtype))
                 
-                rhs = rhs.at[2*i+1, i-1].set(a2/dx**2)
-                rhs = rhs.at[2*i+1, i].set(-2*a2/dx**2)
-                rhs = rhs.at[2*i+1, i+1].set(a2/dx**2)
+                rhs = rhs.at[2*i+1, i-1].set(jnp.array(a2/dx**2, dtype=rhs.dtype))
+                rhs = rhs.at[2*i+1, i].set(jnp.array(-2*a2/dx**2, dtype=rhs.dtype))
+                rhs = rhs.at[2*i+1, i+1].set(jnp.array(a2/dx**2, dtype=rhs.dtype))
             
             return lhs, rhs
         
