@@ -54,8 +54,9 @@ class CombinedCompactDifference(CompactDifferenceBase):
         else:
             raise NotImplementedError(f"Order {order} not implemented")
             
-    def build_coefficient_matrices(self, 
-                                 direction: str) -> Tuple[ArrayLike, ArrayLike]:
+# src/core/spatial_discretization/operators/ccd.py の build_coefficient_matrices メソッドを修正
+
+    def build_coefficient_matrices(self, direction: str) -> Tuple[ArrayLike, ArrayLike]:
         """
         CCD係数行列を構築
         
@@ -65,40 +66,60 @@ class CombinedCompactDifference(CompactDifferenceBase):
         Returns:
             (左辺行列, 右辺行列) のタプル
         """
+        self.validate_direction(direction)
         dx = self.get_grid_spacing(direction)
         n_points = self.get_grid_points(direction)
         
         # 係数の取得
         a1, b1, c1 = (self.coefficients[k] for k in ['a1', 'b1', 'c1'])
         a2, b2, c2 = (self.coefficients[k] for k in ['a2', 'b2', 'c2'])
+
+        # インデックス配列の作成
+        i = jnp.arange(1, n_points-1)
         
-        # 行列の初期化
+        # 左辺行列の初期化
         lhs = jnp.zeros((2*n_points, 2*n_points))
+        
+        # 一階微分の方程式のブロック
+        diag_indices = jnp.stack([2*i, 2*i], axis=0)
+        lhs = lhs.at[diag_indices[0], diag_indices[1]].set(jnp.ones(n_points-2))
+        
+        left_indices = jnp.stack([2*i, 2*(i-1)], axis=0)
+        right_indices = jnp.stack([2*i, 2*(i+1)], axis=0)
+        lhs = lhs.at[left_indices[0], left_indices[1]].set(jnp.full(n_points-2, b1))
+        lhs = lhs.at[right_indices[0], right_indices[1]].set(jnp.full(n_points-2, b1))
+        
+        left_deriv_indices = jnp.stack([2*i, 2*(i-1)+1], axis=0)
+        right_deriv_indices = jnp.stack([2*i, 2*(i+1)+1], axis=0)
+        lhs = lhs.at[left_deriv_indices[0], left_deriv_indices[1]].set(jnp.full(n_points-2, c1/dx))
+        lhs = lhs.at[right_deriv_indices[0], right_deriv_indices[1]].set(jnp.full(n_points-2, -c1/dx))
+        
+        # 二階微分の方程式のブロック
+        diag_indices2 = jnp.stack([2*i+1, 2*i+1], axis=0)
+        lhs = lhs.at[diag_indices2[0], diag_indices2[1]].set(jnp.ones(n_points-2))
+        
+        left_indices2 = jnp.stack([2*i+1, 2*(i-1)+1], axis=0)
+        right_indices2 = jnp.stack([2*i+1, 2*(i+1)+1], axis=0)
+        lhs = lhs.at[left_indices2[0], left_indices2[1]].set(jnp.full(n_points-2, c2))
+        lhs = lhs.at[right_indices2[0], right_indices2[1]].set(jnp.full(n_points-2, c2))
+        
+        left_deriv_indices2 = jnp.stack([2*i+1, 2*(i-1)], axis=0)
+        right_deriv_indices2 = jnp.stack([2*i+1, 2*(i+1)], axis=0)
+        lhs = lhs.at[left_deriv_indices2[0], left_deriv_indices2[1]].set(jnp.full(n_points-2, b2/dx))
+        lhs = lhs.at[right_deriv_indices2[0], right_deriv_indices2[1]].set(jnp.full(n_points-2, -b2/dx))
+        
+        # 右辺行列の初期化と構築
         rhs = jnp.zeros((2*n_points, n_points))
         
-        # 内部点のステンシル構築
-        for i in range(1, n_points-1):
-            # 一階微分の方程式
-            lhs = lhs.at[2*i, 2*i].set(1.0)
-            lhs = lhs.at[2*i, 2*(i-1)].set(b1)
-            lhs = lhs.at[2*i, 2*(i+1)].set(b1)
-            lhs = lhs.at[2*i, 2*(i-1)+1].set(c1/dx)
-            lhs = lhs.at[2*i, 2*(i+1)+1].set(-c1/dx)
-            
-            rhs = rhs.at[2*i, i+1].set(a1/(2*dx))
-            rhs = rhs.at[2*i, i-1].set(-a1/(2*dx))
-            
-            # 二階微分の方程式
-            lhs = lhs.at[2*i+1, 2*i+1].set(1.0)
-            lhs = lhs.at[2*i+1, 2*(i-1)+1].set(c2)
-            lhs = lhs.at[2*i+1, 2*(i+1)+1].set(c2)
-            lhs = lhs.at[2*i+1, 2*(i-1)].set(b2/dx)
-            lhs = lhs.at[2*i+1, 2*(i+1)].set(-b2/dx)
-            
-            rhs = rhs.at[2*i+1, i-1].set(a2/dx**2)
-            rhs = rhs.at[2*i+1, i].set(-2*a2/dx**2)
-            rhs = rhs.at[2*i+1, i+1].set(a2/dx**2)
-            
+        # 一階微分の右辺
+        rhs = rhs.at[2*i, i+1].set(jnp.full(n_points-2, a1/(2*dx)))
+        rhs = rhs.at[2*i, i-1].set(jnp.full(n_points-2, -a1/(2*dx)))
+        
+        # 二階微分の右辺
+        rhs = rhs.at[2*i+1, i-1].set(jnp.full(n_points-2, a2/dx**2))
+        rhs = rhs.at[2*i+1, i].set(jnp.full(n_points-2, -2*a2/dx**2))
+        rhs = rhs.at[2*i+1, i+1].set(jnp.full(n_points-2, a2/dx**2))
+        
         return lhs, rhs
     
     @partial(jax.jit, static_argnums=(0,))
