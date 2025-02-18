@@ -1,3 +1,4 @@
+from typing import TypeVar, Generic
 from functools import partial
 
 import jax
@@ -11,6 +12,11 @@ from .base import (
     Derivative
 )
 
+def _euler_step(system_fn, t: float, y: State, dt: float) -> State:
+    """Helper function for Euler step that can be jitted."""
+    dy = system_fn(t, y)
+    return system_fn.apply_update(y, dy, dt)
+
 class ExplicitEuler(TimeIntegratorBase[State, Derivative]):
     """Implementation of explicit Euler method."""
     
@@ -23,7 +29,6 @@ class ExplicitEuler(TimeIntegratorBase[State, Derivative]):
         """
         super().__init__(config)
     
-    @partial(jax.jit, static_argnums=(0, 1))
     def step(self,
             system: ODESystem[State, Derivative],
             t: float,
@@ -41,11 +46,8 @@ class ExplicitEuler(TimeIntegratorBase[State, Derivative]):
         Returns:
             New state
         """
-        # Compute RHS
-        dy = system(t, y)
-        
-        # Update state
-        return system.apply_update(y, dy, dt)
+        # Use helper function to enable jit
+        return _euler_step(system, t, y, dt)
     
     @staticmethod
     def get_order() -> int:
@@ -69,7 +71,7 @@ class AdaptiveExplicitEuler(ExplicitEuler):
         Perform adaptive Euler step.
         
         Args:
-            system: ODE system to integrate
+            system: ODE system
             t: Current time
             y: Current state
             dt: Time step size
@@ -78,16 +80,12 @@ class AdaptiveExplicitEuler(ExplicitEuler):
             New state
         """
         # Compute full step
-        dy = system(t, y)
-        y_full = system.apply_update(y, dy, dt)
+        y_full = _euler_step(system, t, y, dt)
         
         # Compute two half steps
         dt_half = dt / 2
-        dy_half = system(t, y)
-        y_half = system.apply_update(y, dy_half, dt_half)
-        
-        dy_half2 = system(t + dt_half, y_half)
-        y_half2 = system.apply_update(y_half, dy_half2, dt_half)
+        y_half = _euler_step(system, t, y, dt_half)
+        y_half2 = _euler_step(system, t + dt_half, y_half, dt_half)
         
         # Estimate error
         error = jnp.linalg.norm(y_full - y_half2)

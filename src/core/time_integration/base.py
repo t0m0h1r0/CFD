@@ -2,7 +2,9 @@ from abc import ABC, abstractmethod
 from typing import Protocol, Callable, TypeVar, Generic, Tuple, Optional
 from dataclasses import dataclass
 
+import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 State = TypeVar('State')
 Derivative = TypeVar('Derivative')

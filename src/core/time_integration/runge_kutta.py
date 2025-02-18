@@ -1,3 +1,4 @@
+from typing import Tuple, Optional, List
 from dataclasses import dataclass
 from functools import partial
 
@@ -34,16 +35,8 @@ class ButcherTableau:
         return ButcherTableau(a=a, b=b, c=c, order=4)
     
     @staticmethod
-    def heun() -> 'ButcherTableau':
-        """Create Heun's method tableau (RK2)."""
-        a = jnp.array([[0., 0.], [1., 0.]])
-        b = jnp.array([0.5, 0.5])
-        c = jnp.array([0., 1.])
-        return ButcherTableau(a=a, b=b, c=c, order=2)
-    
-    @staticmethod
-    def fehlberg() -> 'ButcherTableau':
-        """Create Fehlberg RK4(5) tableau for error estimation."""
+    def fehlberg() -> Tuple['ButcherTableau', jnp.ndarray]:
+        """Create Fehlberg RK4(5) tableau with error estimator."""
         a = jnp.zeros((6, 6))
         a = a.at[1, 0].set(1/4)
         a = a.at[2, 0:2].set(jnp.array([3/32, 9/32]))
@@ -58,6 +51,42 @@ class ButcherTableau:
         
         return ButcherTableau(a=a, b=b4, c=c, order=4), b5
 
+def _rk_step(system_fn, tableau: ButcherTableau, t: float, y: State, dt: float) -> State:
+    """Helper function for Runge-Kutta step that can be jitted."""
+    # Initialize stage values
+    k = []
+    
+    # Compute stage values
+    for i in range(len(tableau.c)):
+        t_stage = t + tableau.c[i] * dt
+        y_stage = y
+        
+        # Add contributions from previous stages
+        for j in range(i):
+            if tableau.a[i, j] != 0:
+                dy = system_fn.apply_update(
+                    y,
+                    k[j],
+                    dt * tableau.a[i, j]
+                )
+                y_stage = dy
+        
+        # Compute stage derivative
+        k.append(system_fn(t_stage, y_stage))
+    
+    # Compute final update
+    y_new = y
+    for i in range(len(k)):
+        if tableau.b[i] != 0:
+            dy = system_fn.apply_update(
+                y,
+                k[i],
+                dt * tableau.b[i]
+            )
+            y_new = dy
+            
+    return y_new
+
 class RungeKutta(TimeIntegratorBase[State, Derivative]):
     """General Runge-Kutta implementation."""
     
@@ -69,13 +98,11 @@ class RungeKutta(TimeIntegratorBase[State, Derivative]):
         
         Args:
             config: Time integration configuration
-            tableau: Butcher tableau defining the method
+            tableau: Butcher tableau
         """
         super().__init__(config)
         self.tableau = tableau
-        self.stages = len(tableau.b)
     
-    @partial(jax.jit, static_argnums=(0, 1))
     def step(self,
             system: ODESystem[State, Derivative],
             t: float,
@@ -93,42 +120,7 @@ class RungeKutta(TimeIntegratorBase[State, Derivative]):
         Returns:
             New state
         """
-        # Initialize stage values
-        k = [None] * self.stages
-        
-        # Compute stage values
-        for i in range(self.stages):
-            # Compute stage time
-            t_stage = t + self.tableau.c[i] * dt
-            
-            # Initialize stage state
-            y_stage = y
-            
-            # Add contributions from previous stages
-            for j in range(i):
-                if self.tableau.a[i, j] != 0:
-                    dy = system.apply_update(
-                        y,
-                        k[j],
-                        dt * self.tableau.a[i, j]
-                    )
-                    y_stage = dy
-            
-            # Compute stage derivative
-            k[i] = system(t_stage, y_stage)
-        
-        # Compute final update
-        y_new = y
-        for i in range(self.stages):
-            if self.tableau.b[i] != 0:
-                dy = system.apply_update(
-                    y,
-                    k[i],
-                    dt * self.tableau.b[i]
-                )
-                y_new = dy
-                
-        return y_new
+        return _rk_step(system, self.tableau, t, y, dt)
     
     def get_order(self) -> int:
         """
@@ -151,27 +143,23 @@ class RK4(RungeKutta[State, Derivative]):
         """
         super().__init__(config, ButcherTableau.rk4())
 
-class AdaptiveRK(RungeKutta[State, Derivative]):
-    """Adaptive Runge-Kutta with error estimation."""
+class FehlbergRK45(RungeKutta[State, Derivative]):
+    """Fehlberg's adaptive RK4(5) method."""
     
     def __init__(self,
                  config: TimeIntegrationConfig,
-                 tableau: ButcherTableau,
-                 b_hat: jnp.ndarray,
                  atol: float = 1e-6,
                  rtol: float = 1e-3):
         """
-        Initialize adaptive RK integrator.
+        Initialize Fehlberg RK4(5) integrator.
         
         Args:
             config: Time integration configuration
-            tableau: Butcher tableau
-            b_hat: Weights for error estimation
             atol: Absolute tolerance
             rtol: Relative tolerance
         """
+        tableau, self.b_hat = ButcherTableau.fehlberg()
         super().__init__(config, tableau)
-        self.b_hat = b_hat
         self.atol = atol
         self.rtol = rtol
     
@@ -179,7 +167,7 @@ class AdaptiveRK(RungeKutta[State, Derivative]):
             system: ODESystem[State, Derivative],
             t: float,
             y: State,
-            dt: float) -> tuple[State, float]:
+            dt: float) -> State:
         """
         Perform adaptive RK step.
         
@@ -190,36 +178,23 @@ class AdaptiveRK(RungeKutta[State, Derivative]):
             dt: Time step size
             
         Returns:
-            Tuple of (new_state, error_estimate)
+            New state
         """
-        # Compute stage values as in base class
-        k = [None] * self.stages
-        for i in range(self.stages):
-            t_stage = t + self.tableau.c[i] * dt
-            y_stage = y
-            
-            for j in range(i):
-                if self.tableau.a[i, j] != 0:
-                    dy = system.apply_update(y, k[j], dt * self.tableau.a[i, j])
-                    y_stage = dy
-            
-            k[i] = system(t_stage, y_stage)
+        # Compute both solutions
+        y_low = _rk_step(system, self.tableau, t, y, dt)
         
-        # Compute solutions with both sets of weights
-        y_new = y
-        y_hat = y
-        
-        for i in range(self.stages):
-            if self.tableau.b[i] != 0:
-                dy = system.apply_update(y, k[i], dt * self.tableau.b[i])
-                y_new = dy
-            if self.b_hat[i] != 0:
-                dy = system.apply_update(y, k[i], dt * self.b_hat[i])
-                y_hat = dy
+        # For error estimation, create a tableau with b_hat
+        tableau_high = ButcherTableau(
+            a=self.tableau.a,
+            b=self.b_hat,
+            c=self.tableau.c,
+            order=self.tableau.order + 1
+        )
+        y_high = _rk_step(system, tableau_high, t, y, dt)
         
         # Compute error estimate
-        error = jnp.linalg.norm(y_new - y_hat)
-        scale = self.atol + jnp.linalg.norm(y_new) * self.rtol
+        error = jnp.linalg.norm(y_high - y_low)
+        scale = self.atol + jnp.linalg.norm(y_high) * self.rtol
         error_normalized = error / scale
         
         # Adjust time step if needed
@@ -231,17 +206,4 @@ class AdaptiveRK(RungeKutta[State, Derivative]):
             )
             return self.step(system, t, y, dt_new)
         
-        return y_new, error_normalized
-
-class FehlbergRK45(AdaptiveRK[State, Derivative]):
-    """Fehlberg's adaptive RK4(5) method."""
-    
-    def __init__(self, config: TimeIntegrationConfig):
-        """
-        Initialize Fehlberg RK4(5) integrator.
-        
-        Args:
-            config: Time integration configuration
-        """
-        tableau, b_hat = ButcherTableau.fehlberg()
-        super().__init__(config, tableau, b_hat)
+        return y_high
