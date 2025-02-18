@@ -164,33 +164,33 @@ class SpatialDiscretizationTestSuite:
         
         return relative_error, fig, passed
     
-    @classmethod
-    def test_func1(x, y):
+    @staticmethod
+    def test_func1(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
         """Test function 1: sin(πx)sin(πy)"""
         return jnp.sin(jnp.pi * x) * jnp.sin(jnp.pi * y)
     
-    @classmethod
-    def dx_test_func1(x, y):
+    @staticmethod
+    def dx_test_func1(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
         """Analytical x-derivative of test function 1"""
         return jnp.pi * jnp.cos(jnp.pi * x) * jnp.sin(jnp.pi * y)
     
-    @classmethod
-    def dy_test_func1(x, y):
+    @staticmethod
+    def dy_test_func1(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
         """Analytical y-derivative of test function 1"""
         return jnp.pi * jnp.sin(jnp.pi * x) * jnp.cos(jnp.pi * y)
     
-    @classmethod
-    def test_func2(x, y):
+    @staticmethod
+    def test_func2(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
         """Test function 2: exp(x)cos(y)"""
         return jnp.exp(x) * jnp.cos(y)
     
-    @classmethod
-    def dx_test_func2(x, y):
+    @staticmethod
+    def dx_test_func2(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
         """Analytical x-derivative of test function 2"""
         return jnp.exp(x) * jnp.cos(y)
     
-    @classmethod
-    def dy_test_func2(x, y):
+    @staticmethod
+    def dy_test_func2(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
         """Analytical y-derivative of test function 2"""
         return -jnp.exp(x) * jnp.sin(y)
     
