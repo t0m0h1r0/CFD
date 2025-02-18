@@ -40,7 +40,7 @@ class SpatialDiscretizationTestSuite:
         return GridManager(grid_config)
     
     @staticmethod
-    def create_meshgrid(grid_manager: GridManager, indexing: str = 'xy') -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def create_meshgrid(grid_manager: GridManager, indexing: str = 'ij') -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
         Create a meshgrid from grid manager
         
@@ -71,15 +71,24 @@ class SpatialDiscretizationTestSuite:
         test_func: Callable, 
         derivative_func: Callable, 
         direction: str
-    ) -> Tuple[float, plt.Figure]:
+    ) -> Tuple[float, plt.Figure, bool]:
         """
         Test the accuracy of spatial derivatives with enhanced debugging
+        
+        Args:
+            discretization: Spatial discretization scheme
+            test_func: Function to differentiate
+            derivative_func: Analytical derivative function
+            direction: Differentiation direction
+        
+        Returns:
+            Tuple of (relative error, visualization figure, pass/fail flag)
         """
         # Create grid manager with exact grid configuration
         grid_manager = cls.create_test_grid_manager()
         
-        # Create meshgrid with 'xy' indexing to match matplotlib's convention
-        X, Y = cls.create_meshgrid(grid_manager, indexing='xy')
+        # Create meshgrid with 'ij' indexing
+        X, Y = cls.create_meshgrid(grid_manager, indexing='ij')
         
         # Verify grid properties
         print("\nGrid Diagnostic Information:")
@@ -112,17 +121,28 @@ class SpatialDiscretizationTestSuite:
         print(f"Analytical derivative min: {analytical_deriv.min()}")
         print(f"Analytical derivative max: {analytical_deriv.max()}")
         
-        # Compute relative error with robust handling
+        # Robust error calculation
         abs_diff = jnp.abs(numerical_deriv - analytical_deriv)
         max_diff = jnp.max(abs_diff)
         mean_diff = jnp.mean(abs_diff)
+        rms_diff = jnp.sqrt(jnp.mean(abs_diff**2))
+        
+        # Normalize by the magnitude of the analytical derivative
+        norm_factor = jnp.max(jnp.abs(analytical_deriv)) + 1e-10
+        relative_error = max_diff / norm_factor
         
         print("\nError Diagnostic Information:")
         print(f"Maximum absolute difference: {max_diff}")
         print(f"Mean absolute difference: {mean_diff}")
+        print(f"RMS difference: {rms_diff}")
+        print(f"Normalized maximum difference: {relative_error}")
         
-        # Compute relative error
-        relative_error = max_diff / (jnp.max(jnp.abs(analytical_deriv)) + 1e-10)
+        # More stringent error criteria
+        passed = (
+            relative_error < 1e-3 and  # Relative error
+            mean_diff / norm_factor < 1e-3 and  # Mean relative error
+            rms_diff / norm_factor < 1e-3  # RMS relative error
+        )
         
         # Visualization
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
@@ -142,35 +162,43 @@ class SpatialDiscretizationTestSuite:
         plt.suptitle(f'Derivative Test - {direction.upper()}')
         plt.tight_layout()
         
-        return relative_error, fig
+        return relative_error, fig, passed
+    
+    @classmethod
+    def test_func1(x, y):
+        """Test function 1: sin(πx)sin(πy)"""
+        return jnp.sin(jnp.pi * x) * jnp.sin(jnp.pi * y)
+    
+    @classmethod
+    def dx_test_func1(x, y):
+        """Analytical x-derivative of test function 1"""
+        return jnp.pi * jnp.cos(jnp.pi * x) * jnp.sin(jnp.pi * y)
+    
+    @classmethod
+    def dy_test_func1(x, y):
+        """Analytical y-derivative of test function 1"""
+        return jnp.pi * jnp.sin(jnp.pi * x) * jnp.cos(jnp.pi * y)
+    
+    @classmethod
+    def test_func2(x, y):
+        """Test function 2: exp(x)cos(y)"""
+        return jnp.exp(x) * jnp.cos(y)
+    
+    @classmethod
+    def dx_test_func2(x, y):
+        """Analytical x-derivative of test function 2"""
+        return jnp.exp(x) * jnp.cos(y)
+    
+    @classmethod
+    def dy_test_func2(x, y):
+        """Analytical y-derivative of test function 2"""
+        return -jnp.exp(x) * jnp.sin(y)
     
     @classmethod
     def run_tests(cls):
         """Run comprehensive spatial discretization tests"""
-        # Detailed test functions with debug output
-        def test_func1(x, y):
-            """Test function 1: sin(πx)sin(πy)"""
-            return jnp.sin(jnp.pi * x) * jnp.sin(jnp.pi * y)
-        
-        def dx_test_func1(x, y):
-            """Analytical x-derivative of test function 1"""
-            return jnp.pi * jnp.cos(jnp.pi * x) * jnp.sin(jnp.pi * y)
-        
-        def dy_test_func1(x, y):
-            """Analytical y-derivative of test function 1"""
-            return jnp.pi * jnp.sin(jnp.pi * x) * jnp.cos(jnp.pi * y)
-        
-        def test_func2(x, y):
-            """Test function 2: exp(x)cos(y)"""
-            return jnp.exp(x) * jnp.cos(y)
-        
-        def dx_test_func2(x, y):
-            """Analytical x-derivative of test function 2"""
-            return jnp.exp(x) * jnp.cos(y)
-        
-        def dy_test_func2(x, y):
-            """Analytical y-derivative of test function 2"""
-            return -jnp.exp(x) * jnp.sin(y)
+        # Create output directory
+        os.makedirs('test_results/spatial_discretization', exist_ok=True)
         
         # Discretization schemes to test
         discretization_schemes = [
@@ -197,10 +225,10 @@ class SpatialDiscretizationTestSuite:
             
             # Run tests for different test functions and directions
             test_cases = [
-                ("Func1 X-Derivative", test_func1, dx_test_func1, 'x'),
-                ("Func1 Y-Derivative", test_func1, dy_test_func1, 'y'),
-                ("Func2 X-Derivative", test_func2, dx_test_func2, 'x'),
-                ("Func2 Y-Derivative", test_func2, dy_test_func2, 'y')
+                ("Func1 X-Derivative", cls.test_func1, cls.dx_test_func1, 'x'),
+                ("Func1 Y-Derivative", cls.test_func1, cls.dy_test_func1, 'y'),
+                ("Func2 X-Derivative", cls.test_func2, cls.dx_test_func2, 'x'),
+                ("Func2 Y-Derivative", cls.test_func2, cls.dy_test_func2, 'y')
             ]
             
             overall_test_results[scheme_name] = {}
@@ -209,12 +237,11 @@ class SpatialDiscretizationTestSuite:
                 print(f"\n--- Running Test: {scheme_name} - {name} ---")
                 
                 # Run test
-                error, fig = cls.test_derivative_accuracy(
+                error, fig, passed = cls.test_derivative_accuracy(
                     discretization, func, deriv_func, direction
                 )
                 
                 # Save figure
-                os.makedirs('test_results/spatial_discretization', exist_ok=True)
                 scheme_safe_name = scheme_name.lower().replace(" ", "_")
                 fig_filename = f'test_results/spatial_discretization/{scheme_safe_name}_{name.lower().replace(" ", "_")}.png'
                 fig.savefig(fig_filename)
@@ -223,7 +250,7 @@ class SpatialDiscretizationTestSuite:
                 # Store result
                 overall_test_results[scheme_name][name] = {
                     'error': float(error),
-                    'passed': error < 1e-4  # Adjust tolerance as needed
+                    'passed': passed
                 }
             
             # Print results for this scheme
