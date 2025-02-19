@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Dict, Union, Callable
+from typing import Optional, Tuple, Dict, Union
 from functools import partial
 
 import jax
@@ -48,57 +48,48 @@ class SORSolver(LinearSolverBase):
         """
         # 初期値設定
         x = x0 if x0 is not None else jnp.zeros_like(b)
-        history = self.create_history_dict()
-        
-        # 対角成分と対角成分以外の成分を抽出
         diag = jnp.diag(operator)
         
-        def sor_step(carry, _):
-            x, iteration, residual_norm = carry
-            
-            # SOR法による更新
+        # 初期残差の計算
+        def body_fun(state):
+            x, iteration = state
             x_new = x.copy()
-            for i in range(len(x)):
-                # 残差の計算
+            
+            for i in range(len(x_new)):
                 r_i = b[i] - operator[i] @ x_new
-                
-                # SOR更新
                 x_new = x_new.at[i].set(
                     x_new[i] + self.omega * r_i / diag[i]
                 )
             
-            # 残差の計算
-            residual = b - operator @ x_new
-            new_residual_norm = jnp.linalg.norm(residual)
-            
-            return (x_new, iteration + 1, new_residual_norm), (x_new, new_residual_norm)
+            return (x_new, iteration + 1)
         
-        # スキャンを使用した反復計算
-        init_state = (x, 0, jnp.linalg.norm(b - operator @ x))
-        (x, n_iter, residuals), (solutions, individual_residuals) = jax.lax.scan(
-            sor_step, init_state, None, length=self.config.max_iterations
-        )
-        
-        # スカラーと配列の両方に対応
-        final_residual = (
-            float(residuals[-1]) if residuals.ndim > 0 else float(residuals)
-        )
-        
-        # 収束履歴の更新
-        history.update({
-            'converged': final_residual < self.config.tolerance,
-            'iterations': int(n_iter),
-            'final_residual': final_residual
-        })
-        
-        # 履歴記録が有効な場合
-        if self.config.record_history:
-            history['residual_history'] = (
-                individual_residuals if individual_residuals.ndim > 0 
-                else jnp.array([individual_residuals])
+        def cond_fun(state):
+            x, iteration = state
+            residual = b - operator @ x
+            residual_norm = jnp.linalg.norm(residual)
+            return jnp.logical_and(
+                iteration < self.config.max_iterations,
+                residual_norm >= self.config.tolerance
             )
         
-        return x, history
+        # 反復計算
+        final_x, final_iteration = jax.lax.while_loop(
+            cond_fun, 
+            body_fun, 
+            (x, 0)
+        )
+        
+        # 最終残差の計算
+        final_residual = jnp.linalg.norm(b - operator @ final_x)
+        
+        # 結果の辞書を構築
+        history = {
+            'converged': final_residual < self.config.tolerance,
+            'iterations': final_iteration,
+            'final_residual': final_residual
+        }
+        
+        return final_x, history
     
     def optimize_relaxation_parameter(
         self, 
@@ -121,20 +112,20 @@ class SORSolver(LinearSolverBase):
         Returns:
             最適な緩和パラメータ
         """
-        def test_omega(omega):
+        def test_omega(omega: float):
             solver = SORSolver(
-                omega=float(omega),
                 config=LinearSolverConfig(
                     max_iterations=self.config.max_iterations,
                     tolerance=self.config.tolerance
-                )
+                ),
+                omega=omega
             )
             _, history = solver.solve(operator, b, x0)
             return history['iterations']
         
         # 異なるomegaでテスト
         omegas = jnp.linspace(omega_range[0], omega_range[1], n_points)
-        iterations = jnp.array([test_omega(omega) for omega in omegas])
+        iterations = jnp.array([test_omega(float(omega)) for omega in omegas])
         
         # 最小反復回数のomegaを返す
         return float(omegas[jnp.argmin(iterations)])
