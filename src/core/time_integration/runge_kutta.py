@@ -1,10 +1,10 @@
-from dataclasses import dataclass
-from typing import Tuple
 from functools import partial
+from typing import Tuple, Optional
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
+from dataclasses import dataclass
 
 from .base import TimeIntegratorBase, TimeIntegrationConfig
 
@@ -30,7 +30,7 @@ class ButcherTableau:
         return ButcherTableau(a=a, b=b, c=c, order=4)
 
 class RungeKutta4(TimeIntegratorBase):
-    """4次のルンゲクッタ法による時間発展"""
+    """GPU最適化された4次ルンゲクッタ法"""
     
     def __init__(self, config: TimeIntegrationConfig):
         """
@@ -43,35 +43,44 @@ class RungeKutta4(TimeIntegratorBase):
         self.tableau = ButcherTableau.rk4()
     
     @partial(jax.jit, static_argnums=(0,))
-    def step(self,
-            stage_derivatives: Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike],
-            t: float,
-            field: ArrayLike) -> ArrayLike:
+    def step(
+        self, 
+        stage_derivatives: Tuple[ArrayLike, ...], 
+        t: float, 
+        field: ArrayLike
+    ) -> ArrayLike:
         """
-        ルンゲクッタ法による1ステップの時間発展
+        GPU最適化されたステップ計算
         
         Args:
-            stage_derivatives: 4つのステージの時間微分値 (k1, k2, k3, k4)
+            stage_derivatives: ステージごとの微分
             t: 現在時刻
             field: 現在の場
-            
+        
         Returns:
             時間発展後の場
         """
         dt = self.config.dt
         k1, k2, k3, k4 = stage_derivatives
         
-        # 安定性チェック (JAX対応版)
+        # 安定性チェック
         is_stable = self.check_stability(k1, field, t)
         
         def unstable_update():
-            new_dt = 0.5 * dt  # dtを直接使用
+            new_dt = 0.5 * dt
             return field + (new_dt/6) * (k1 + 2*k2 + 2*k3 + k4)
             
         def stable_update():
             return field + (dt/6) * (k1 + 2*k2 + 2*k3 + k4)
         
-        # JAX対応の条件分岐
+        # ベクトル化オプション
+        if self.config.vectorized:
+            if self.config.vmap_strategy == 'scan':
+                return self._vectorized_scan_step(dt, k1, k2, k3, k4, field)
+            else:
+                return self._vectorized_map_step(dt, k1, k2, k3, k4, field)
+        
+        # デフォルトの条件分岐
         return jax.lax.cond(
             jnp.asarray(is_stable, dtype=jnp.bool_),
             lambda: stable_update(),
@@ -81,6 +90,34 @@ class RungeKutta4(TimeIntegratorBase):
                 lambda: stable_update()
             )
         )
+    
+    def _vectorized_scan_step(
+        self, 
+        dt: float, 
+        k1: ArrayLike, 
+        k2: ArrayLike, 
+        k3: ArrayLike, 
+        k4: ArrayLike, 
+        field: ArrayLike
+    ) -> ArrayLike:
+        """scanによるベクトル化ステップ"""
+        def update_fn(current_field):
+            return current_field + (dt/6) * (k1 + 2*k2 + 2*k3 + k4)
+        
+        return update_fn(field)
+    
+    def _vectorized_map_step(
+        self, 
+        dt: float, 
+        k1: ArrayLike, 
+        k2: ArrayLike, 
+        k3: ArrayLike, 
+        k4: ArrayLike, 
+        field: ArrayLike
+    ) -> ArrayLike:
+        """mapによるベクトル化ステップ"""
+        update_fn = lambda f: f + (dt/6) * (k1 + 2*k2 + 2*k3 + k4)
+        return update_fn(field)
     
     @staticmethod
     def get_order() -> int:

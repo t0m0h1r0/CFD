@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Union, Callable, Tuple, Optional
 
 import jax
 import jax.numpy as jnp
@@ -7,21 +8,26 @@ from jax.typing import ArrayLike
 
 @dataclass
 class TimeIntegrationConfig:
-    """時間発展の設定"""
-    dt: float  # 時間ステップ幅
-    check_stability: bool = True  # 安定性チェックを行うか
-    adaptive_dt: bool = False  # 適応的な時間ステップ制御を行うか
-    safety_factor: float = 0.9  # 安定性のための安全係数
+    """時間発展の設定 - GPU最適化版"""
+    dt: float
+    check_stability: bool = True
+    adaptive_dt: bool = False
+    safety_factor: float = 0.9
+    vectorized: bool = True  # ベクトル化フラグ追加
+    vmap_strategy: str = 'scan'  # scan or map
     
-    def validate(self) -> None:
-        """設定の妥当性確認"""
+    def validate(self):
+        """設定の拡張バリデーション"""
         if self.dt <= 0:
             raise ValueError(f"無効な時間ステップ幅: {self.dt}")
         if not (0 < self.safety_factor < 1):
             raise ValueError(f"無効な安全係数: {self.safety_factor}")
+        
+        if self.vmap_strategy not in ['scan', 'map']:
+            raise ValueError("Invalid vmap_strategy. Choose 'scan' or 'map'")
 
 class TimeIntegratorBase(ABC):
-    """時間発展スキームの基底クラス"""
+    """GPU最適化された時間発展スキーム基底クラス"""
     
     def __init__(self, config: TimeIntegrationConfig):
         """
@@ -75,6 +81,28 @@ class TimeIntegratorBase(ABC):
         
         # JAX対応のため、booleanではなくfloat32で返す
         return jnp.array(stability_number <= self.config.safety_factor, dtype=jnp.float32)
+    
+    @staticmethod
+    def vectorize_step(
+        integrator: Callable, 
+        batch_dims: Union[int, Tuple[int, ...]] = 0
+    ):
+        """ベクトル化のためのラッパー"""
+        return jax.vmap(integrator, in_axes=batch_dims, out_axes=batch_dims)
+    
+    @staticmethod
+    def scan_vectorize_step(
+        integrator: Callable, 
+        batch_initial_state: ArrayLike,
+        time_steps: ArrayLike
+    ):
+        """scanによるベクトル化"""
+        def scan_step(state, time_step):
+            # 時間発展のための関数を適切に定義
+            next_state = integrator(state, time_step)
+            return next_state, next_state
+        
+        return jax.lax.scan(scan_step, batch_initial_state, time_steps)
     
     @staticmethod
     def get_order() -> int:
