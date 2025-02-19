@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple, Callable
+from dataclasses import dataclass
 
+import jax
+import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 class LinearSolverBase(ABC):
