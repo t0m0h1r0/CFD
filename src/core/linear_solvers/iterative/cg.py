@@ -8,81 +8,80 @@ from jax.typing import ArrayLike
 from ..base import IterativeSolverBase
 
 class ConjugateGradient(IterativeSolverBase):
-    """Matrix-free実装の共役勾配法"""
+    """Implementation of the Conjugate Gradient method."""
     
     def __init__(self,
                  max_iterations: int = 1000,
                  tolerance: float = 1e-6,
-                 record_history: bool = False):
+                 record_history: bool = False,
+                 preconditioner: Optional[Callable] = None):
         """
-        CG法の初期化
+        Initialize CG solver.
         
         Args:
-            max_iterations: 最大反復回数
-            tolerance: 収束判定閾値
-            record_history: 収束履歴を記録するかどうか
+            max_iterations: Maximum number of iterations
+            tolerance: Convergence tolerance
+            record_history: Whether to record convergence history
+            preconditioner: Preconditioner function (optional)
         """
         super().__init__(max_iterations, tolerance, record_history)
+        self.preconditioner = preconditioner or (lambda x: x)
         
-    @partial(jax.jit, static_argnums=(0,))
+    @partial(jax.jit, static_argnums=(0,1))
     def solve(self,
              operator: Callable,
              b: ArrayLike,
-             x0: Optional[ArrayLike] = None,
-             preconditioner: Optional[Callable] = None) -> Tuple[ArrayLike, dict]:
+             x0: Optional[ArrayLike] = None) -> Tuple[ArrayLike, dict]:
         """
-        線形システムAx = bをCG法で解く
+        Solve the linear system Ax = b using CG method.
         
         Args:
-            operator: 行列ベクトル積を計算する関数 (Ax)
-            b: 右辺ベクトル
-            x0: 初期推定値 (オプション)
-            preconditioner: プリコンディショナ関数 (オプション)
+            operator: Function that implements the matrix-vector product
+            b: Right hand side vector
+            x0: Initial guess (optional)
             
         Returns:
-            Tuple (解ベクトル, 収束情報)
+            Tuple of (solution, convergence_info)
         """
-        # 初期値の設定
+        # Initialize solution and history
         x = x0 if x0 is not None else jnp.zeros_like(b)
         history = self.initialize_history()
         
-        # プリコンディショナの設定
-        M = preconditioner if preconditioner is not None else lambda x: x
-        
-        # 初期残差の計算
+        # Initial residual and search direction
         r = b - operator(x)
-        z = M(r)  # プリコンディショニングされた残差
+        z = self.preconditioner(r)
         p = z
         rz_old = jnp.sum(r * z)
         
+        # Define the CG iteration step
         def cg_step(carry, _):
             x, r, p, rz_old = carry
             
-            # 探索方向に対する行列ベクトル積
+            # Matrix-vector product
             Ap = operator(p)
-            alpha = rz_old / (jnp.sum(p * Ap) + 1e-10)
+            alpha = rz_old / jnp.sum(p * Ap)
             
-            # 解と残差の更新
+            # Update solution and residual
             x_new = x + alpha * p
             r_new = r - alpha * Ap
             
-            # プリコンディショニングと内積の計算
-            z_new = M(r_new)
+            # Apply preconditioner
+            z_new = self.preconditioner(r_new)
             rz_new = jnp.sum(r_new * z_new)
             
-            # 探索方向の更新
-            beta = rz_new / (rz_old + 1e-10)
+            # Update search direction
+            beta = rz_new / rz_old
             p_new = z_new + beta * p
             
             return (x_new, r_new, p_new, rz_new), jnp.sqrt(rz_new)
             
-        # 反復計算の実行
+        # Run the iteration with jax.lax.scan
         init_carry = (x, r, p, rz_old)
         (x, r, p, rz), residual_norms = jax.lax.scan(
             cg_step, init_carry, None, length=self.max_iterations
         )
         
-        # 収束判定と履歴の更新
+        # Check convergence and update history
         converged = self.check_convergence(residual_norms[-1], self.max_iterations)
         history = self.update_history(
             history, residual_norms[-1], self.max_iterations, converged
@@ -92,3 +91,89 @@ class ConjugateGradient(IterativeSolverBase):
             history['residual_norms'] = residual_norms
             
         return x, history
+        
+    @partial(jax.jit, static_argnums=(0,))
+    def solve_jit(self,
+                 operator: Callable,
+                 b: ArrayLike,
+                 x0: Optional[ArrayLike] = None) -> Tuple[ArrayLike, dict]:
+        """
+        JIT-compiled version of solve method.
+        
+        Args:
+            operator: Function that implements the matrix-vector product
+            b: Right hand side vector
+            x0: Initial guess (optional)
+            
+        Returns:
+            Tuple of (solution, convergence_info)
+        """
+        return self.solve(operator, b, x0)
+    
+    def precondition(self,
+                    preconditioner: Callable) -> 'ConjugateGradient':
+        """
+        Set the preconditioner for the CG method.
+        
+        Args:
+            preconditioner: Preconditioner function
+            
+        Returns:
+            Self with updated preconditioner
+        """
+        self.preconditioner = preconditioner
+        return self
+
+class PreconditionedCG(ConjugateGradient):
+    """Preconditioned Conjugate Gradient with common preconditioners."""
+    
+    @staticmethod
+    def jacobi_preconditioner(diagonal: ArrayLike) -> Callable:
+        """
+        Create Jacobi (diagonal) preconditioner.
+        
+        Args:
+            diagonal: Diagonal elements of the matrix
+            
+        Returns:
+            Preconditioner function
+        """
+        def precond(x):
+            return x / diagonal
+        return precond
+    
+    @staticmethod
+    def ssor_preconditioner(
+        operator: Callable,
+        omega: float = 1.0
+    ) -> Callable:
+        """
+        Create Symmetric SOR preconditioner.
+        
+        Args:
+            operator: Original matrix operator
+            omega: Relaxation parameter
+            
+        Returns:
+            Preconditioner function
+        """
+        def precond(x):
+            # Forward sweep
+            y = jnp.zeros_like(x)
+            for i in range(len(x)):
+                y = y.at[i].set(
+                    (x[i] - jnp.sum(operator(y))) / operator(jnp.eye(len(x))[i])[i]
+                )
+            y = omega * y
+            
+            # Backward sweep
+            z = jnp.zeros_like(x)
+            for i in reversed(range(len(x))):
+                z = z.at[i].set(
+                    (x[i] - jnp.sum(operator(z))) / operator(jnp.eye(len(x))[i])[i]
+                )
+            z = omega * z
+            
+            return y + z - omega * x
+            
+        return precond

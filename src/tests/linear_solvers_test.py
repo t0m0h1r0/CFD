@@ -1,296 +1,191 @@
 import os
-from typing import Tuple, Optional, Dict, Union
-from dataclasses import dataclass
+import unittest
+from typing import Dict, Optional, Callable, Tuple
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.ticker import LogFormatter
 
-from src.core.spatial_discretization.base import SpatialDiscretizationBase
-from src.core.spatial_discretization.operators.ccd import CombinedCompactDifference
 from src.core.linear_solvers.base import LinearSolverBase
 from src.core.linear_solvers.iterative.cg import ConjugateGradient
 from src.core.linear_solvers.iterative.sor import SORSolver
-from src.core.common.grid import GridManager, GridConfig
-from src.core.common.types import GridType, BoundaryCondition, BCType
 
-@dataclass
-class PoissonTest:
-    """テストケース1: 標準的なポアソン方程式: -∇²u = f"""
+class LinearSolversTestSuite:
+    """Test suite for linear solvers"""
     
-    def exact_solution(self, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """厳密解: u(x,y) = sin(πx)sin(πy)"""
-        return jnp.sin(jnp.pi * x) * jnp.sin(jnp.pi * y)
+    @staticmethod
+    def generate_test_matrix(n: int, condition_number: float = 10.0) -> jnp.ndarray:
+        """
+        Generate a symmetric positive definite matrix with a specified condition number
+        
+        Args:
+            n: Size of the matrix
+            condition_number: Target condition number
+        
+        Returns:
+            Symmetric positive definite matrix
+        """
+        # Create random key
+        key = jax.random.PRNGKey(0)
+        
+        # Generate random symmetric matrix
+        key, subkey = jax.random.split(key)
+        A_rand = jax.random.normal(subkey, (n, n))
+        A = A_rand @ A_rand.T
+        
+        # Compute eigenvalues
+        evals, evecs = jnp.linalg.eigh(A)
+        
+        # Modify eigenvalues to achieve desired condition number
+        min_eval = 1.0
+        max_eval = condition_number
+        modified_evals = jnp.linspace(min_eval, max_eval, n)
+        
+        # Reconstruct matrix with modified eigenvalues
+        return evecs @ jnp.diag(modified_evals) @ evecs.T
     
-    def source_term(self, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """ソース項の計算 f = -∇²u"""
-        return 2 * jnp.pi**2 * jnp.sin(jnp.pi * x) * jnp.sin(jnp.pi * y)
-    
-    def boundary_conditions(self) -> Dict[str, BoundaryCondition]:
-        """境界条件の定義"""
-        return {
-            'left': BoundaryCondition(
-                type=BCType.DIRICHLET,
-                value=0.0,
-                location='left'
-            ),
-            'right': BoundaryCondition(
-                type=BCType.DIRICHLET,
-                value=0.0,
-                location='right'
-            ),
-            'bottom': BoundaryCondition(
-                type=BCType.DIRICHLET,
-                value=0.0,
-                location='bottom'
-            ),
-            'top': BoundaryCondition(
-                type=BCType.DIRICHLET,
-                value=0.0,
-                location='top'
-            )
+    @classmethod
+    def solve_linear_system(
+        cls, 
+        solver_class: type,
+        matrix_size: int = 100,
+        condition_number: float = 10.0,
+        max_iterations: int = 1000,
+        tolerance: float = 1e-6
+    ) -> Tuple[dict, plt.Figure]:
+        """
+        Test a linear solver on a generated system
+        
+        Args:
+            solver_class: Linear solver class to test
+            matrix_size: Size of the test matrix
+            condition_number: Condition number of the matrix
+            max_iterations: Maximum solver iterations
+            tolerance: Convergence tolerance
+        
+        Returns:
+            Tuple of (test results, convergence plot)
+        """
+        # Generate test matrix
+        A = cls.generate_test_matrix(matrix_size, condition_number)
+        
+        # Generate true solution and right-hand side
+        key = jax.random.PRNGKey(1)
+        x_true = jax.random.normal(key, (matrix_size,))
+        b = A @ x_true
+        
+        # Define matrix-vector product operator
+        @jax.jit
+        def operator(x: jnp.ndarray) -> jnp.ndarray:
+            return A @ x
+        
+        # Create solver
+        solver = solver_class(
+            max_iterations=max_iterations, 
+            tolerance=tolerance
+        )
+        
+        # Initial guess
+        x0 = jnp.zeros_like(b)
+        
+        # Solve system
+        x_solved, history = solver.solve(operator, b, x0)
+        
+        # Compute error metrics
+        residual = jnp.linalg.norm(b - A @ x_solved)
+        relative_error = residual / jnp.linalg.norm(b)
+        solution_error = jnp.linalg.norm(x_true - x_solved)
+        
+        # Convergence plot
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Plot residual history
+        if 'residual_norms' in history:
+            ax.semilogy(history['residual_norms'], '-o')
+            ax.set_xlabel('Iteration')
+            ax.set_ylabel('Residual Norm')
+            ax.set_title(f'{solver_class.__name__} Convergence')
+            ax.grid(True)
+        
+        # Prepare results
+        results = {
+            'matrix_size': matrix_size,
+            'condition_number': condition_number,
+            'residual': float(residual),
+            'relative_error': float(relative_error),
+            'solution_error': float(solution_error),
+            'iterations': history.get('iteration_count', 0),
+            'converged': history.get('converged', False)
         }
-
-@dataclass
-class VariableCoefficientPoissonTest:
-    """テストケース2: 変数係数ポアソン方程式: -∇⋅(a∇u) = f"""
-    
-    def coefficient(self, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """係数 a(x,y) = 1 + x² + y²"""
-        return 1.0 + x**2 + y**2
-    
-    def exact_solution(self, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """厳密解: u(x,y) = exp(-((x-0.5)²+(y-0.5)²)/0.1)"""
-        return jnp.exp(-((x-0.5)**2 + (y-0.5)**2)/0.1)
-    
-    def source_term(self, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
-        """ソース項 f = -∇⋅(a∇u)"""
-        a = self.coefficient(x, y)
-        u = self.exact_solution(x, y)
         
-        # 導関数の計算
-        dux = -2*(x-0.5)/0.1 * u
-        duy = -2*(y-0.5)/0.1 * u
-        duxx = (-2/0.1 + 4*(x-0.5)**2/0.1**2) * u
-        duyy = (-2/0.1 + 4*(y-0.5)**2/0.1**2) * u
-        
-        # 係数の導関数
-        dax = 2*x
-        day = 2*y
-        
-        return -(a * (duxx + duyy) + dax * dux + day * duy)
+        return results, fig
     
-    def boundary_conditions(self) -> Dict[str, BoundaryCondition]:
-        """境界条件の定義"""
-        def boundary_value(x: float, y: float) -> float:
-            return self.exact_solution(
-                jnp.array(x), jnp.array(y)
-            ).item()
+    @classmethod
+    def run_tests(cls):
+        """Run comprehensive linear solver tests"""
+        # Create output directory
+        os.makedirs('test_results/linear_solvers', exist_ok=True)
+        
+        # Solvers to test
+        solvers = [
+            ConjugateGradient,
+            SORSolver
+        ]
+        
+        # Test configurations
+        test_configs = [
+            {'matrix_size': 50, 'condition_number': 10.0},
+            {'matrix_size': 100, 'condition_number': 100.0},
+            {'matrix_size': 200, 'condition_number': 1000.0}
+        ]
+        
+        # Store test results
+        all_results = {}
+        
+        # Run tests
+        for solver in solvers:
+            solver_results = []
             
-        return {
-            'left': BoundaryCondition(
-                type=BCType.DIRICHLET,
-                value=boundary_value,
-                location='left'
-            ),
-            'right': BoundaryCondition(
-                type=BCType.DIRICHLET,
-                value=boundary_value,
-                location='right'
-            ),
-            'bottom': BoundaryCondition(
-                type=BCType.DIRICHLET,
-                value=boundary_value,
-                location='bottom'
-            ),
-            'top': BoundaryCondition(
-                type=BCType.DIRICHLET,
-                value=boundary_value,
-                location='top'
-            )
-        }
+            for config in test_configs:
+                print(f"Testing {solver.__name__} with {config}")
+                
+                # Run test
+                result, fig = cls.solve_linear_system(
+                    solver, 
+                    matrix_size=config['matrix_size'], 
+                    condition_number=config['condition_number']
+                )
+                
+                # Save convergence plot
+                fig.savefig(
+                    f'test_results/linear_solvers/{solver.__name__.lower()}_'
+                    f'{config["matrix_size"]}x{config["matrix_size"]}_'
+                    f'cond{config["condition_number"]}.png'
+                )
+                plt.close(fig)
+                
+                # Store result
+                solver_results.append(result)
+            
+            # Store results for this solver
+            all_results[solver.__name__] = solver_results
+        
+        # Print results
+        print("\nLinear Solvers Test Results:")
+        for solver_name, results in all_results.items():
+            print(f"\n{solver_name}:")
+            for result in results:
+                print(f"  Matrix Size: {result['matrix_size']}")
+                print(f"    Condition Number: {result['condition_number']}")
+                print(f"    Residual: {result['residual']:.6e}")
+                print(f"    Relative Error: {result['relative_error']:.6e}")
+                print(f"    Solution Error: {result['solution_error']:.6e}")
+                print(f"    Iterations: {result['iterations']}")
+                print(f"    Converged: {result['converged']}")
+        
+        return all_results
 
-def run_solver_test(
-    test_case: Union[PoissonTest, VariableCoefficientPoissonTest],
-    nx: int,
-    ny: int,
-    discretization: SpatialDiscretizationBase,
-    solver: LinearSolverBase,
-    tolerance: float = 1e-6
-) -> Tuple[jnp.ndarray, float, dict]:
-    """ソルバのテストを実行"""
-    
-    # 格子の生成
-    x = jnp.linspace(0, 1, nx)
-    y = jnp.linspace(0, 1, ny)
-    X, Y = jnp.meshgrid(x, y)
-    
-    # ソース項と厳密解の計算
-    f = test_case.source_term(X, Y)
-    u_exact = test_case.exact_solution(X, Y)
-    
-    # 係数の設定（変数係数の場合）
-    if isinstance(test_case, VariableCoefficientPoissonTest):
-        a = test_case.coefficient(X, Y)
-    else:
-        a = jnp.ones_like(X)
-    
-    # 作用素の構築
-    def operator(u: jnp.ndarray) -> jnp.ndarray:
-        # 導関数の計算
-        du_dx = discretization.discretize(u, 'x')[0]
-        du_dy = discretization.discretize(u, 'y')[0]
-        
-        # 係数の適用
-        adu_dx = a * du_dx
-        adu_dy = a * du_dy
-        
-        # 発散の計算
-        div_x = discretization.discretize(adu_dx, 'x')[0]
-        div_y = discretization.discretize(adu_dy, 'y')[0]
-        
-        return -(div_x + div_y)
-    
-    # システムを解く
-    u0 = jnp.zeros_like(f)
-    u, history = solver.solve(operator, f, u0)
-    
-    # 誤差の計算
-    error = jnp.linalg.norm(u - u_exact) / jnp.linalg.norm(u_exact)
-    
-    return u, error, history
-
-def plot_solution_comparison(
-    X: jnp.ndarray,
-    Y: jnp.ndarray,
-    u_numerical: jnp.ndarray,
-    u_exact: jnp.ndarray,
-    title: str,
-    filename: str
-) -> Figure:
-    """数値解と厳密解の比較プロット"""
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
-    
-    # 数値解のプロット
-    im1 = ax1.pcolormesh(X, Y, u_numerical, shading='auto')
-    ax1.set_title('数値解')
-    fig.colorbar(im1, ax=ax1)
-    
-    # 厳密解のプロット
-    im2 = ax2.pcolormesh(X, Y, u_exact, shading='auto')
-    ax2.set_title('厳密解')
-    fig.colorbar(im2, ax=ax2)
-    
-    # 誤差のプロット
-    error = jnp.abs(u_numerical - u_exact)
-    im3 = ax3.pcolormesh(X, Y, error, shading='auto')
-    ax3.set_title('絶対誤差')
-    fig.colorbar(im3, ax=ax3)
-    
-    plt.suptitle(title)
-    plt.savefig(f'{filename}.png', dpi=300, bbox_inches='tight')
-    return fig
-
-def plot_convergence_history(
-    history: dict,
-    title: str,
-    filename: str
-) -> Figure:
-    """収束履歴のプロット"""
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    residuals = history['residual_norms']
-    iterations = range(len(residuals))
-    
-    ax.semilogy(iterations, residuals, 'b-')
-    ax.set_xlabel('反復回数')
-    ax.set_ylabel('残差ノルム')
-    ax.set_title(title)
-    ax.grid(True)
-    
-    plt.savefig(f'{filename}.png', dpi=300, bbox_inches='tight')
-    return fig
-
-def main():
-    """全テストの実行と結果の出力"""
-    # 出力ディレクトリの作成
-    os.makedirs('test_results/poisson', exist_ok=True)
-    
-    # 格子の設定
-    nx = ny = 64
-    grid_config = GridConfig(
-        dimensions=(1.0, 1.0, 1.0),
-        points=(nx, ny, 1),
-        grid_type=GridType.UNIFORM
-    )
-    grid_manager = GridManager(grid_config)
-    
-    # 格子の生成
-    x = jnp.linspace(0, 1, nx)
-    y = jnp.linspace(0, 1, ny)
-    X, Y = jnp.meshgrid(x, y)
-    
-    # テストケースの作成
-    poisson_test = PoissonTest()
-    variable_poisson_test = VariableCoefficientPoissonTest()
-    
-    # 離散化とソルバの作成
-    discretization = CombinedCompactDifference(
-        grid_manager=grid_manager,
-        boundary_conditions=poisson_test.boundary_conditions()
-    )
-    
-    solvers = {
-        'CG': ConjugateGradient(max_iterations=1000, tolerance=1e-6),
-        'SOR': SORSolver(omega=1.5, max_iterations=1000, tolerance=1e-6)
-    }
-    
-    # 標準ポアソン方程式のテスト
-    print("標準ポアソン方程式のテスト...")
-    for solver_name, solver in solvers.items():
-        print(f"{solver_name}を使用...")
-        u, error, history = run_solver_test(
-            poisson_test, nx, ny, discretization, solver
-        )
-        
-        plot_solution_comparison(
-            X, Y, u, poisson_test.exact_solution(X, Y),
-            f"ポアソン方程式 - {solver_name}",
-            f"test_results/poisson/standard_{solver_name.lower()}"
-        )
-        
-        plot_convergence_history(
-            history,
-            f"収束履歴 - {solver_name}",
-            f"test_results/poisson/standard_{solver_name.lower()}_convergence"
-        )
-        
-        print(f"相対誤差: {error}")
-    
-    # 変数係数ポアソン方程式のテスト
-    print("\n変数係数ポアソン方程式のテスト...")
-    for solver_name, solver in solvers.items():
-        print(f"{solver_name}を使用...")
-        u, error, history = run_solver_test(
-            variable_poisson_test, nx, ny, discretization, solver
-        )
-        
-        plot_solution_comparison(
-            X, Y, u, variable_poisson_test.exact_solution(X, Y),
-            f"変数係数ポアソン方程式 - {solver_name}",
-            f"test_results/poisson/variable_{solver_name.lower()}"
-        )
-        
-        plot_convergence_history(
-            history,
-            f"収束履歴 - {solver_name}",
-            f"test_results/poisson/variable_{solver_name.lower()}_convergence"
-        )
-        
-        print(f"相対誤差: {error}")
-
+# Run tests when script is executed
 if __name__ == '__main__':
-    main()
+    LinearSolversTestSuite.run_tests()
