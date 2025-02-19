@@ -20,7 +20,7 @@ class TimeIntegrationTest(unittest.TestCase):
     def setUp(self):
         os.makedirs('test_results/time_integration', exist_ok=True)
         
-        self.dt = 0.01
+        self.dt = 0.001
         self.t_final = 1.0
         
         self.test_cases = {
