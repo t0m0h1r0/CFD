@@ -1,8 +1,8 @@
 from functools import partial
 
 import jax
-from jax.typing import ArrayLike
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 from .base import TimeIntegratorBase, TimeIntegrationConfig
 
@@ -27,16 +27,23 @@ class ExplicitEuler(TimeIntegratorBase):
         """
         dt = self.config.dt
         
-        # 安定性チェック
-        if self.config.check_stability:
-            is_stable = self.check_stability(dfield, field, t)
-            if not is_stable and self.config.adaptive_dt:
-                # 時間ステップを半分にして再試行
-                self.config.dt *= 0.5
-                return self.step(dfield, t, field)
+        # 安定性チェック (JAX対応版)
+        is_stable = self.check_stability(dfield, field, t)
         
-        # 場の更新
-        return field + dt * dfield
+        # JAX対応の条件分岐
+        def unstable_update():
+            new_dt = 0.5 * self.config.dt
+            self.config.dt = new_dt
+            return field + new_dt * dfield
+            
+        def stable_update():
+            return field + dt * dfield
+        
+        return jax.lax.cond(
+            is_stable,
+            lambda: stable_update(),
+            lambda: unstable_update() if self.config.adaptive_dt else stable_update()
+        )
 
 class ImplicitEuler(TimeIntegratorBase):
     """後退オイラー法による時間発展"""
@@ -57,6 +64,7 @@ class ImplicitEuler(TimeIntegratorBase):
         self.newton_tol = newton_tol
         self.max_newton_iter = max_newton_iter
     
+    @partial(jax.jit, static_argnums=(0,))
     def step(self,
             dfield: ArrayLike,
             t: float,
@@ -73,21 +81,26 @@ class ImplicitEuler(TimeIntegratorBase):
             時間発展後の場
         """
         dt = self.config.dt
-        t_next = t + dt
         
-        # ニュートン法による非線形方程式の求解
-        field_next = field  # 初期推定値
-        
-        for _ in range(self.max_newton_iter):
+        def newton_iteration(carry, _):
+            field_next, residual_norm = carry
+            
             # 残差の計算
             residual = field_next - field - dt * dfield
             residual_norm = jnp.linalg.norm(residual)
             
-            # 収束判定
-            if residual_norm < self.newton_tol:
-                break
-            
             # 更新
             field_next = field_next - residual
+            
+            return (field_next, residual_norm), residual_norm
+        
+        # ニュートン法による反復
+        init_state = (field, jnp.array(float('inf')))
+        (field_next, _), _ = jax.lax.scan(
+            newton_iteration, 
+            init_state, 
+            None, 
+            length=self.max_newton_iter
+        )
         
         return field_next

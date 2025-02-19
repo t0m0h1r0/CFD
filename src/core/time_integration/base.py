@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
@@ -53,7 +54,7 @@ class TimeIntegratorBase(ABC):
     def check_stability(self,
                        dfield: ArrayLike,
                        field: ArrayLike,
-                       t: float) -> bool:
+                       t: float) -> jnp.ndarray:
         """
         時間発展の安定性をチェック
         
@@ -63,17 +64,17 @@ class TimeIntegratorBase(ABC):
             t: 現在時刻
             
         Returns:
-            安定性条件を満たすかどうか
+            jnp.ndarray: 安定性条件を満たすかどうか (0.0 or 1.0)
         """
         if not self.config.check_stability:
-            return True
+            return jnp.array(1.0)
             
         # フォン・ノイマンの安定性解析に基づく条件
         dt = self.config.dt
-        
-        # 特性時間との比較
         stability_number = dt * jnp.linalg.norm(dfield) / (jnp.linalg.norm(field) + 1e-10)
-        return stability_number <= self.config.safety_factor
+        
+        # JAX対応のため、booleanではなくfloat32で返す
+        return jnp.array(stability_number <= self.config.safety_factor, dtype=jnp.float32)
     
     @staticmethod
     def get_order() -> int:

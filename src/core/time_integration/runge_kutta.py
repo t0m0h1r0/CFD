@@ -61,15 +61,26 @@ class RungeKutta4(TimeIntegratorBase):
         dt = self.config.dt
         k1, k2, k3, k4 = stage_derivatives
         
-        # 安定性チェック
-        if self.config.check_stability:
-            is_stable = self.check_stability(k1, field, t)  # k1を使用して安定性チェック
-            if not is_stable and self.config.adaptive_dt:
-                self.config.dt *= 0.5
-                return self.step(stage_derivatives, t, field)
+        # 安定性チェック (JAX対応版)
+        is_stable = self.check_stability(k1, field, t)
         
-        # 4次ルンゲクッタ法による更新
-        return field + (dt/6) * (k1 + 2*k2 + 2*k3 + k4)
+        def unstable_update():
+            new_dt = 0.5 * dt  # dtを直接使用
+            return field + (new_dt/6) * (k1 + 2*k2 + 2*k3 + k4)
+            
+        def stable_update():
+            return field + (dt/6) * (k1 + 2*k2 + 2*k3 + k4)
+        
+        # JAX対応の条件分岐
+        return jax.lax.cond(
+            jnp.asarray(is_stable, dtype=jnp.bool_),
+            lambda: stable_update(),
+            lambda: jax.lax.cond(
+                jnp.asarray(self.config.adaptive_dt, dtype=jnp.bool_),
+                lambda: unstable_update(),
+                lambda: stable_update()
+            )
+        )
     
     @staticmethod
     def get_order() -> int:
@@ -95,6 +106,7 @@ class AdaptiveRungeKutta4(RungeKutta4):
         self.relative_tolerance = relative_tolerance
         self.absolute_tolerance = absolute_tolerance
     
+    @partial(jax.jit, static_argnums=(0,))
     def estimate_error(self,
                       stage_derivatives: Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike],
                       field: ArrayLike) -> ArrayLike:
@@ -123,9 +135,10 @@ class AdaptiveRungeKutta4(RungeKutta4):
         
         return error
     
+    @partial(jax.jit, static_argnums=(0,))
     def adjust_timestep(self,
                        error: ArrayLike,
-                       field: ArrayLike) -> float:
+                       field: ArrayLike) -> ArrayLike:
         """
         時間ステップ幅の調整
         
@@ -136,14 +149,24 @@ class AdaptiveRungeKutta4(RungeKutta4):
         Returns:
             新しい時間ステップ幅
         """
+        dt = self.config.dt
         scale = self.absolute_tolerance + self.relative_tolerance * jnp.abs(field)
         error_ratio = jnp.max(error / scale)
         
-        if error_ratio > 1:
-            # 誤差が大きすぎる場合は時間ステップを縮小
-            dt_new = 0.9 * self.config.dt * (1/error_ratio)**(1/4)
-            return jnp.maximum(0.1 * self.config.dt, dt_new)
-        else:
-            # 誤差が小さい場合は時間ステップを拡大（上限あり）
-            dt_new = 0.9 * self.config.dt * (1/error_ratio)**(1/5)
-            return jnp.minimum(10.0 * self.config.dt, dt_new)
+        def reduce_dt():
+            return jnp.maximum(
+                jnp.array(0.1 * dt),
+                jnp.array(0.9 * dt * (1/error_ratio)**(1/4))
+            )
+            
+        def increase_dt():
+            return jnp.minimum(
+                jnp.array(10.0 * dt),
+                jnp.array(0.9 * dt * (1/error_ratio)**(1/5))
+            )
+        
+        return jax.lax.cond(
+            error_ratio > 1.0,
+            reduce_dt,
+            increase_dt
+        )
