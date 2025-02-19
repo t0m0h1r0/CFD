@@ -1,383 +1,277 @@
 import os
-from typing import Tuple, Callable
-from dataclasses import dataclass
+import unittest
+from typing import Tuple
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
+from jax.typing import ArrayLike
 
-# Force JAX to use CPU
-jax.config.update('jax_platform_name', 'cpu')
+from src.core.time_integration.base import TimeIntegrationConfig
+from src.core.time_integration.euler import ExplicitEuler, ImplicitEuler
+from src.core.time_integration.runge_kutta import RungeKutta4, AdaptiveRungeKutta4
 
-from src.core.time_integration.base import (
-    TimeIntegrationConfig, ODESystem
-)
-from src.core.time_integration.explicit import ExplicitEuler
-from src.core.time_integration.runge_kutta import RK4, FehlbergRK45
-
-class ExponentialDecay:
-    """Test case: y' = -y"""
+class TimeIntegrationTest(unittest.TestCase):
+    """時間発展スキームのテストスイート"""
     
-    def __init__(self, lambda_: float = -1.0):
-        """Initialize with decay rate."""
-        self.lambda_ = lambda_
-    
-    def __call__(self, t: float, y: jnp.ndarray) -> jnp.ndarray:
-        """Compute derivative."""
-        return jnp.array(self.lambda_ * y)
-    
-    def apply_update(self, y: jnp.ndarray, dy: jnp.ndarray, dt: float) -> jnp.ndarray:
-        """Update state."""
-        return y + dt * dy
-    
-    def exact_solution(self, t: float, y0: float) -> float:
-        """Compute exact solution."""
-        return jnp.array(y0 * jnp.exp(self.lambda_ * t))
-
-@dataclass
-class HarmonicOscillator:
-    """Test case: y'' + ω²y = 0"""
-    omega: float = 2 * jnp.pi
-    
-    def __call__(self, t: float, y: Tuple[jnp.ndarray, jnp.ndarray]) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        pos, vel = y
-        return vel, -self.omega**2 * pos
-    
-    def apply_update(self, y: Tuple[jnp.ndarray, jnp.ndarray], 
-                    dy: Tuple[jnp.ndarray, jnp.ndarray], 
-                    dt: float) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        pos, vel = y
-        dpos, dvel = dy
-        return pos + dt * dpos, vel + dt * dvel
-    
-    def exact_solution(self, t: float, y0: Tuple[float, float]) -> Tuple[float, float]:
-        pos0, vel0 = y0
-        pos = pos0 * jnp.cos(self.omega * t) + vel0/self.omega * jnp.sin(self.omega * t)
-        vel = -pos0 * self.omega * jnp.sin(self.omega * t) + vel0 * jnp.cos(self.omega * t)
-        return pos, vel
-
-@dataclass
-class VanDerPol:
-    """Test case: y'' - μ(1-y²)y' + y = 0"""
-    mu: float = 1.0
-    
-    def __call__(self, t: float, y: Tuple[jnp.ndarray, jnp.ndarray]) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        pos, vel = y
-        return vel, self.mu * (1 - pos**2) * vel - pos
-    
-    def apply_update(self, y: Tuple[jnp.ndarray, jnp.ndarray], 
-                    dy: Tuple[jnp.ndarray, jnp.ndarray], 
-                    dt: float) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        pos, vel = y
-        dpos, dvel = dy
-        return pos + dt * dpos, vel + dt * dvel
-
-def run_convergence_test(
-    system: ODESystem,
-    exact_solution: Callable,
-    y0: jnp.ndarray,
-    dt_values: jnp.ndarray,
-    t_final: float,
-    integrators: list
-) -> dict:
-    """Run convergence test for multiple integrators."""
-    results = {}
-    
-    print("\nRunning convergence tests:")
-    print("-" * 50)
-    
-    for integrator_class in integrators:
-        print(f"\nTesting {integrator_class.__name__}:")
-        errors = []
+    def setUp(self):
+        """テストの初期設定"""
+        # 出力ディレクトリの作成
+        os.makedirs('test_results/time_integration', exist_ok=True)
         
-        for i, dt in enumerate(dt_values):
-            print(f"  Step size dt = {dt:.2e} ({i+1}/{len(dt_values)})", end="")
-            
-            config = TimeIntegrationConfig(dt=dt, t_final=t_final)
-            integrator = integrator_class(config)
-            
-            # Integrate
-            y_final, history = integrator.integrate(system, y0)
-            
-            # Compute error
-            y_exact = exact_solution(t_final, y0)
-            if isinstance(y_final, tuple):
-                error = jnp.max(jnp.abs(jnp.array(y_final) - jnp.array(y_exact)))
-            else:
-                error = jnp.abs(y_final - y_exact)
-            errors.append(error)
-            
-            # Print progress
-            print(f" - Error: {error:.2e}")
-            
-        # Calculate convergence rate
-        if len(dt_values) > 1:
-            log_dt = jnp.log(dt_values)
-            log_errors = jnp.log(jnp.array(errors))
-            slope, _ = jnp.polyfit(log_dt, log_errors, 1)
-            print(f"  Convergence rate: {slope:.2f}")
-            
-        results[integrator_class.__name__] = jnp.array(errors)
-    
-    print("\nConvergence tests completed.")
-    print("-" * 50)
-    return results
-
-def plot_convergence(
-    dt_values: jnp.ndarray,
-    results: dict,
-    title: str,
-    filename: str
-) -> Figure:
-    """Plot convergence results."""
-    print(f"\nGenerating convergence plot: {title}")
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    for method_name, errors in results.items():
-        ax.loglog(dt_values, errors, 'o-', label=method_name)
+        # 共通の設定
+        self.dt = 0.01
+        self.t_final = 1.0
+        self.config = TimeIntegrationConfig(
+            dt=self.dt,
+            check_stability=True,
+            adaptive_dt=False
+        )
         
-        # Compute convergence rate
-        slope, _ = np.polyfit(np.log(dt_values), np.log(errors), 1)
-        ax.text(0.6, 0.1, f'{method_name} rate: {slope:.2f}',
-                transform=ax.transAxes)
+        # テスト用の時間発展スキーム
+        self.schemes = {
+            'Explicit Euler': ExplicitEuler(self.config),
+            'Implicit Euler': ImplicitEuler(self.config),
+            'RK4': RungeKutta4(self.config)
+        }
     
-    # Reference lines
-    dt_ref = np.array([dt_values[0], dt_values[-1]])
-    for order, style in zip([1, 2, 4], ['k:', 'k--', 'k-']):
-        ref = dt_ref**order * (errors[0] / dt_values[0]**order)
-        ax.loglog(dt_ref, ref, style, label=f'Order {order}')
+    def compute_rk4_derivatives(self,
+                              field: ArrayLike,
+                              omega: float = 1.0) -> Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
+        """RK4の4つのステージの時間微分値を計算"""
+        dt = self.dt
+        
+        # 調和振動子の場合の時間微分を計算
+        if field.ndim == 1 and len(field) == 2:  # 調和振動子
+            x, v = field[0], field[1]
+            k1 = jnp.array([v, -omega**2 * x])
+            
+            x2, v2 = field + 0.5*dt*k1
+            k2 = jnp.array([v2, -omega**2 * x2])
+            
+            x3, v3 = field + 0.5*dt*k2
+            k3 = jnp.array([v3, -omega**2 * x3])
+            
+            x4, v4 = field + dt*k3
+            k4 = jnp.array([v4, -omega**2 * x4])
+        else:  # 線形減衰
+            k1 = -field
+            k2 = -(field + 0.5*dt*k1)
+            k3 = -(field + 0.5*dt*k2)
+            k4 = -(field + dt*k3)
+        
+        return k1, k2, k3, k4
     
-    ax.set_xlabel('Time step (dt)')
-    ax.set_ylabel('Maximum error')
-    ax.set_title(title)
-    ax.grid(True)
-    ax.legend()
+    def test_linear_decay(self):
+        """線形減衰のテスト"""
+        # 初期条件
+        field = jnp.array(1.0)
+        t = 0.0
+        
+        # 各スキームでの数値解
+        numerical_solutions = {}
+        for name, scheme in self.schemes.items():
+            current_field = field
+            times = [t]
+            values = [float(current_field)]
+            
+            while t < self.t_final:
+                if isinstance(scheme, RungeKutta4):
+                    # RK4の場合は4つのステージの時間微分値を計算
+                    derivatives = self.compute_rk4_derivatives(current_field)
+                    current_field = scheme.step(derivatives, t, current_field)
+                else:
+                    # オイラー法の場合は単純な時間微分
+                    dfield = -current_field
+                    current_field = scheme.step(dfield, t, current_field)
+                
+                t += self.dt
+                times.append(t)
+                values.append(float(current_field))
+            
+            numerical_solutions[name] = (times, values)
+        
+        # 厳密解の計算
+        exact_times = jnp.linspace(0, self.t_final, len(times))
+        exact_values = jnp.exp(-exact_times)
+        
+        # 誤差の計算と検証
+        for name, (times, values) in numerical_solutions.items():
+            error = jnp.max(jnp.abs(jnp.array(values) - jnp.exp(-jnp.array(times))))
+            
+            # スキームの次数に応じた誤差の評価
+            expected_order = self.schemes[name].get_order()
+            expected_error = self.dt ** expected_order
+            
+            self.assertLess(error, expected_error * 10,
+                          f"{name}の誤差が予想より大きい: {error:.2e} > {expected_error:.2e}")
+        
+        # 結果のプロット
+        plt.figure(figsize=(10, 6))
+        plt.plot(exact_times, exact_values, 'k-', label='Exact')
+        
+        for name, (times, values) in numerical_solutions.items():
+            plt.plot(times, values, '--', label=name)
+            
+        plt.xlabel('Time')
+        plt.ylabel('Value')
+        plt.title('Linear Decay Test')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig('test_results/time_integration/linear_decay.png')
+        plt.close()
     
-    # Save figure
-    plt.savefig(f'{filename}.png', dpi=300, bbox_inches='tight')
-    return fig
-
-def plot_solution(
-    t: jnp.ndarray,
-    y_numerical: jnp.ndarray,
-    y_exact: jnp.ndarray,
-    title: str,
-    filename: str
-) -> Figure:
-    """Plot numerical and exact solutions."""
-    print(f"\nGenerating solution plot: {title}")
-    fig, ax = plt.subplots(figsize=(10, 6))
+    def test_harmonic_oscillator(self):
+        """調和振動子のテスト"""
+        omega = 2 * jnp.pi  # 角周波数
+        
+        # 初期条件
+        field = jnp.array([1.0, 0.0])  # [位置, 速度]
+        t = 0.0
+        
+        # 各スキームでの数値解
+        numerical_solutions = {}
+        for name, scheme in self.schemes.items():
+            current_field = field
+            times = [t]
+            positions = [float(current_field[0])]
+            velocities = [float(current_field[1])]
+            
+            while t < self.t_final:
+                if isinstance(scheme, RungeKutta4):
+                    # RK4の場合は4つのステージの時間微分値を計算
+                    derivatives = self.compute_rk4_derivatives(current_field, omega)
+                    current_field = scheme.step(derivatives, t, current_field)
+                else:
+                    # オイラー法の場合は単純な時間微分
+                    x, v = current_field[0], current_field[1]
+                    dfield = jnp.array([v, -omega**2 * x])
+                    current_field = scheme.step(dfield, t, current_field)
+                
+                t += self.dt
+                times.append(t)
+                positions.append(float(current_field[0]))
+                velocities.append(float(current_field[1]))
+            
+            numerical_solutions[name] = (times, positions, velocities)
+        
+        # 厳密解の計算
+        exact_times = jnp.linspace(0, self.t_final, len(times))
+        exact_positions = jnp.cos(omega * exact_times)
+        exact_velocities = -omega * jnp.sin(omega * exact_times)
+        
+        # 誤差の計算と検証
+        for name, (times, positions, velocities) in numerical_solutions.items():
+            pos_error = jnp.max(jnp.abs(jnp.array(positions) - jnp.cos(omega * jnp.array(times))))
+            vel_error = jnp.max(jnp.abs(jnp.array(velocities) - (-omega * jnp.sin(omega * jnp.array(times)))))
+            
+            # エネルギー保存の検証
+            energies = [0.5 * (v**2 + omega**2 * x**2) 
+                       for x, v in zip(positions, velocities)]
+            energy_error = jnp.max(jnp.abs(jnp.array(energies) - energies[0]))
+            
+            # スキームの次数に応じた誤差の評価
+            expected_order = self.schemes[name].get_order()
+            expected_error = self.dt ** expected_order
+            
+            self.assertLess(pos_error, expected_error * 10,
+                          f"{name}の位置の誤差が予想より大きい")
+            self.assertLess(vel_error, expected_error * 10,
+                          f"{name}の速度の誤差が予想より大きい")
+            
+            # 結果のプロット
+            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
+            
+            # 位置のプロット
+            ax1.plot(exact_times, exact_positions, 'k-', label='Exact')
+            ax1.plot(times, positions, '--', label=name)
+            ax1.set_xlabel('Time')
+            ax1.set_ylabel('Position')
+            ax1.grid(True)
+            ax1.legend()
+            
+            # 速度のプロット
+            ax2.plot(exact_times, exact_velocities, 'k-', label='Exact')
+            ax2.plot(times, velocities, '--', label=name)
+            ax2.set_xlabel('Time')
+            ax2.set_ylabel('Velocity')
+            ax2.grid(True)
+            ax2.legend()
+            
+            # エネルギーのプロット
+            ax3.plot(times, energies, '-', label='Numerical')
+            ax3.axhline(y=energies[0], color='k', linestyle='--', label='Initial')
+            ax3.set_xlabel('Time')
+            ax3.set_ylabel('Energy')
+            ax3.grid(True)
+            ax3.legend()
+            
+            plt.suptitle(f'Harmonic Oscillator Test - {name}')
+            plt.tight_layout()
+            plt.savefig(f'test_results/time_integration/harmonic_oscillator_{name}.png')
+            plt.close()
     
-    if isinstance(y_numerical[0], tuple):
-        # Plot position for oscillator systems
-        y_num = jnp.array([y[0] for y in y_numerical])
-        y_ex = jnp.array([y[0] for y in y_exact])
-    else:
-        y_num = y_numerical
-        y_ex = y_exact
-    
-    ax.plot(t, y_num, 'b-', label='Numerical')
-    ax.plot(t, y_ex, 'r--', label='Exact')
-    
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Solution')
-    ax.set_title(title)
-    ax.grid(True)
-    ax.legend()
-    
-    # Save figure
-    plt.savefig(f'{filename}.png', dpi=300, bbox_inches='tight')
-    return fig
-
-def main():
-    """Run all tests and generate plots."""
-    # Force JAX to use CPU
-    jax.config.update('jax_platform_name', 'cpu')
-    
-    print("\n=== Time Integration Method Test Suite ===\n")
-    
-    # Create output directory
-    print("Setting up test environment...")
-    os.makedirs('test_results', exist_ok=True)
-    
-    # Test parameters
-    dt_values = jnp.logspace(-4, -1, 10)
-    t_final = 10.0
-    integrators = [ExplicitEuler]  # ExplicitEulerのみを評価
-    
-    print("\nTest Configuration:")
-    print(f"- Time step range: {dt_values[0]:.2e} to {dt_values[-1]:.2e}")
-    print(f"- Final time: {t_final}")
-    print(f"- Testing method: {integrators[0].__name__}")
-    
-    # Test Case 1: Exponential Decay
-    print("\n=== Test Case 1: Exponential Decay ===")
-    print("Testing linear stability and convergence...")
-    system = ExponentialDecay()
-    y0 = 1.0
-    results = run_convergence_test(
-        system, system.exact_solution, y0, dt_values, t_final, integrators
-    )
-    plot_convergence(
-        dt_values, results, 
-        "Convergence Test: Exponential Decay",
-        "test_results/exponential_convergence"
-    )
-    
-    # Solution plot for exponential decay
-    t = jnp.linspace(0, t_final, 1000)
-    config = TimeIntegrationConfig(dt=0.01, t_final=t_final)
-    y_numerical = []
-    y_exact = []
-    y = y0
-    
-    for ti in t:
-        y_numerical.append(y)
-        y_exact.append(system.exact_solution(ti, y0))
-        if ti < t_final - config.dt:
-            dy = system(ti, y)
-            y = system.apply_update(y, dy, config.dt)
-    
-    plot_solution(
-        t, jnp.array(y_numerical), jnp.array(y_exact),
-        "Solution: Exponential Decay",
-        "test_results/exponential_solution"
-    )
-    
-    # Test Case 2: Harmonic Oscillator
-    print("\n=== Test Case 2: Harmonic Oscillator ===")
-    print("Testing energy conservation and periodic solution accuracy...")
-    system = HarmonicOscillator()
-    y0 = (1.0, 0.0)  # Initial position and velocity
-    results = run_convergence_test(
-        system, system.exact_solution, y0, dt_values, t_final, integrators
-    )
-    plot_convergence(
-        dt_values, results,
-        "Convergence Test: Harmonic Oscillator",
-        "test_results/harmonic_convergence"
-    )
-    
-    # Solution plot for harmonic oscillator
-    y_numerical = []
-    y_exact = []
-    y = y0
-    
-    for ti in t:
-        y_numerical.append(y)
-        y_exact.append(system.exact_solution(ti, y0))
-        if ti < t_final - config.dt:
-            dy = system(ti, y)
-            y = system.apply_update(y, dy, config.dt)
-    
-    plot_solution(
-        t, y_numerical, y_exact,
-        "Solution: Harmonic Oscillator",
-        "test_results/harmonic_solution"
-    )
-    
-    # Test energy conservation for harmonic oscillator
-    def compute_energy(pos: float, vel: float, omega: float) -> float:
-        """Compute total energy of harmonic oscillator."""
-        kinetic = 0.5 * vel**2
-        potential = 0.5 * (omega * pos)**2
-        return kinetic + potential
-    
-    energy_numerical = []
-    for pos, vel in y_numerical:
-        energy_numerical.append(compute_energy(pos, vel, system.omega))
-    
-    energy_exact = compute_energy(y0[0], y0[1], system.omega)
-    energy_error = jnp.abs(jnp.array(energy_numerical) - energy_exact) / energy_exact
-    
-    plt.figure(figsize=(10, 6))
-    plt.semilogy(t, energy_error, 'b-')
-    plt.xlabel('Time')
-    plt.ylabel('Relative Energy Error')
-    plt.title('Energy Conservation Error: Harmonic Oscillator')
-    plt.grid(True)
-    plt.savefig('test_results/harmonic_energy_error.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    # Test Case 3: Van der Pol Oscillator
-    print("\n=== Test Case 3: Van der Pol Oscillator ===")
-    print("Testing nonlinear dynamics and adaptive time stepping...")
-    system = VanDerPol()
-    y0 = (1.0, 0.0)
-    
-    # Since no exact solution, compare between different time steps
-    t = jnp.linspace(0, t_final, 1000)
-    config_fine = TimeIntegrationConfig(dt=0.001, t_final=t_final)
-    config_coarse = TimeIntegrationConfig(dt=0.01, t_final=t_final)
-    
-    integrator_fine = RK4(config_fine)
-    integrator_coarse = RK4(config_coarse)
-    
-    y_fine, _ = integrator_fine.integrate(system, y0)
-    y_coarse, _ = integrator_coarse.integrate(system, y0)
-    
-    # Plot phase space trajectory
-    plt.figure(figsize=(10, 6))
-    
-    # Convert results to arrays of positions and velocities
-    if hasattr(y_fine, '__len__'):
-        pos_fine = jnp.array([y[0] if isinstance(y, tuple) else y for y in y_fine])
-        vel_fine = jnp.array([y[1] if isinstance(y, tuple) else 0.0 for y in y_fine])
-        pos_coarse = jnp.array([y[0] if isinstance(y, tuple) else y for y in y_coarse])
-        vel_coarse = jnp.array([y[1] if isinstance(y, tuple) else 0.0 for y in y_coarse])
-    else:
-        # Handle single time point case
-        pos_fine = jnp.array([y_fine[0] if isinstance(y_fine, tuple) else y_fine])
-        vel_fine = jnp.array([y_fine[1] if isinstance(y_fine, tuple) else 0.0])
-        pos_coarse = jnp.array([y_coarse[0] if isinstance(y_coarse, tuple) else y_coarse])
-        vel_coarse = jnp.array([y_coarse[1] if isinstance(y_coarse, tuple) else 0.0])
-    
-    plt.plot(pos_fine, vel_fine, 'b-', label='dt = 0.001')
-    plt.plot(pos_coarse, vel_coarse, 'r--', label='dt = 0.01')
-    plt.xlabel('Position')
-    plt.ylabel('Velocity')
-    plt.title('Phase Space: Van der Pol Oscillator')
-    plt.grid(True)
-    plt.legend()
-    plt.savefig('test_results/vanderpol_phase.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    # Test adaptive time stepping with FehlbergRK45
-    print("Testing Adaptive Time Stepping...")
-    config_adaptive = TimeIntegrationConfig(
-        dt=0.01, 
-        t_final=t_final,
-        adaptive_dt=True,
-        safety_factor=0.9
-    )
-    
-    integrator_adaptive = FehlbergRK45(config_adaptive)
-    _, history_adaptive = integrator_adaptive.integrate(system, y0)
-    
-    # Plot time step sizes
-    time_points = [info.t for info in history_adaptive]
-    step_sizes = [info.dt for info in history_adaptive]
-    
-    plt.figure(figsize=(10, 6))
-    plt.semilogy(time_points, step_sizes, 'b-')
-    plt.xlabel('Time')
-    plt.ylabel('Time Step Size')
-    plt.title('Adaptive Time Step Sizes: Van der Pol Oscillator')
-    plt.grid(True)
-    plt.savefig('test_results/adaptive_timesteps.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    print("\n=== Test Suite Summary ===")
-    print("- All test cases completed successfully")
-    print("- Generated plots saved in test_results/")
-    print("- Verified:")
-    print("  * Linear stability (Exponential Decay)")
-    print("  * Energy conservation (Harmonic Oscillator)")
-    print("  * Nonlinear dynamics (Van der Pol)")
-    print("  * Adaptive time stepping")
-    print("\nTest suite completed.")
+    def test_adaptive_timestep(self):
+        """適応的時間ステップ制御のテスト"""
+        # 適応的RK4の設定
+        adaptive_config = TimeIntegrationConfig(
+            dt=0.01,
+            check_stability=True,
+            adaptive_dt=True
+        )
+        
+        scheme = AdaptiveRungeKutta4(
+            config=adaptive_config,
+            relative_tolerance=1e-6,
+            absolute_tolerance=1e-8
+        )
+        
+        # 初期条件（調和振動子）
+        omega = 2 * jnp.pi
+        field = jnp.array([1.0, 0.0])
+        t = 0.0
+        
+        # 時間発展
+        times = [t]
+        positions = [float(field[0])]
+        velocities = [float(field[1])]
+        dt_values = [float(adaptive_config.dt)]
+        
+        while t < self.t_final:
+            # 4つのステージの時間微分値を計算
+            derivatives = self.compute_rk4_derivatives(field, omega)
+            
+            # 時間発展と誤差推定
+            error = scheme.estimate_error(derivatives, field)
+            
+            # 時間ステップの調整
+            new_dt = scheme.adjust_timestep(error, field)
+            adaptive_config.dt = new_dt
+            
+            # 更新された時間ステップで時間発展
+            field = scheme.step(derivatives, t, field)
+            t += new_dt
+            
+            times.append(t)
+            positions.append(float(field[0]))
+            velocities.append(float(field[1]))
+            dt_values.append(float(new_dt))
+        
+        # 時間ステップの変化をプロット
+        plt.figure(figsize=(10, 6))
+        plt.semilogy(times[:-1], dt_values[:-1], 'b-')
+        plt.xlabel('Time')
+        plt.ylabel('Time Step Size')
+        plt.title('Adaptive Time Step Control')
+        plt.grid(True)
+        plt.savefig('test_results/time_integration/adaptive_timestep.png')
+        plt.close()
+        
+        # 最小・最大時間ステップの検証
+        min_dt = min(dt_values)
+        max_dt = max(dt_values)
+        self.assertGreater(min_dt, 0.001, "時間ステップが小さすぎます")
+        self.assertLess(max_dt, 0.1, "時間ステップが大きすぎます")
 
 if __name__ == '__main__':
-    main()
+    unittest.main()

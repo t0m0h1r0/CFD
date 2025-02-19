@@ -14,7 +14,7 @@ class SpatialDiscretizationTestSuite:
     """Spatial Discretization Scheme Test Suite"""
     
     @staticmethod
-    def create_test_grid_manager(nx: int = 64, ny: int = 64) -> GridManager:
+    def create_test_grid_manager(nx: int = 256, ny: int = 256) -> GridManager:
         """Create a uniform test grid"""
         grid_config = GridConfig(
             dimensions=(1.0, 1.0, 1.0),

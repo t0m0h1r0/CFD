@@ -1,29 +1,24 @@
-from typing import Tuple, Optional, List
 from dataclasses import dataclass
+from typing import Tuple
 from functools import partial
 
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 
-from .base import (
-    TimeIntegratorBase,
-    TimeIntegrationConfig,
-    ODESystem,
-    State,
-    Derivative
-)
+from .base import TimeIntegratorBase, TimeIntegrationConfig
 
 @dataclass
 class ButcherTableau:
-    """Butcher tableau for Runge-Kutta methods."""
-    a: jnp.ndarray  # Runge-Kutta matrix
-    b: jnp.ndarray  # Weights
-    c: jnp.ndarray  # Nodes
-    order: int      # Order of accuracy
+    """ルンゲクッタ法のブッチャー表"""
+    a: jnp.ndarray  # ルンゲクッタ行列
+    b: jnp.ndarray  # 重み係数
+    c: jnp.ndarray  # 時間配分係数
+    order: int      # 精度次数
     
     @staticmethod
     def rk4() -> 'ButcherTableau':
-        """Create classical RK4 tableau."""
+        """4次のルンゲクッタ法の係数を生成"""
         a = jnp.array([
             [0., 0., 0., 0.],
             [0.5, 0., 0., 0.],
@@ -33,201 +28,122 @@ class ButcherTableau:
         b = jnp.array([1/6, 1/3, 1/3, 1/6])
         c = jnp.array([0., 0.5, 0.5, 1.])
         return ButcherTableau(a=a, b=b, c=c, order=4)
-    
-    @staticmethod
-    def fehlberg() -> Tuple['ButcherTableau', jnp.ndarray]:
-        """Create Fehlberg RK4(5) tableau for error estimation."""
-        a = jnp.zeros((6, 6))
-        a = a.at[1, 0].set(1/4)
-        a = a.at[2, 0:2].set(jnp.array([3/32, 9/32]))
-        a = a.at[3, 0:3].set(jnp.array([1932/2197, -7200/2197, 7296/2197]))
-        a = a.at[4, 0:4].set(jnp.array([439/216, -8, 3680/513, -845/4104]))
-        a = a.at[5, 0:5].set(jnp.array([-8/27, 2, -3544/2565, 1859/4104, -11/40]))
-        
-        b4 = jnp.array([25/216, 0, 1408/2565, 2197/4104, -1/5, 0])
-        b5 = jnp.array([16/135, 0, 6656/12825, 28561/56430, -9/50, 2/55])
-        
-        c = jnp.array([0, 1/4, 3/8, 12/13, 1, 1/2])
-        
-        return ButcherTableau(a=a, b=b4, c=c, order=4), b5
 
-def _compute_state_error(y_high: State, y_low: State) -> float:
-    """Compute error between two states."""
-    if isinstance(y_high, tuple) and isinstance(y_low, tuple):
-        # For tuple states (e.g., position-velocity pairs)
-        return jnp.sqrt(sum(
-            jnp.sum((h - l) ** 2)
-            for h, l in zip(y_high, y_low)
-        ))
-    else:
-        # For scalar or array states
-        return jnp.linalg.norm(jnp.array(y_high) - jnp.array(y_low))
-
-def _compute_state_scale(y: State, atol: float, rtol: float) -> float:
-    """Compute scaling factor for error estimation."""
-    if isinstance(y, tuple):
-        # For tuple states
-        return jnp.sqrt(sum(
-            jnp.sum((atol + rtol * jnp.abs(yi)) ** 2)
-            for yi in y
-        ))
-    else:
-        # For scalar or array states
-        return atol + rtol * jnp.linalg.norm(jnp.array(y))
-
-def _rk_step(system_fn, tableau: ButcherTableau, t: float, y: State, dt: float) -> State:
-    """Helper function for Runge-Kutta step that can be jitted."""
-    # Initialize stage values
-    k = []
-    
-    # Compute stage values
-    for i in range(len(tableau.c)):
-        t_stage = t + tableau.c[i] * dt
-        y_stage = y
-        
-        # Add contributions from previous stages
-        for j in range(i):
-            if tableau.a[i, j] != 0:
-                dy = system_fn.apply_update(
-                    y,
-                    k[j],
-                    dt * tableau.a[i, j]
-                )
-                y_stage = dy
-        
-        # Compute stage derivative
-        k.append(system_fn(t_stage, y_stage))
-    
-    # Compute final update
-    y_new = y
-    for i in range(len(k)):
-        if tableau.b[i] != 0:
-            dy = system_fn.apply_update(
-                y,
-                k[i],
-                dt * tableau.b[i]
-            )
-            y_new = dy
-            
-    return y_new
-
-class RungeKutta(TimeIntegratorBase[State, Derivative]):
-    """General Runge-Kutta implementation."""
-    
-    def __init__(self,
-                 config: TimeIntegrationConfig,
-                 tableau: ButcherTableau):
-        """
-        Initialize Runge-Kutta integrator.
-        
-        Args:
-            config: Time integration configuration
-            tableau: Butcher tableau
-        """
-        super().__init__(config)
-        self.tableau = tableau
-    
-    def step(self,
-            system: ODESystem[State, Derivative],
-            t: float,
-            y: State,
-            dt: float) -> State:
-        """
-        Perform single Runge-Kutta step.
-        
-        Args:
-            system: ODE system to integrate
-            t: Current time
-            y: Current state
-            dt: Time step size
-            
-        Returns:
-            New state
-        """
-        return _rk_step(system, self.tableau, t, y, dt)
-    
-    def get_order(self) -> int:
-        """
-        Get order of accuracy.
-        
-        Returns:
-            Order of accuracy from Butcher tableau
-        """
-        return self.tableau.order
-
-class RK4(RungeKutta[State, Derivative]):
-    """Classical fourth-order Runge-Kutta method."""
+class RungeKutta4(TimeIntegratorBase):
+    """4次のルンゲクッタ法による時間発展"""
     
     def __init__(self, config: TimeIntegrationConfig):
         """
-        Initialize RK4 integrator.
+        4次ルンゲクッタ法の初期化
         
         Args:
-            config: Time integration configuration
+            config: 時間発展の設定
         """
-        super().__init__(config, ButcherTableau.rk4())
+        super().__init__(config)
+        self.tableau = ButcherTableau.rk4()
+    
+    @partial(jax.jit, static_argnums=(0,))
+    def step(self,
+            stage_derivatives: Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike],
+            t: float,
+            field: ArrayLike) -> ArrayLike:
+        """
+        ルンゲクッタ法による1ステップの時間発展
+        
+        Args:
+            stage_derivatives: 4つのステージの時間微分値 (k1, k2, k3, k4)
+            t: 現在時刻
+            field: 現在の場
+            
+        Returns:
+            時間発展後の場
+        """
+        dt = self.config.dt
+        k1, k2, k3, k4 = stage_derivatives
+        
+        # 安定性チェック
+        if self.config.check_stability:
+            is_stable = self.check_stability(k1, field, t)  # k1を使用して安定性チェック
+            if not is_stable and self.config.adaptive_dt:
+                self.config.dt *= 0.5
+                return self.step(stage_derivatives, t, field)
+        
+        # 4次ルンゲクッタ法による更新
+        return field + (dt/6) * (k1 + 2*k2 + 2*k3 + k4)
+    
+    @staticmethod
+    def get_order() -> int:
+        """精度次数の取得"""
+        return 4
 
-class FehlbergRK45(RungeKutta[State, Derivative]):
-    """Fehlberg's adaptive RK4(5) method."""
+class AdaptiveRungeKutta4(RungeKutta4):
+    """適応的な時間ステップ制御を行う4次のルンゲクッタ法"""
     
     def __init__(self,
                  config: TimeIntegrationConfig,
-                 atol: float = 1e-6,
-                 rtol: float = 1e-3):
+                 relative_tolerance: float = 1e-6,
+                 absolute_tolerance: float = 1e-8):
         """
-        Initialize Fehlberg RK4(5) integrator.
+        適応的RK4の初期化
         
         Args:
-            config: Time integration configuration
-            atol: Absolute tolerance
-            rtol: Relative tolerance
+            config: 時間発展の設定
+            relative_tolerance: 相対誤差の許容値
+            absolute_tolerance: 絶対誤差の許容値
         """
-        tableau, self.b_hat = ButcherTableau.fehlberg()
-        super().__init__(config, tableau)
-        self.atol = atol
-        self.rtol = rtol
+        super().__init__(config)
+        self.relative_tolerance = relative_tolerance
+        self.absolute_tolerance = absolute_tolerance
     
-    def step(self,
-            system: ODESystem[State, Derivative],
-            t: float,
-            y: State,
-            dt: float) -> State:
+    def estimate_error(self,
+                      stage_derivatives: Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike],
+                      field: ArrayLike) -> ArrayLike:
         """
-        Perform adaptive RK step.
+        誤差推定（組み込み法による）
         
         Args:
-            system: ODE system to integrate
-            t: Current time
-            y: Current state
-            dt: Time step size
+            stage_derivatives: 4つのステージの時間微分値
+            field: 現在の場
             
         Returns:
-            New state
+            推定された局所誤差
         """
-        # Compute both solutions
-        y_low = _rk_step(system, self.tableau, t, y, dt)
+        dt = self.config.dt
+        k1, k2, k3, k4 = stage_derivatives
         
-        # For error estimation, create a tableau with b_hat
-        tableau_high = ButcherTableau(
-            a=self.tableau.a,
-            b=self.b_hat,
-            c=self.tableau.c,
-            order=self.tableau.order + 1
+        # 5次の解との比較による誤差推定（組み込み係数）
+        b_star = jnp.array([16/135, 0, 6656/12825, 28561/56430, -9/50, 2/55])
+        b = jnp.array([25/216, 0, 1408/2565, 2197/4104, -1/5, 0])
+        
+        # 誤差の推定
+        error = dt * jnp.abs(
+            (b_star[0] - b[0])*k1 + (b_star[2] - b[2])*k2 + 
+            (b_star[3] - b[3])*k3 + (b_star[4] - b[4])*k4
         )
-        y_high = _rk_step(system, tableau_high, t, y, dt)
         
-        # Compute error estimate
-        error = _compute_state_error(y_high, y_low)
-        scale = _compute_state_scale(y_high, self.atol, self.rtol)
-        error_normalized = error / scale
+        return error
+    
+    def adjust_timestep(self,
+                       error: ArrayLike,
+                       field: ArrayLike) -> float:
+        """
+        時間ステップ幅の調整
         
-        # Adjust time step if needed
-        if self.config.adaptive_dt and error_normalized > 1.0:
-            # Reduce time step using PI controller
-            dt_new = max(
-                0.1 * dt,
-                0.9 * dt * (1.0 / error_normalized) ** (1.0 / (self.tableau.order + 1))
-            )
-            return self.step(system, t, y, dt_new)
+        Args:
+            error: 推定された誤差
+            field: 現在の場
+            
+        Returns:
+            新しい時間ステップ幅
+        """
+        scale = self.absolute_tolerance + self.relative_tolerance * jnp.abs(field)
+        error_ratio = jnp.max(error / scale)
         
-        return y_high
+        if error_ratio > 1:
+            # 誤差が大きすぎる場合は時間ステップを縮小
+            dt_new = 0.9 * self.config.dt * (1/error_ratio)**(1/4)
+            return jnp.maximum(0.1 * self.config.dt, dt_new)
+        else:
+            # 誤差が小さい場合は時間ステップを拡大（上限あり）
+            dt_new = 0.9 * self.config.dt * (1/error_ratio)**(1/5)
+            return jnp.minimum(10.0 * self.config.dt, dt_new)
