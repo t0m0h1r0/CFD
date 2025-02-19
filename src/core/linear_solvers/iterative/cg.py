@@ -65,9 +65,9 @@ class ConjugateGradientSolver(LinearSolverBase):
         p = z
         rz_old = jnp.sum(r * z)
         
-        def cg_step(carry, _):
+        def cg_body(state, _):
             """共役勾配法のステップ関数"""
-            x, r, p, rz_old = carry
+            x, r, p, rz_old, iteration, residual_norm = state
             
             # 行列-ベクトル積
             Ap = operator @ p
@@ -85,25 +85,36 @@ class ConjugateGradientSolver(LinearSolverBase):
             beta = rz_new / rz_old
             p_new = z_new + beta * p
             
-            return (x_new, r_new, p_new, rz_new), jnp.sqrt(rz_new)
+            # 残差ノルムの計算
+            new_residual_norm = jnp.linalg.norm(r_new)
+            
+            # 収束判定
+            converged = self.check_convergence(new_residual_norm, iteration + 1)
+            
+            return (x_new, r_new, p_new, rz_new, iteration + 1, new_residual_norm), (x_new, new_residual_norm)
         
-        # JAX scan を用いた反復計算
-        init_carry = (x, r, p, rz_old)
-        (x, r, p, rz), residual_norms = jax.lax.scan(
-            cg_step, init_carry, None, length=self.max_iterations
+        # JAX scanを用いた反復計算
+        init_state = (
+            x, 
+            r, 
+            p, 
+            rz_old, 
+            0, 
+            jnp.linalg.norm(r)
+        )
+        (x, r, p, rz, final_iteration, final_residual), (solution_history, residual_history) = jax.lax.scan(
+            cg_body, init_state, None, length=self.max_iterations
         )
         
-        # 収束判定と履歴更新
-        converged = self.check_convergence(residual_norms[-1], self.max_iterations)
-        
+        # 収束履歴の更新
         history.update({
-            'converged': converged,
-            'iterations': self.max_iterations,
-            'final_residual': float(residual_norms[-1])
+            'converged': final_residual[-1] < self.tolerance,
+            'iterations': int(final_iteration),
+            'final_residual': float(final_residual[-1])
         })
         
         if self.record_history:
-            history['residual_history'] = residual_norms
+            history['residual_history'] = residual_history
         
         return x, history
     

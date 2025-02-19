@@ -69,11 +69,11 @@ class LinearSolverBase(ABC):
     
     def check_convergence(
         self, 
-        residual_norm: float, 
+        residual_norm: ArrayLike, 
         iteration: int
-    ) -> bool:
+    ) -> ArrayLike:
         """
-        収束判定
+        JAX互換の収束判定
         
         Args:
             residual_norm: 残差ノルム
@@ -82,5 +82,8 @@ class LinearSolverBase(ABC):
         Returns:
             収束判定結果
         """
-        return (residual_norm < self.tolerance or 
-                iteration >= self.max_iterations)
+        # JAX互換の収束判定
+        return jnp.logical_or(
+            residual_norm < self.tolerance,
+            iteration >= self.max_iterations
+        )
