@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Callable, Tuple, Dict, Optional
 
-from src.core.linear_solvers.iterative.sor import SORSolver
+from src.core.linear_solvers.iterative.sor import SORCCDPoissonSolver as SORSolver
 from src.core.linear_solvers.base import LinearSolverConfig
 from src.core.spatial_discretization.base import SpatialDiscretizationBase
 from src.core.spatial_discretization.operators.ccd import CombinedCompactDifference
@@ -122,8 +122,9 @@ class LinearSolversTestSuite:
             config=LinearSolverConfig(
                 max_iterations=max_iterations,
                 tolerance=tolerance,
-                record_history=True
+                record_history=True,
             ),
+            grid_manager=grid_manager,
             discretization=CombinedCompactDifference(grid_manager=grid_manager)
         )
         
