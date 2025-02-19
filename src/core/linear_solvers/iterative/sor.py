@@ -62,9 +62,8 @@ class SORSolver(LinearSolverBase):
         # 対角成分と対角成分以外の成分を抽出
         diag = jnp.diag(operator)
         
-        def solve_body(state, _):
-            """SORステップの関数"""
-            x, iteration, residual_norm = state
+        def sor_step(carry, _):
+            x, iteration, residual_norm = carry
             
             # SOR法による更新
             x_new = x.copy()
@@ -81,25 +80,60 @@ class SORSolver(LinearSolverBase):
             residual = b - operator @ x_new
             new_residual_norm = jnp.linalg.norm(residual)
             
-            # 収束判定
-            converged = self.check_convergence(new_residual_norm, iteration + 1)
-            
             return (x_new, iteration + 1, new_residual_norm), (x_new, new_residual_norm)
         
-        # JAX scanを使用した反復計算
+        # スキャンを使用した反復計算
         init_state = (x, 0, jnp.linalg.norm(b - operator @ x))
-        (x, final_iteration, final_residual), (solution_history, residual_history) = jax.lax.scan(
-            solve_body, init_state, None, length=self.max_iterations
+        (x, n_iter, residuals), (solutions, individual_residuals) = jax.lax.scan(
+            sor_step, init_state, None, length=self.max_iterations
         )
         
         # 収束履歴の更新
         history.update({
-            'converged': final_residual[-1] < self.tolerance,
-            'iterations': int(final_iteration),
-            'final_residual': float(final_residual[-1])
+            'converged': float(residuals[-1]) < self.tolerance,
+            'iterations': int(n_iter),
+            'final_residual': float(residuals[-1])
         })
         
+        # 履歴記録が有効な場合
         if self.record_history:
-            history['residual_history'] = residual_history
+            history['residual_history'] = individual_residuals
         
         return x, history
+    
+    def optimize_relaxation_parameter(
+        self, 
+        operator: ArrayLike, 
+        b: ArrayLike, 
+        x0: Optional[ArrayLike] = None,
+        omega_range: Tuple[float, float] = (1.0, 2.0),
+        n_points: int = 10
+    ) -> float:
+        """
+        最適な緩和パラメータを探索
+        
+        Args:
+            operator: 線形作用素
+            b: 右辺ベクトル
+            x0: 初期推定解
+            omega_range: 探索する緩和パラメータの範囲
+            n_points: 探索点数
+        
+        Returns:
+            最適な緩和パラメータ
+        """
+        def test_omega(omega):
+            solver = SORSolver(
+                omega=float(omega),
+                max_iterations=self.max_iterations,
+                tolerance=self.tolerance
+            )
+            _, history = solver.solve(operator, b, x0)
+            return history['iterations']
+        
+        # 異なるomegaでテスト
+        omegas = jnp.linspace(omega_range[0], omega_range[1], n_points)
+        iterations = jnp.array([test_omega(omega) for omega in omegas])
+        
+        # 最小反復回数のomegaを返す
+        return float(omegas[jnp.argmin(iterations)])

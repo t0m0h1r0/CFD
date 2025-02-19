@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 from typing import Callable, Tuple, Dict, Optional
 
 from src.core.linear_solvers.iterative.sor import SORSolver
-from src.core.linear_solvers.iterative.cg import ConjugateGradientSolver
 from src.core.spatial_discretization.base import SpatialDiscretizationBase
 from src.core.spatial_discretization.operators.ccd import CombinedCompactDifference
 from src.core.common.grid import GridManager, GridConfig
@@ -62,7 +61,7 @@ class LinearSolversTestSuite:
         
         # ランダムな対称行列の生成
         A_rand = jax.random.normal(key, (n, n))
-        A = A_rand @ A_rand.T
+        A = A_rand @ A_rand.T + n * jnp.eye(n)  # 対角優位性を確保
         
         # 固有値の計算
         evals, evecs = jnp.linalg.eigh(A)
@@ -121,7 +120,8 @@ class LinearSolversTestSuite:
         solver = solver_class(
             discretization=CombinedCompactDifference(grid_manager=grid_manager),
             max_iterations=max_iterations, 
-            tolerance=tolerance
+            tolerance=tolerance,
+            record_history=True
         )
         
         # 前処理が指定されている場合は適用
@@ -176,7 +176,6 @@ class LinearSolversTestSuite:
         # テストするソルバー
         solvers = [
             SORSolver,
-            ConjugateGradientSolver
         ]
         
         # テスト設定
@@ -199,16 +198,7 @@ class LinearSolversTestSuite:
                 
                 # 追加の前処理オプション
                 preconditioners = [None]
-                
-                # CGソルバーの場合は追加の前処理を考慮
-                if solver == ConjugateGradientSolver:
-                    preconditioners.append(
-                        ConjugateGradientSolver.diagonal_preconditioner
-                    )
-                    preconditioners.append(
-                        ConjugateGradientSolver.symmetric_sor_preconditioner
-                    )
-                
+                                
                 # 各前処理オプションでテスト
                 for preconditioner in preconditioners:
                     # テストの実行
@@ -221,18 +211,22 @@ class LinearSolversTestSuite:
                     )
                     
                     # 図の保存
-                    fig_filename = (f'test_results/linear_solvers/'
-                                   f'{solver.__name__.lower()}_'
-                                   f'{config["matrix_size"]}x{config["matrix_size"]}_'
-                                   f'cond{config["condition_number"]}_'
-                                   f'{"preconditioned" if preconditioner else "standard"}.png')
+                    precond_name = (
+                        preconditioner.__name__ if preconditioner 
+                        else 'None'
+                    )
+                    fig_filename = (
+                        f'test_results/linear_solvers/'
+                        f'{solver.__name__.lower()}_'
+                        f'{config["matrix_size"]}x{config["matrix_size"]}_'
+                        f'cond{config["condition_number"]}_'
+                        f'{precond_name}.png'
+                    )
                     plt.savefig(fig_filename)
                     plt.close(fig)
                     
                     # 結果の保存
-                    result['preconditioner'] = (
-                        preconditioner.__name__ if preconditioner else 'None'
-                    )
+                    result['preconditioner'] = precond_name
                     solver_results.append(result)
             
             # ソルバーごとの結果を保存

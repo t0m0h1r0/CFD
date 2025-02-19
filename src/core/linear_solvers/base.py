@@ -28,7 +28,7 @@ class LinearSolverBase(ABC):
             tolerance: 収束判定許容誤差
             record_history: 収束履歴の記録フラグ
         """
-        self.discretization = discretization or CombinedCompactDifference()
+        self.discretization = discretization
         self.max_iterations = max_iterations
         self.tolerance = tolerance
         self.record_history = record_history
