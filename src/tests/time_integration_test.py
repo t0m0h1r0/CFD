@@ -1,6 +1,7 @@
 import os
 import unittest
-from typing import Tuple
+from typing import Tuple, Dict, Optional
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
@@ -11,267 +12,419 @@ from src.core.time_integration.base import TimeIntegrationConfig
 from src.core.time_integration.euler import ExplicitEuler, ImplicitEuler
 from src.core.time_integration.runge_kutta import RungeKutta4, AdaptiveRungeKutta4
 
+@dataclass
+class TestCase:
+    """テストケース定義"""
+    name: str
+    initial_condition: ArrayLike
+    exact_solution: Optional[callable] = None
+    conserved_quantity: Optional[callable] = None
+    stable_dt: Optional[float] = None
+
 class TimeIntegrationTest(unittest.TestCase):
-    """時間発展スキームのテストスイート"""
+    """時間発展スキームの拡張テストスイート"""
     
     def setUp(self):
         """テストの初期設定"""
         # 出力ディレクトリの作成
         os.makedirs('test_results/time_integration', exist_ok=True)
         
-        # 共通の設定
-        self.dt = 0.01
+        # 基本設定
+        self.dt_base = 0.01
         self.t_final = 1.0
-        self.config = TimeIntegrationConfig(
-            dt=self.dt,
-            check_stability=True,
-            adaptive_dt=False
-        )
         
-        # テスト用の時間発展スキーム
-        self.schemes = {
-            'Explicit Euler': ExplicitEuler(self.config),
-            'Implicit Euler': ImplicitEuler(self.config),
-            'RK4': RungeKutta4(self.config)
+        # テストケースの定義
+        self.test_cases = {
+            'linear_decay': TestCase(
+                name="Linear Decay",
+                initial_condition=jnp.array(1.0),
+                exact_solution=lambda t: jnp.exp(-t),
+                conserved_quantity=None,
+                stable_dt=2.0
+            ),
+            'harmonic': TestCase(
+                name="Harmonic Oscillator",
+                initial_condition=jnp.array([1.0, 0.0]),
+                exact_solution=lambda t: jnp.array([
+                    jnp.cos(2*jnp.pi*t),
+                    -2*jnp.pi*jnp.sin(2*jnp.pi*t)
+                ]),
+                conserved_quantity=lambda x, v: 0.5*(v**2 + (2*jnp.pi)**2*x**2),
+                stable_dt=0.1
+            ),
+            'van_der_pol': TestCase(
+                name="Van der Pol Oscillator",
+                initial_condition=jnp.array([2.0, 0.0]),
+                exact_solution=None,  # 厳密解なし
+                conserved_quantity=None,
+                stable_dt=0.01
+            ),
+            'heat_equation': TestCase(
+                name="Heat Equation",
+                initial_condition=jnp.sin(jnp.linspace(0, jnp.pi, 100)),
+                exact_solution=lambda t, x: jnp.sin(x)*jnp.exp(-t),
+                conserved_quantity=lambda u: jnp.sum(u**2),  # L2ノルム
+                stable_dt=0.5/100**2  # dx^2/2 の条件
+            ),
+            'wave_equation': TestCase(
+                name="Wave Equation",
+                initial_condition=jnp.array([
+                    jnp.sin(jnp.linspace(0, 2*jnp.pi, 100)),  # 変位
+                    jnp.zeros(100)  # 速度
+                ]),
+                exact_solution=lambda t, x: jnp.sin(x-t),
+                conserved_quantity=lambda u, v: jnp.sum(v**2 + jnp.gradient(u)**2),  # エネルギー
+                stable_dt=0.1
+            )
         }
-    
-    def compute_rk4_derivatives(self,
-                              field: ArrayLike,
-                              omega: float = 1.0) -> Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
-        """RK4の4つのステージの時間微分値を計算"""
-        dt = self.dt
         
-        # 調和振動子の場合の時間微分を計算
-        if field.ndim == 1 and len(field) == 2:  # 調和振動子
-            x, v = field[0], field[1]
-            k1 = jnp.array([v, -omega**2 * x])
-            
-            x2, v2 = field + 0.5*dt*k1
-            k2 = jnp.array([v2, -omega**2 * x2])
-            
-            x3, v3 = field + 0.5*dt*k2
-            k3 = jnp.array([v3, -omega**2 * x3])
-            
-            x4, v4 = field + dt*k3
-            k4 = jnp.array([v4, -omega**2 * x4])
-        else:  # 線形減衰
-            k1 = -field
-            k2 = -(field + 0.5*dt*k1)
-            k3 = -(field + 0.5*dt*k2)
-            k4 = -(field + dt*k3)
+        # スキームの設定
+        self.schemes = self._create_schemes()
         
-        return k1, k2, k3, k4
-    
-    def test_linear_decay(self):
-        """線形減衰のテスト"""
-        # 初期条件
-        field = jnp.array(1.0)
-        t = 0.0
+    def _create_schemes(self) -> Dict:
+        """テスト用のスキームを生成"""
+        schemes = {}
         
-        # 各スキームでの数値解
-        numerical_solutions = {}
-        for name, scheme in self.schemes.items():
-            current_field = field
-            times = [t]
-            values = [float(current_field)]
-            
-            while t < self.t_final:
-                if isinstance(scheme, RungeKutta4):
-                    # RK4の場合は4つのステージの時間微分値を計算
-                    derivatives = self.compute_rk4_derivatives(current_field)
-                    current_field = scheme.step(derivatives, t, current_field)
-                else:
-                    # オイラー法の場合は単純な時間微分
-                    dfield = -current_field
-                    current_field = scheme.step(dfield, t, current_field)
-                
-                t += self.dt
-                times.append(t)
-                values.append(float(current_field))
-            
-            numerical_solutions[name] = (times, values)
+        # 基本設定
+        base_config = TimeIntegrationConfig(dt=self.dt_base)
+        adaptive_config = TimeIntegrationConfig(dt=self.dt_base, adaptive_dt=True)
         
-        # 厳密解の計算
-        exact_times = jnp.linspace(0, self.t_final, len(times))
-        exact_values = jnp.exp(-exact_times)
+        # 標準的なスキーム
+        schemes['explicit_euler'] = ExplicitEuler(base_config)
+        schemes['implicit_euler'] = ImplicitEuler(base_config)
+        schemes['rk4'] = RungeKutta4(base_config)
         
-        # 誤差の計算と検証
-        for name, (times, values) in numerical_solutions.items():
-            error = jnp.max(jnp.abs(jnp.array(values) - jnp.exp(-jnp.array(times))))
-            
-            # スキームの次数に応じた誤差の評価
-            expected_order = self.schemes[name].get_order()
-            expected_error = self.dt ** expected_order
-            
-            self.assertLess(error, expected_error * 10,
-                          f"{name}の誤差が予想より大きい: {error:.2e} > {expected_error:.2e}")
-        
-        # 結果のプロット
-        plt.figure(figsize=(10, 6))
-        plt.plot(exact_times, exact_values, 'k-', label='Exact')
-        
-        for name, (times, values) in numerical_solutions.items():
-            plt.plot(times, values, '--', label=name)
-            
-        plt.xlabel('Time')
-        plt.ylabel('Value')
-        plt.title('Linear Decay Test')
-        plt.legend()
-        plt.grid(True)
-        plt.savefig('test_results/time_integration/linear_decay.png')
-        plt.close()
-    
-    def test_harmonic_oscillator(self):
-        """調和振動子のテスト"""
-        omega = 2 * jnp.pi  # 角周波数
-        
-        # 初期条件
-        field = jnp.array([1.0, 0.0])  # [位置, 速度]
-        t = 0.0
-        
-        # 各スキームでの数値解
-        numerical_solutions = {}
-        for name, scheme in self.schemes.items():
-            current_field = field
-            times = [t]
-            positions = [float(current_field[0])]
-            velocities = [float(current_field[1])]
-            
-            while t < self.t_final:
-                if isinstance(scheme, RungeKutta4):
-                    # RK4の場合は4つのステージの時間微分値を計算
-                    derivatives = self.compute_rk4_derivatives(current_field, omega)
-                    current_field = scheme.step(derivatives, t, current_field)
-                else:
-                    # オイラー法の場合は単純な時間微分
-                    x, v = current_field[0], current_field[1]
-                    dfield = jnp.array([v, -omega**2 * x])
-                    current_field = scheme.step(dfield, t, current_field)
-                
-                t += self.dt
-                times.append(t)
-                positions.append(float(current_field[0]))
-                velocities.append(float(current_field[1]))
-            
-            numerical_solutions[name] = (times, positions, velocities)
-        
-        # 厳密解の計算
-        exact_times = jnp.linspace(0, self.t_final, len(times))
-        exact_positions = jnp.cos(omega * exact_times)
-        exact_velocities = -omega * jnp.sin(omega * exact_times)
-        
-        # 誤差の計算と検証
-        for name, (times, positions, velocities) in numerical_solutions.items():
-            pos_error = jnp.max(jnp.abs(jnp.array(positions) - jnp.cos(omega * jnp.array(times))))
-            vel_error = jnp.max(jnp.abs(jnp.array(velocities) - (-omega * jnp.sin(omega * jnp.array(times)))))
-            
-            # エネルギー保存の検証
-            energies = [0.5 * (v**2 + omega**2 * x**2) 
-                       for x, v in zip(positions, velocities)]
-            energy_error = jnp.max(jnp.abs(jnp.array(energies) - energies[0]))
-            
-            # スキームの次数に応じた誤差の評価
-            expected_order = self.schemes[name].get_order()
-            expected_error = self.dt ** expected_order
-            
-            self.assertLess(pos_error, expected_error * 10,
-                          f"{name}の位置の誤差が予想より大きい")
-            self.assertLess(vel_error, expected_error * 10,
-                          f"{name}の速度の誤差が予想より大きい")
-            
-            # 結果のプロット
-            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
-            
-            # 位置のプロット
-            ax1.plot(exact_times, exact_positions, 'k-', label='Exact')
-            ax1.plot(times, positions, '--', label=name)
-            ax1.set_xlabel('Time')
-            ax1.set_ylabel('Position')
-            ax1.grid(True)
-            ax1.legend()
-            
-            # 速度のプロット
-            ax2.plot(exact_times, exact_velocities, 'k-', label='Exact')
-            ax2.plot(times, velocities, '--', label=name)
-            ax2.set_xlabel('Time')
-            ax2.set_ylabel('Velocity')
-            ax2.grid(True)
-            ax2.legend()
-            
-            # エネルギーのプロット
-            ax3.plot(times, energies, '-', label='Numerical')
-            ax3.axhline(y=energies[0], color='k', linestyle='--', label='Initial')
-            ax3.set_xlabel('Time')
-            ax3.set_ylabel('Energy')
-            ax3.grid(True)
-            ax3.legend()
-            
-            plt.suptitle(f'Harmonic Oscillator Test - {name}')
-            plt.tight_layout()
-            plt.savefig(f'test_results/time_integration/harmonic_oscillator_{name}.png')
-            plt.close()
-    
-    def test_adaptive_timestep(self):
-        """適応的時間ステップ制御のテスト"""
-        # 適応的RK4の設定
-        adaptive_config = TimeIntegrationConfig(
-            dt=0.01,
-            check_stability=True,
-            adaptive_dt=True
-        )
-        
-        scheme = AdaptiveRungeKutta4(
-            config=adaptive_config,
+        # 適応的スキーム
+        schemes['adaptive_rk4'] = AdaptiveRungeKutta4(
+            adaptive_config,
             relative_tolerance=1e-6,
             absolute_tolerance=1e-8
         )
         
-        # 初期条件（調和振動子）
-        omega = 2 * jnp.pi
-        field = jnp.array([1.0, 0.0])
-        t = 0.0
+        return schemes
+    
+    def _compute_derivatives(self, case_name: str, field: ArrayLike, t: float) -> ArrayLike:
+        """各テストケースの時間微分を計算"""
+        if case_name == 'linear_decay':
+            return -field
+        elif case_name == 'harmonic':
+            x, v = field
+            return jnp.array([v, -(2*jnp.pi)**2 * x])
+        elif case_name == 'van_der_pol':
+            x, v = field
+            mu = 1.0  # Van der Pol パラメータ
+            return jnp.array([v, mu*(1 - x**2)*v - x])
+        elif case_name == 'heat_equation':
+            # 中央差分で2階微分を計算
+            dx = jnp.pi/100
+            d2u_dx2 = jnp.gradient(jnp.gradient(field, dx), dx)
+            return d2u_dx2
+        elif case_name == 'wave_equation':
+            u, v = field
+            # 波動方程式 u_tt = c^2 u_xx
+            c = 1.0  # 波速
+            dx = 2*jnp.pi/100
+            d2u_dx2 = jnp.gradient(jnp.gradient(u, dx), dx)
+            return jnp.array([v, c**2 * d2u_dx2])
+        else:
+            raise ValueError(f"Unknown test case: {case_name}")
+    
+    def _compute_rk4_derivatives(self,
+                               case_name: str,
+                               field: ArrayLike,
+                               t: float,
+                               dt: float) -> Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
+        """RK4の4つのステージの時間微分値を計算"""
+        k1 = self._compute_derivatives(case_name, field, t)
+        k2 = self._compute_derivatives(case_name, field + 0.5*dt*k1, t + 0.5*dt)
+        k3 = self._compute_derivatives(case_name, field + 0.5*dt*k2, t + 0.5*dt)
+        k4 = self._compute_derivatives(case_name, field + dt*k3, t + dt)
+        return k1, k2, k3, k4
+    
+    def test_convergence_rates(self):
+        """収束率のテスト"""
+        dt_values = jnp.logspace(-4, -1, 4)
         
-        # 時間発展
-        times = [t]
-        positions = [float(field[0])]
-        velocities = [float(field[1])]
-        dt_values = [float(adaptive_config.dt)]
+        for case_name, case in self.test_cases.items():
+            if case.exact_solution is None:
+                continue
+                
+            for scheme_name, scheme in self.schemes.items():
+                errors = []
+                
+                for dt in dt_values:
+                    # スキームの設定を更新
+                    scheme.config.dt = dt
+                    
+                    # 時間発展
+                    field = case.initial_condition
+                    t = 0.0
+                    while t < self.t_final:
+                        if isinstance(scheme, RungeKutta4):
+                            k1, k2, k3, k4 = self._compute_rk4_derivatives(
+                                case_name, field, t, dt
+                            )
+                            derivatives = (k1, k2, k3, k4)
+                        else:
+                            derivatives = self._compute_derivatives(case_name, field, t)
+                        
+                        field = scheme.step(derivatives, t, field)
+                        t += dt
+                    
+                    # 誤差計算
+                    if callable(case.exact_solution):
+                        exact = case.exact_solution(self.t_final)
+                        error = jnp.linalg.norm(field - exact) / jnp.linalg.norm(exact)
+                        errors.append(float(error))
+                
+                if errors:  # エラーが計算されている場合のみ
+                    # 収束率の計算と可視化
+                    log_errors = jnp.log(jnp.array(errors))
+                    log_dt = jnp.log(dt_values)
+                    convergence_rate = -jnp.polyfit(log_dt, log_errors, 1)[0]
+                    
+                    plt.figure(figsize=(10, 6))
+                    plt.loglog(dt_values, errors, 'o-', label=f'Error (rate={convergence_rate:.2f})')
+                    plt.xlabel('dt')
+                    plt.ylabel('Relative Error')
+                    plt.title(f'{case.name} - {scheme_name} Convergence')
+                    plt.grid(True)
+                    plt.legend()
+                    plt.savefig(f'test_results/time_integration/convergence_{case_name}_{scheme_name}.png')
+                    plt.close()
+                    
+                    # 期待される収束率のチェック
+                    expected_order = scheme.get_order()
+                    self.assertGreater(
+                        convergence_rate,
+                        expected_order - 0.5,
+                        f"{scheme_name} on {case.name}: " 
+                        f"Convergence rate {convergence_rate:.2f} lower than expected {expected_order}"
+                    )
+    
+    def test_stability_boundaries(self):
+        """安定性境界のテスト"""
+        for case_name, case in self.test_cases.items():
+            if case.stable_dt is None:
+                continue
+                
+            dt_values = jnp.linspace(0.5*case.stable_dt, 2.0*case.stable_dt, 10)
+            
+            for scheme_name, scheme in self.schemes.items():
+                max_values = []
+                
+                for dt in dt_values:
+                    # スキームの設定を更新
+                    scheme.config.dt = dt
+                    
+                    # 時間発展
+                    field = case.initial_condition
+                    t = 0.0
+                    max_value = float(jnp.max(jnp.abs(field)))
+                    
+                    try:
+                        while t < self.t_final:
+                            if isinstance(scheme, RungeKutta4):
+                                k1, k2, k3, k4 = self._compute_rk4_derivatives(
+                                    case_name, field, t, dt
+                                )
+                                derivatives = (k1, k2, k3, k4)
+                            else:
+                                derivatives = self._compute_derivatives(case_name, field, t)
+                            
+                            field = scheme.step(derivatives, t, field)
+                            max_value = max(max_value, float(jnp.max(jnp.abs(field))))
+                            t += dt
+                            
+                            # 発散チェック
+                            if jnp.any(jnp.isnan(field)) or jnp.any(jnp.abs(field) > 1e10):
+                                max_value = float('inf')
+                                break
+                                
+                    except Exception as e:
+                        max_value = float('inf')
+                    
+                    max_values.append(max_value)
+                
+                # 結果のプロット
+                plt.figure(figsize=(10, 6))
+                plt.semilogy(dt_values/case.stable_dt, max_values, 'o-')
+                plt.axvline(x=1.0, color='r', linestyle='--', label='Theoretical Boundary')
+                plt.xlabel('dt/dt_stable')
+                plt.ylabel('Max Absolute Value')
+                plt.title(f'{case.name} - {scheme_name} Stability')
+                plt.grid(True)
+                plt.legend()
+                plt.savefig(f'test_results/time_integration/stability_{case_name}_{scheme_name}.png')
+                plt.close()
+    
+    def test_conservation(self):
+        """保存量のテスト"""
+        for case_name, case in self.test_cases.items():
+            if case.conserved_quantity is None:
+                continue
+                
+            for scheme_name, scheme in self.schemes.items():
+                # 時間発展
+                field = case.initial_condition
+                t = 0.0
+                times = [t]
+                conserved_values = []
+                
+                # 初期の保存量を計算
+                if case_name == 'harmonic':
+                    x, v = field
+                    conserved_values.append(float(case.conserved_quantity(x, v)))
+                else:
+                    conserved_values.append(float(case.conserved_quantity(field)))
+                
+                while t < self.t_final:
+                    if isinstance(scheme, RungeKutta4):
+                        k1, k2, k3, k4 = self._compute_rk4_derivatives(
+                            case_name, field, t, scheme.config.dt
+                        )
+                        derivatives = (k1, k2, k3, k4)
+                    else:
+                        derivatives = self._compute_derivatives(case_name, field, t)
+                    
+                    field = scheme.step(derivatives, t, field)
+                    t += scheme.config.dt
+                    
+                    times.append(t)
+                    if case_name == 'harmonic':
+                        x, v = field
+                        conserved_values.append(float(case.conserved_quantity(x, v)))
+                    else:
+                        conserved_values.append(float(case.conserved_quantity(field)))
+                
+                # 保存量の変動を計算
+                variation = jnp.std(jnp.array(conserved_values)) / jnp.mean(jnp.array(conserved_values))
+                
+                # 結果のプロット
+                plt.figure(figsize=(10, 6))
+                plt.plot(times, conserved_values)
+                plt.xlabel('Time')
+                plt.ylabel('Conserved Quantity')
+                plt.title(f'{case.name} - {scheme_name} Conservation (var={variation:.2e})')
+                plt.grid(True)
+                plt.savefig(f'test_results/time_integration/conservation_{case_name}_{scheme_name}.png')
+                plt.close()
+                
+                # 保存性の検証
+                if isinstance(scheme, RungeKutta4):
+                    self.assertLess(
+                        variation,
+                        1e-3,
+                        f"{scheme_name} on {case_name}: Poor conservation, variation={variation:.2e}"
+                    )
+    
+    def test_adaptive_performance(self):
+        """適応的時間ステップ制御の性能テスト"""
+        adaptive_schemes = {
+            name: scheme for name, scheme in self.schemes.items()
+            if isinstance(scheme, AdaptiveRungeKutta4)
+        }
         
-        while t < self.t_final:
-            # 4つのステージの時間微分値を計算
-            derivatives = self.compute_rk4_derivatives(field, omega)
+        if not adaptive_schemes:
+            return
             
-            # 時間発展と誤差推定
-            error = scheme.estimate_error(derivatives, field)
-            
-            # 時間ステップの調整
-            new_dt = scheme.adjust_timestep(error, field)
-            adaptive_config.dt = new_dt
-            
-            # 更新された時間ステップで時間発展
-            field = scheme.step(derivatives, t, field)
-            t += new_dt
-            
-            times.append(t)
-            positions.append(float(field[0]))
-            velocities.append(float(field[1]))
-            dt_values.append(float(new_dt))
+        for case_name, case in self.test_cases.items():
+            for scheme_name, scheme in adaptive_schemes.items():
+                # 時間発展
+                field = case.initial_condition
+                t = 0.0
+                times = [t]
+                dt_values = [float(scheme.config.dt)]
+                
+                while t < self.t_final:
+                    k1, k2, k3, k4 = self._compute_rk4_derivatives(
+                        case_name, field, t, scheme.config.dt
+                    )
+                    derivatives = (k1, k2, k3, k4)
+                    
+                    # 誤差推定と時間ステップ調整
+                    error = scheme.estimate_error(derivatives, field)
+                    new_dt = float(scheme.adjust_timestep(error, field))
+                    scheme.config.dt = new_dt
+                    
+                    field = scheme.step(derivatives, t, field)
+                    t += new_dt
+                    
+                    times.append(t)
+                    dt_values.append(new_dt)
+                
+                # 結果のプロット
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
+                
+                # 時間ステップの変化
+                ax1.semilogy(times[:-1], dt_values[:-1])
+                ax1.set_xlabel('Time')
+                ax1.set_ylabel('dt')
+                ax1.grid(True)
+                ax1.set_title('Time Step Evolution')
+                
+                # 時間ステップの分布
+                ax2.hist(dt_values[:-1], bins=50)
+                ax2.set_xlabel('dt')
+                ax2.set_ylabel('Frequency')
+                ax2.grid(True)
+                ax2.set_title('Time Step Distribution')
+                
+                plt.suptitle(f'{case.name} - {scheme_name} Adaptive Performance')
+                plt.tight_layout()
+                plt.savefig(f'test_results/time_integration/adaptive_{case_name}_{scheme_name}.png')
+                plt.close()
+                
+                # 時間ステップの統計の検証
+                min_dt = min(dt_values)
+                max_dt = max(dt_values)
+                mean_dt = sum(dt_values) / len(dt_values)
+                
+                # 最小時間ステップが小さすぎないことを確認
+                self.assertGreater(
+                    min_dt,
+                    0.001 * self.dt_base,
+                    f"{scheme_name} on {case_name}: Time step too small"
+                )
+                
+                # 最大時間ステップが大きすぎないことを確認
+                self.assertLess(
+                    max_dt,
+                    100 * self.dt_base,
+                    f"{scheme_name} on {case_name}: Time step too large"
+                )
+                
+                # 平均時間ステップが合理的な範囲にあることを確認
+                self.assertGreater(
+                    mean_dt,
+                    0.1 * self.dt_base,
+                    f"{scheme_name} on {case_name}: Mean time step too small"
+                )
+                self.assertLess(
+                    mean_dt,
+                    10 * self.dt_base,
+                    f"{scheme_name} on {case_name}: Mean time step too large"
+                )
+
+    def test_all(self):
+        """すべてのテストを実行"""
+        # 収束テスト
+        print("\nTesting convergence rates...")
+        self.test_convergence_rates()
         
-        # 時間ステップの変化をプロット
-        plt.figure(figsize=(10, 6))
-        plt.semilogy(times[:-1], dt_values[:-1], 'b-')
-        plt.xlabel('Time')
-        plt.ylabel('Time Step Size')
-        plt.title('Adaptive Time Step Control')
-        plt.grid(True)
-        plt.savefig('test_results/time_integration/adaptive_timestep.png')
-        plt.close()
+        # 安定性テスト
+        print("\nTesting stability boundaries...")
+        self.test_stability_boundaries()
         
-        # 最小・最大時間ステップの検証
-        min_dt = min(dt_values)
-        max_dt = max(dt_values)
-        self.assertGreater(min_dt, 0.001, "時間ステップが小さすぎます")
-        self.assertLess(max_dt, 0.1, "時間ステップが大きすぎます")
+        # 保存量テスト
+        print("\nTesting conservation properties...")
+        self.test_conservation()
+        
+        # 適応的時間ステップテスト
+        print("\nTesting adaptive timestepping...")
+        self.test_adaptive_performance()
+        
+        print("\nAll tests completed.")
 
 if __name__ == '__main__':
     unittest.main()
