@@ -148,9 +148,9 @@ class LinearSolversTestSuite:
         
         if 'residual_history' in history and history['residual_history'] is not None:
             ax.semilogy(history['residual_history'], '-o')
-            ax.set_xlabel('反復回数')
-            ax.set_ylabel('残差ノルム')
-            ax.set_title(f'{solver_class.__name__} の収束')
+            ax.set_xlabel('Iteration')
+            ax.set_ylabel('Residual Norm')
+            ax.set_title(f'Convergence of {solver_class.__name__}')
             ax.grid(True)
         
         # 結果の辞書
@@ -237,18 +237,18 @@ class LinearSolversTestSuite:
             all_results[solver.__name__] = solver_results
         
         # 結果の出力
-        print("線形ソルバーテスト結果:")
+        print("Linear solver test results:")
         for solver_name, results in all_results.items():
             print(f"\n{solver_name}:")
             for result in results:
-                print(f"  マトリクスサイズ: {result['matrix_size']}")
-                print(f"    条件数: {result['condition_number']}")
-                print(f"    前処理: {result['preconditioner']}")
-                print(f"    残差: {result['residual']:.6e}")
-                print(f"    相対誤差: {result['relative_error']:.6e}")
-                print(f"    解誤差: {result['solution_error']:.6e}")
-                print(f"    反復回数: {result['iterations']}")
-                print(f"    収束: {result['converged']}")
+                print(f"  Matrix size: {result['matrix_size']}")
+                print(f"    Condition number: {result['condition_number']}")
+                print(f"    Preconditioner: {result['preconditioner']}")
+                print(f"    Residual: {result['residual']:.6e}")
+                print(f"    Relative error: {result['relative_error']:.6e}")
+                print(f"    Solution error: {result['solution_error']:.6e}")
+                print(f"    Iterations: {result['iterations']}")
+                print(f"    Converged: {result['converged']}")
         
         return all_results
 
