@@ -11,7 +11,6 @@ from src.core.spatial_discretization.base import SpatialDiscretizationBase
 from src.core.spatial_discretization.operators.ccd import CombinedCompactDifference
 from src.core.common.grid import GridManager, GridConfig
 from src.core.common.types import GridType, BoundaryCondition, BCType
-
 class LinearSolversTestSuite:
     """線形ソルバーのテストスイート"""
     

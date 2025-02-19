@@ -79,16 +79,24 @@ class SORSolver(LinearSolverBase):
             sor_step, init_state, None, length=self.config.max_iterations
         )
         
+        # スカラーと配列の両方に対応
+        final_residual = (
+            float(residuals[-1]) if residuals.ndim > 0 else float(residuals)
+        )
+        
         # 収束履歴の更新
         history.update({
-            'converged': float(residuals[-1]) < self.config.tolerance,
+            'converged': final_residual < self.config.tolerance,
             'iterations': int(n_iter),
-            'final_residual': float(residuals[-1])
+            'final_residual': final_residual
         })
         
         # 履歴記録が有効な場合
         if self.config.record_history:
-            history['residual_history'] = individual_residuals
+            history['residual_history'] = (
+                individual_residuals if individual_residuals.ndim > 0 
+                else jnp.array([individual_residuals])
+            )
         
         return x, history
     
