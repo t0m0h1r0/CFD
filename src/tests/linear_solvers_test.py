@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from typing import Callable, Tuple, Dict, Optional
 
 from src.core.linear_solvers.iterative.sor import SORSolver
+from src.core.linear_solvers.base import LinearSolverConfig
 from src.core.spatial_discretization.base import SpatialDiscretizationBase
 from src.core.spatial_discretization.operators.ccd import CombinedCompactDifference
 from src.core.common.grid import GridManager, GridConfig
@@ -118,10 +119,12 @@ class LinearSolversTestSuite:
         
         # ソルバーの生成
         solver = solver_class(
-            discretization=CombinedCompactDifference(grid_manager=grid_manager),
-            max_iterations=max_iterations, 
-            tolerance=tolerance,
-            record_history=True
+            config=LinearSolverConfig(
+                max_iterations=max_iterations,
+                tolerance=tolerance,
+                record_history=True
+            ),
+            discretization=CombinedCompactDifference(grid_manager=grid_manager)
         )
         
         # 前処理が指定されている場合は適用

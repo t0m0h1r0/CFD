@@ -1,5 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple, Union, Dict
+from typing import (
+    Optional, 
+    Tuple, 
+    Union, 
+    Dict, 
+    Callable
+)
+from dataclasses import dataclass, field
 
 import jax
 import jax.numpy as jnp
@@ -8,31 +15,32 @@ from jax.typing import ArrayLike
 from ..spatial_discretization.base import SpatialDiscretizationBase
 from ..spatial_discretization.operators.ccd import CombinedCompactDifference
 
+@dataclass
+class LinearSolverConfig:
+    """線形ソルバーの設定"""
+    max_iterations: int = 1000
+    tolerance: float = 1e-6
+    record_history: bool = False
+    verbose: bool = False
 
 class LinearSolverBase(ABC):
     """線形ソルバーの抽象基底クラス"""
     
     def __init__(
         self, 
-        discretization: Optional[SpatialDiscretizationBase] = None,
-        max_iterations: int = 1000,
-        tolerance: float = 1e-6,
-        record_history: bool = False
+        config: LinearSolverConfig = LinearSolverConfig(),
+        discretization: Optional[SpatialDiscretizationBase] = None
     ):
         """
         線形ソルバーの初期化
         
         Args:
-            discretization: 空間離散化スキーム
-            max_iterations: 最大反復回数
-            tolerance: 収束判定許容誤差
-            record_history: 収束履歴の記録フラグ
+            config: ソルバー設定
+            discretization: 空間離散化スキーム（オプション）
         """
-        self.discretization = discretization
-        self.max_iterations = max_iterations
-        self.tolerance = tolerance
-        self.record_history = record_history
-    
+        self.config = config
+        self.discretization = discretization or CombinedCompactDifference()
+        
     @abstractmethod
     def solve(
         self, 
@@ -41,7 +49,7 @@ class LinearSolverBase(ABC):
         x0: Optional[ArrayLike] = None
     ) -> Tuple[ArrayLike, Dict[str, Union[bool, float, list]]]:
         """
-        線形システムを解く
+        線形システムを解く抽象メソッド
         
         Args:
             operator: 線形作用素（行列またはCallable）
@@ -64,7 +72,7 @@ class LinearSolverBase(ABC):
             'converged': False,
             'iterations': 0,
             'final_residual': float('inf'),
-            'residual_history': [] if self.record_history else None
+            'residual_history': [] if self.config.record_history else None
         }
     
     def check_convergence(
@@ -82,8 +90,7 @@ class LinearSolverBase(ABC):
         Returns:
             収束判定結果
         """
-        # JAX互換の収束判定
         return jnp.logical_or(
-            residual_norm < self.tolerance,
-            iteration >= self.max_iterations
+            residual_norm < self.config.tolerance,
+            iteration >= self.config.max_iterations
         )

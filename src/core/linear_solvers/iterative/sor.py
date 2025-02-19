@@ -1,40 +1,31 @@
-from typing import Optional, Tuple, Dict, Union
+from typing import Optional, Tuple, Dict, Union, Callable
 from functools import partial
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from ..base import LinearSolverBase
-
+from ..base import LinearSolverBase, LinearSolverConfig
+from ...spatial_discretization.base import SpatialDiscretizationBase
 
 class SORSolver(LinearSolverBase):
     """逐次過緩和法（SOR）による線形ソルバー"""
     
     def __init__(
         self, 
-        discretization=None,
-        max_iterations: int = 1000,
-        tolerance: float = 1e-6,
-        record_history: bool = False,
+        config: LinearSolverConfig = LinearSolverConfig(),
+        discretization: Optional[SpatialDiscretizationBase] = None,
         omega: float = 1.5
     ):
         """
         SORソルバーの初期化
         
         Args:
+            config: ソルバー設定
             discretization: 空間離散化スキーム
-            max_iterations: 最大反復回数
-            tolerance: 収束判定許容誤差
-            record_history: 収束履歴の記録フラグ
             omega: 緩和パラメータ（1 < omega < 2）
         """
-        super().__init__(
-            discretization, 
-            max_iterations, 
-            tolerance, 
-            record_history
-        )
+        super().__init__(config, discretization)
         self.omega = omega
     
     @partial(jax.jit, static_argnums=(0,))
@@ -85,18 +76,18 @@ class SORSolver(LinearSolverBase):
         # スキャンを使用した反復計算
         init_state = (x, 0, jnp.linalg.norm(b - operator @ x))
         (x, n_iter, residuals), (solutions, individual_residuals) = jax.lax.scan(
-            sor_step, init_state, None, length=self.max_iterations
+            sor_step, init_state, None, length=self.config.max_iterations
         )
         
         # 収束履歴の更新
         history.update({
-            'converged': float(residuals[-1]) < self.tolerance,
+            'converged': float(residuals[-1]) < self.config.tolerance,
             'iterations': int(n_iter),
             'final_residual': float(residuals[-1])
         })
         
         # 履歴記録が有効な場合
-        if self.record_history:
+        if self.config.record_history:
             history['residual_history'] = individual_residuals
         
         return x, history
@@ -125,8 +116,10 @@ class SORSolver(LinearSolverBase):
         def test_omega(omega):
             solver = SORSolver(
                 omega=float(omega),
-                max_iterations=self.max_iterations,
-                tolerance=self.tolerance
+                config=LinearSolverConfig(
+                    max_iterations=self.config.max_iterations,
+                    tolerance=self.config.tolerance
+                )
             )
             _, history = solver.solve(operator, b, x0)
             return history['iterations']
