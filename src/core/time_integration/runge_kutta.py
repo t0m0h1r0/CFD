@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Callable
 
 import jax
 import jax.numpy as jnp
@@ -42,13 +42,33 @@ class RungeKutta4(TimeIntegratorBase):
         super().__init__(config)
         self.tableau = ButcherTableau.rk4()
     
+    def compute_stage_derivatives(self,
+                                derivative_fn: Callable,
+                                field: ArrayLike,
+                                t: float) -> Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
+        """
+        RK4の各ステージの導関数を計算
+        
+        Args:
+            derivative_fn: 微分方程式の右辺を計算する関数
+            field: 現在の場
+            t: 現在時刻
+            
+        Returns:
+            4つのステージの導関数 (k1, k2, k3, k4)
+        """
+        dt = self.config.dt
+        k1 = derivative_fn(field, t)
+        k2 = derivative_fn(field + 0.5*dt*k1, t + 0.5*dt)
+        k3 = derivative_fn(field + 0.5*dt*k2, t + 0.5*dt)
+        k4 = derivative_fn(field + dt*k3, t + dt)
+        return k1, k2, k3, k4
+    
     @partial(jax.jit, static_argnums=(0,))
-    def step(
-        self, 
-        stage_derivatives: Tuple[ArrayLike, ...], 
-        t: float, 
-        field: ArrayLike
-    ) -> ArrayLike:
+    def step(self, 
+             stage_derivatives: Tuple[ArrayLike, ...], 
+             t: float, 
+             field: ArrayLike) -> ArrayLike:
         """
         GPU最適化されたステップ計算
         
@@ -116,13 +136,7 @@ class RungeKutta4(TimeIntegratorBase):
         field: ArrayLike
     ) -> ArrayLike:
         """mapによるベクトル化ステップ"""
-        update_fn = lambda f: f + (dt/6) * (k1 + 2*k2 + 2*k3 + k4)
-        return update_fn(field)
-    
-    @staticmethod
-    def get_order() -> int:
-        """精度次数の取得"""
-        return 4
+        return jax.vmap(lambda f: f + (dt/6) * (k1 + 2*k2 + 2*k3 + k4))(field)
 
 class AdaptiveRungeKutta4(RungeKutta4):
     """適応的な時間ステップ制御を行う4次のルンゲクッタ法"""
