@@ -11,16 +11,14 @@ from ..spatial_discretization.operators.ccd_laplacian import CCDLaplacianSolver
 from .base import LinearSolverBase, LinearSolverConfig
 from ..spatial_discretization.base import SpatialDiscretizationBase
 
-# src/core/linear_solvers/gauss_seidel.py
-
 class GaussSeidelSolver(LinearSolverBase):
-    """ガウス=サイデル法による反復解法"""
+    """ガウス=ザイデル法による反復解法"""
     
     def __init__(
         self,
         config: LinearSolverConfig = LinearSolverConfig(),
         discretization: Optional[SpatialDiscretizationBase] = None,
-        omega: float = 1.0
+        omega: float = 1.5
     ):
         super().__init__(config, discretization)
         self.omega = omega
@@ -41,15 +39,21 @@ class GaussSeidelSolver(LinearSolverBase):
             """単一ステップの実行（JIT最適化）"""
             field, residual_norm = carry
             
-            # ラプラシアンの計算
+            # ラプラシアン計算
             laplacian = op.compute_laplacian(field)
+            
+            # 残差計算
             residual = rhs - laplacian
             
-            # 解の更新（緩和付き）
-            new_field = field + self.omega * residual
+            # ラプラシアン演算子の対角項の計算
+            dx = op.grid_manager.get_grid_spacing('x')
+            diag = -6.0 / (dx * dx)  # 7点ステンシルの中心係数
             
-            # 新しい残差ノルム
-            new_residual_norm = jnp.linalg.norm(residual)
+            # ガウス=ザイデル更新
+            new_field = field + self.omega * residual / diag
+            
+            # 収束判定用の相対残差
+            new_residual_norm = jnp.linalg.norm(residual) / jnp.linalg.norm(rhs)
             
             return (new_field, new_residual_norm)
 
@@ -60,7 +64,8 @@ class GaussSeidelSolver(LinearSolverBase):
             return residual_norm > self.config.tolerance
 
         # 初期残差の計算
-        initial_residual = jnp.linalg.norm(rhs - operator.compute_laplacian(field))
+        initial_laplacian = operator.compute_laplacian(field)
+        initial_residual = jnp.linalg.norm(rhs - initial_laplacian) / jnp.linalg.norm(rhs)
         carry = (field, initial_residual)
         
         # メインの反復
@@ -70,7 +75,7 @@ class GaussSeidelSolver(LinearSolverBase):
             carry = iteration_step(carry, operator)
             field, residual_norm = carry
             
-            # 履歴の更新（JIT外で実行）
+            # 履歴の更新
             if self.config.record_history:
                 history['residual_history'].append(float(residual_norm))
             
