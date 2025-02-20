@@ -49,22 +49,14 @@ class BoundaryConditionHandler:
 
     @partial(jax.jit, static_argnums=(0,))
     def initialize_ghost_points(self, field: ArrayLike) -> Tuple[ArrayLike, ArrayLike]:
-        """ゴーストポイントの初期化（修正版）"""
-        # 係数配列の事前定義
         coefs = jnp.array([7., -21., 35., -35., 21., -7., 1.])
         
-        # 境界点の計算（3次元データ対応）
-        def compute_ghost_point(field_slice):
-            # 各点での重み付き和を計算
-            weighted_sum = field_slice * coefs[:, None, None]
-            return jnp.sum(weighted_sum)
+        left_slice = field[0:7]
+        right_slice = field[-7:][::-1]
         
-        # 左右の境界値を計算
-        left_slice = field[0:7]  # 形状: (7, 32, 32)
-        right_slice = field[-7:][::-1]  # 形状: (7, 32, 32)
-        
-        gp_left = compute_ghost_point(left_slice)
-        gp_right = compute_ghost_point(right_slice)
+        # 各境界点での重み付き和を計算
+        gp_left = jnp.sum(coefs[:, None, None] * left_slice, axis=0)
+        gp_right = jnp.sum(coefs[:, None, None] * right_slice, axis=0)
         
         return gp_left, gp_right
 
@@ -78,7 +70,8 @@ class BoundaryConditionHandler:
         is_left: bool
     ) -> ArrayLike:
         """Dirichlet境界条件の適用（最適化版）"""
-        
+        boundary_value = jnp.broadcast_to(boundary_value, derivative.shape)
+
         # 係数とスケールファクターの計算をベクトル化
         coef_first = self.coefficients.first_order
         coef_second = self.coefficients.second_order
@@ -151,7 +144,7 @@ class DerivativeMatrixBuilder:
             
             sign = -1. if is_left else 1.
             # field_gpを適切な形状に拡張
-            expanded_gp = jnp.broadcast_to(field_gp, field_values[0].shape)
+            expanded_gp = jnp.broadcast_to(field_gp, field_values.shape[1:])
             values = jnp.concatenate([expanded_gp[None, ...], field_values])
             
             # 係数との積和を計算
