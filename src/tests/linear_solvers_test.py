@@ -10,7 +10,8 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 from src.core.spatial_discretization.operators.ccd_laplacian import CCDLaplacianSolver
-from src.core.linear_solvers.gauss_seidel import PoissonSolver, PoissonSolverConfig
+from src.core.linear_solvers.poisson_cg import ConjugateGradientSolver as PoissonSolver, CGSolverConfig as PoissonSolverConfig
+#from src.core.linear_solvers.gauss_seidel import PoissonSolver, PoissonSolverConfig
 from src.core.common.grid import GridManager, GridConfig
 from src.core.spatial_discretization.base import SpatialDiscretizationBase
 from src.core.common.types import GridType, BoundaryCondition, BCType
