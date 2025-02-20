@@ -10,8 +10,9 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 from src.core.spatial_discretization.operators.ccd_laplacian import CCDLaplacianSolver
-from src.core.linear_solvers.gauss_seidel import GaussSeidelSolver, LinearSolverConfig
+from src.core.linear_solvers.gauss_seidel import PoissonSolver, PoissonSolverConfig
 from src.core.common.grid import GridManager, GridConfig
+from src.core.spatial_discretization.base import SpatialDiscretizationBase
 from src.core.common.types import GridType, BoundaryCondition, BCType
 
 @dataclass
@@ -22,13 +23,13 @@ class PoissonTestCase:
     rhs: Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray]
     domain: Tuple[float, float, float] = (1.0, 1.0, 1.0)
 
-class GaussSeidelTest(unittest.TestCase):
-    """ガウス=サイデル法のテストスイート"""
+class PoissonSolverTest(unittest.TestCase):
+    """ポアソンソルバーのテストスイート"""
     
     @classmethod
     def setUpClass(cls):
         """テスト環境のセットアップ"""
-        os.makedirs('test_results/gauss_seidel', exist_ok=True)
+        os.makedirs('test_results/poisson_solver', exist_ok=True)
         
         # テストケースの定義
         cls.test_cases = [
@@ -46,6 +47,11 @@ class GaussSeidelTest(unittest.TestCase):
                 name="Polynomial",
                 solution=lambda x, y, z: x**2 + y**2 + z**2,
                 rhs=lambda x, y, z: -6 * jnp.ones_like(x)
+            ),
+            PoissonTestCase(
+                name="Exponential",
+                solution=lambda x, y, z: jnp.exp(x + y + z),
+                rhs=lambda x, y, z: 3 * jnp.exp(x + y + z)
             )
         ]
 
@@ -87,16 +93,16 @@ class GaussSeidelTest(unittest.TestCase):
             boundary_conditions=self.boundary_conditions
         )
         
-        # ガウス=サイデルソルバーの初期化
-        self.solver = GaussSeidelSolver(
-            config=LinearSolverConfig(
-                max_iterations=10000,  # 最大反復回数を大幅に増加
-                tolerance=1e-6,        # 収束閾値を調整
-                record_history=True
+        # ポアソンソルバーの初期化
+        self.solver = PoissonSolver(
+            config=PoissonSolverConfig(
+                max_iterations=10,  # 最大反復回数を増加
+                tolerance=1e-6,        # 収束閾値
+                record_history=True,
+                relaxation_factor=1.2,
+                adaptive_tolerance=True
             ),
-            discretization=self.laplacian,
-            omega=1.0,  # さらに最適化
-            stabilization_factor=1e-8  # 数値安定性のための係数
+            grid_manager=self.grid_manager
         )
 
     def test_convergence(self):
@@ -126,8 +132,8 @@ class GaussSeidelTest(unittest.TestCase):
             )
             
             # 診断情報の取得
-            diagnostics = self.solver.diagnostics(
-                self.laplacian, rhs, numerical
+            diagnostics = self.solver.compute_diagnostics(
+                numerical, self.laplacian, rhs
             )
             
             # 誤差の計算
@@ -148,14 +154,14 @@ class GaussSeidelTest(unittest.TestCase):
             for key, value in diagnostics.items():
                 print(f"  {key}: {value}")
             
-            # アサーション（より寛容な基準）
+            # アサーション
             self.assertTrue(
                 history['converged'],
                 f"{case.name}: Failed to converge"
             )
             self.assertLess(
                 error,
-                1e-2,  # 許容誤差を緩和
+                1e-2,  # 許容誤差
                 f"{case.name}: Error too large"
             )
 
@@ -194,7 +200,7 @@ class GaussSeidelTest(unittest.TestCase):
         plt.colorbar(im3, ax=axes[1, 0])
         
         # 収束履歴
-        if history['residual_history']:
+        if history.get('residual_history'):
             axes[1, 1].semilogy(history['residual_history'])
             axes[1, 1].set_title('Convergence History')
             axes[1, 1].set_xlabel('Iteration')
@@ -211,12 +217,66 @@ class GaussSeidelTest(unittest.TestCase):
         )
         
         # 保存
+        plt.tight_layout()
         plt.savefig(
-            f'test_results/gauss_seidel/{case_name.lower().replace(" ", "_")}.png',
+            f'test_results/poisson_solver/{case_name.lower().replace(" ", "_")}.png',
             bbox_inches='tight',
             dpi=300
         )
         plt.close()
+
+    def test_adaptive_tolerance(self):
+        """アダプティブ許容誤差のテスト"""
+        config = PoissonSolverConfig(
+            max_iterations=1000,
+            tolerance=1e-4,
+            adaptive_tolerance=True,
+            relaxation_factor=1.5
+        )
+        solver = PoissonSolver(
+            config=config, 
+            grid_manager=self.grid_manager
+        )
+        
+        # グリッドの生成
+        x = jnp.linspace(0, 1, self.grid_size)
+        y = jnp.linspace(0, 1, self.grid_size)
+        z = jnp.linspace(0, 1, self.grid_size)
+        X, Y, Z = jnp.meshgrid(x, y, z, indexing='ij')
+        
+        # テストケースの選択
+        case = self.test_cases[0]  # Simple Harmonicを選択
+        exact = case.solution(X, Y, Z)
+        rhs = case.rhs(X, Y, Z)
+        
+        # 解の計算
+        numerical, history = solver.solve(
+            self.laplacian,
+            rhs,
+            jnp.zeros_like(rhs)
+        )
+        
+        # アダプティブ許容誤差の調整のテスト
+        initial_tolerance = solver.config.tolerance
+        adjusted_tolerance = solver.adaptive_tolerance_adjustment(
+            initial_tolerance, 
+            history
+        )
+        
+        print("\nAdaptive Tolerance Test:")
+        print(f"  Initial Tolerance: {initial_tolerance}")
+        print(f"  Adjusted Tolerance: {adjusted_tolerance}")
+        print(f"  Iterations: {history['iterations']}")
+        
+        # アサーション
+        self.assertTrue(
+            adjusted_tolerance <= initial_tolerance,
+            "Adjusted tolerance should not be larger than initial tolerance"
+        )
+        self.assertTrue(
+            history['converged'],
+            "Solver should converge with adaptive tolerance"
+        )
 
 if __name__ == '__main__':
     unittest.main()

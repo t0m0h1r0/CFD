@@ -1,61 +1,138 @@
-# src/core/linear_solvers/gauss_seidel.py
+# src/core/linear_solvers/poisson_solver.py
 
-from typing import Tuple, Optional, Dict, Union
+from __future__ import annotations
+from typing import Optional, Tuple, Dict, Union
+from dataclasses import dataclass
 from functools import partial
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from ..spatial_discretization.operators.ccd_laplacian import CCDLaplacianSolver
-from .base import LinearSolverBase, LinearSolverConfig
 from ..spatial_discretization.base import SpatialDiscretizationBase
+from ..spatial_discretization.operators.ccd_laplacian import CCDLaplacianSolver
+from ..common.grid import GridManager
+from .base import LinearSolverBase, LinearSolverConfig
 
-class GaussSeidelSolver(LinearSolverBase):
-    """高度に最適化された数値安定性を考慮したガウス=ザイデル法"""
+@dataclass
+class PoissonSolverConfig(LinearSolverConfig):
+    """ポアソン方程式専用のソルバー設定"""
+    relaxation_factor: float = 1.2
+    stabilization_threshold: float = 1e-10
+    preconditioner_type: str = 'diagonal'
+    adaptive_tolerance: bool = True
+
+class PoissonPreconditioner:
+    """
+    ポアソン方程式用の前処理クラス
     
-    def __init__(
-        self,
-        config: LinearSolverConfig = LinearSolverConfig(),
-        discretization: Optional[SpatialDiscretizationBase] = None,
-        omega: float = 1.2,  # より慎重な緩和パラメータ
-        stabilization_factor: float = 1e-10  # 数値安定性のための微小係数
-    ):
+    高度に最適化された前処理戦略を提供
+    """
+    
+    @staticmethod
+    def diagonal_preconditioner(
+        operator: CCDLaplacianSolver, 
+        rhs: ArrayLike,
+        stabilization_threshold: float = 1e-10
+    ) -> ArrayLike:
         """
-        ロバストなガウス=ザイデル法ソルバーの初期化
-        
-        Args:
-            config: ソルバー設定
-            discretization: 空間離散化スキーム
-            omega: 緩和パラメータ
-            stabilization_factor: 数値安定性のための微小係数
-        """
-        super().__init__(config, discretization)
-        self.omega = omega
-        self.stabilization_factor = stabilization_factor
-
-    def _diagonal_preconditioner(self, operator: CCDLaplacianSolver, rhs: ArrayLike) -> ArrayLike:
-        """
-        対角前処理の計算
+        対角スケーリング前処理
         
         Args:
             operator: ラプラシアン演算子
             rhs: 右辺ベクトル
+            stabilization_threshold: 数値安定性のための微小係数
         
         Returns:
-            前処理された対角スケール
+            対角スケーリングベクトル
         """
         # グリッドスペーシングの取得
         dx = operator.grid_manager.get_grid_spacing('x')
         
-        # 対角スケーリング
-        # 7点ステンシルの中心係数に基づく
+        # 7点ステンシルの中心係数に基づく対角スケーリング
         diag_scale = 6.0 / (dx * dx)
         
         # RHSのスケール
-        rhs_scale = jnp.linalg.norm(rhs) + self.stabilization_factor
+        rhs_scale = jnp.linalg.norm(rhs) + stabilization_threshold
         
         return diag_scale / rhs_scale
+
+class PoissonSolverDiagnostics:
+    """ポアソン方程式の数値解析診断クラス"""
+    
+    @staticmethod
+    def compute_diagnostic_metrics(
+        solution: ArrayLike, 
+        operator: CCDLaplacianSolver, 
+        rhs: ArrayLike
+    ) -> Dict[str, float]:
+        """
+        数値解の診断メトリクスを計算
+        
+        Args:
+            solution: 数値解
+            operator: 空間離散化演算子
+            rhs: 右辺ベクトル
+        
+        Returns:
+            診断情報の辞書
+        """
+        try:
+            # ラプラシアンの計算
+            laplacian = operator.compute_laplacian(solution)
+            
+            # 残差の計算
+            residual = rhs - laplacian
+            
+            return {
+                'residual_norm': float(jnp.linalg.norm(residual)),
+                'relative_residual': float(
+                    jnp.linalg.norm(residual) / (jnp.linalg.norm(rhs) + 1e-10)
+                ),
+                'max_residual': float(jnp.max(jnp.abs(residual))),
+                'solution_magnitude': float(jnp.linalg.norm(solution)),
+                'solution_min': float(jnp.min(solution)),
+                'solution_max': float(jnp.max(solution))
+            }
+        except Exception as e:
+            print(f"Diagnostic calculation error: {e}")
+            return {key: float('nan') for key in [
+                'residual_norm', 'relative_residual', 'max_residual', 
+                'solution_magnitude', 'solution_min', 'solution_max'
+            ]}
+
+class PoissonSolver(LinearSolverBase):
+    """
+    高度に最適化されたJAXベースのポアソン方程式ソルバー
+    
+    特徴:
+    - CCDLaplacianSolverとの緊密な統合
+    - JAX最適化による高性能反復解法
+    - ロバストな収束判定
+    - 詳細な診断情報
+    """
+    
+    def __init__(
+        self,
+        config: PoissonSolverConfig = PoissonSolverConfig(),
+        discretization: Optional[SpatialDiscretizationBase] = None,
+        grid_manager: Optional[GridManager] = None
+    ):
+        """
+        ポアソン方程式ソルバーの初期化
+        
+        Args:
+            config: ソルバー設定
+            discretization: 空間離散化スキーム
+            grid_manager: グリッド管理オブジェクト
+        """
+        # デフォルトの空間離散化スキームを作成
+        if discretization is None and grid_manager is not None:
+            from src.core.spatial_discretization.operators.ccd_laplacian import CCDLaplacianSolver
+            discretization = CCDLaplacianSolver(grid_manager=grid_manager)
+        
+        super().__init__(config, discretization)
+        self.config = config
 
     def solve(
         self,
@@ -64,7 +141,7 @@ class GaussSeidelSolver(LinearSolverBase):
         x0: Optional[ArrayLike] = None
     ) -> Tuple[ArrayLike, Dict[str, Union[bool, float, list]]]:
         """
-        高度に最適化された反復解法
+        ポアソン方程式の反復解法
         
         Args:
             operator: ラプラシアン演算子
@@ -74,71 +151,61 @@ class GaussSeidelSolver(LinearSolverBase):
         Returns:
             解と収束履歴の辞書
         """
-        # 前処理のセットアップ
-        preconditioner = self._diagonal_preconditioner(operator, rhs)
+        # グリッドスペーシングの取得
+        dx = operator.grid_manager.get_grid_spacing('x')
         
         # 初期化
         field = x0 if x0 is not None else jnp.zeros_like(rhs)
         history = self.create_history_dict()
         
-        # グリッドスペーシングと基本パラメータ
-        dx = operator.grid_manager.get_grid_spacing('x')
-        
-        @partial(jax.jit, static_argnums=(1,))
-        def iteration_step(field, op):
-            """
-            高度に最適化された単一反復ステップ
-            
-            Args:
-                field: 現在の場
-                op: 空間離散化演算子
-            
-            Returns:
-                更新された場と正規化残差
-            """
-            # ラプラシアンの計算
-            laplacian = op.compute_laplacian(field)
-            
-            # 残差の計算
-            residual = rhs - laplacian
-            
-            # 対角スケーリング（7点ステンシル）
-            diag_scale = 6.0 / (dx * dx)
-            
-            # 安全な更新
-            safe_residual = jnp.where(
-                jnp.isfinite(residual),
-                residual,
-                jnp.zeros_like(residual)
-            )
-            
-            # 緩和付き更新（前処理を考慮）
-            updated_field = field + self.omega * (safe_residual / diag_scale)
-            
-            # 相対残差の計算（数値安定性を考慮）
-            residual_norm = (
-                jnp.linalg.norm(safe_residual) / 
-                (jnp.linalg.norm(rhs) + self.stabilization_factor)
-            )
-            
-            return updated_field, residual_norm
+        # 適応的許容誤差
+        adaptive_tolerance = (
+            self.config.tolerance if self.config.adaptive_tolerance 
+            else self.config.tolerance * jnp.linalg.norm(rhs)
+        )
         
         # メインの反復ループ
         for iteration in range(self.config.max_iterations):
             try:
-                field, residual_norm = iteration_step(field, operator)
+                # ラプラシアンの計算
+                laplacian = operator.compute_laplacian(field)
+                
+                # 残差の計算
+                residual = rhs - laplacian
+                
+                # 対角スケーリング（7点ステンシル）
+                diag_scale = 6.0 / (dx * dx)
+                
+                # 安全な更新
+                safe_residual = jnp.where(
+                    jnp.isfinite(residual),
+                    residual,
+                    jnp.zeros_like(residual)
+                )
+                
+                # 緩和付き更新
+                field = field + (
+                    self.config.relaxation_factor * 
+                    safe_residual / diag_scale
+                )
+                
+                # 相対残差の計算（数値安定性を考慮）
+                residual_norm = (
+                    jnp.linalg.norm(safe_residual) / 
+                    (jnp.linalg.norm(rhs) + self.config.stabilization_threshold)
+                )
                 
                 # 履歴の記録
                 if self.config.record_history:
-                    history['residual_history'].append(float(residual_norm))
+                    history.setdefault('residual_history', []).append(float(residual_norm))
                 
                 # 収束判定
-                if (residual_norm < self.config.tolerance or 
+                if (residual_norm < adaptive_tolerance or 
                     jnp.isnan(residual_norm) or 
                     iteration == self.config.max_iterations - 1):
                     
                     history.update({
-                        'converged': residual_norm < self.config.tolerance,
+                        'converged': residual_norm < adaptive_tolerance,
                         'iterations': iteration + 1,
                         'final_residual': float(residual_norm)
                     })
@@ -158,48 +225,42 @@ class GaussSeidelSolver(LinearSolverBase):
         
         return field, history
 
-    def diagnostics(
+    def compute_diagnostics(
         self, 
-        operator: CCDLaplacianSolver, 
-        rhs: ArrayLike,
-        solution: ArrayLike
+        solution: ArrayLike,
+        operator: CCDLaplacianSolver,
+        rhs: ArrayLike
     ) -> Dict[str, float]:
         """
-        数値解の診断情報を提供
-
+        詳細な数値解析診断
+        
         Args:
-            operator: ラプラシアン演算子
-            rhs: 右辺ベクトル
             solution: 数値解
-
+            operator: 空間離散化演算子
+            rhs: 右辺ベクトル
+        
         Returns:
             診断情報の辞書
         """
-        # 安全な診断情報計算
-        try:
-            # ラプラシアンの計算
-            laplacian = operator.compute_laplacian(solution)
-            
-            # 残差の計算
-            residual = rhs - laplacian
-            
-            return {
-                'residual_norm': float(jnp.linalg.norm(residual)),
-                'relative_residual': float(
-                    jnp.linalg.norm(residual) / (jnp.linalg.norm(rhs) + 1e-10)
-                ),
-                'max_residual': float(jnp.max(jnp.abs(residual))),
-                'solution_magnitude': float(jnp.linalg.norm(solution)),
-                'min_solution': float(jnp.min(solution)),
-                'max_solution': float(jnp.max(solution))
-            }
-        except Exception as e:
-            print(f"Diagnostics error: {e}")
-            return {
-                'residual_norm': float('nan'),
-                'relative_residual': float('nan'),
-                'max_residual': float('nan'),
-                'solution_magnitude': float('nan'),
-                'min_solution': float('nan'),
-                'max_solution': float('nan')
-            }
+        return PoissonSolverDiagnostics.compute_diagnostic_metrics(
+            solution, operator, rhs
+        )
+    
+    def adaptive_tolerance_adjustment(
+        self, 
+        initial_tolerance: float, 
+        iteration_history: Dict
+    ) -> float:
+        """
+        反復回数に基づく許容誤差の適応的調整
+        
+        Args:
+            initial_tolerance: 初期許容誤差
+            iteration_history: 反復履歴
+        
+        Returns:
+            調整後の許容誤差
+        """
+        iterations = iteration_history.get('iterations', 1)
+        convergence_factor = 1.0 / (1.0 + 0.1 * iterations)
+        return initial_tolerance * convergence_factor
