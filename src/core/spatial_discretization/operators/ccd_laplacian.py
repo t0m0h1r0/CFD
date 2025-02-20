@@ -108,6 +108,7 @@ class DerivativeMatrixBuilder:
         self.dx = dx
         self.coefficients = coefficients
 
+    @partial(jax.jit, static_argnums=(0,3,4))
     def build_derivative_coefficients(
         self,
         field_gp: ArrayLike,
@@ -115,32 +116,43 @@ class DerivativeMatrixBuilder:
         derivative_type: DerivativeType,
         is_left: bool
     ) -> ArrayLike:
-        """微分係数の行列を構築"""
-        sign = -1 if is_left else 1
+        """微分係数の行列を構築（最適化版）"""
+        # インデックスの計算を簡略化
+        idx = jnp.arange(6) if is_left else -jnp.arange(1, 7)
+        field_values = field[idx]
         
         if derivative_type == DerivativeType.FIRST:
             coef = self.coefficients.first_order
-            return sign * (1/60) * (
-                (10 + 150 * coef['alpha']) * field_gp +
-                (77 - 840 * coef['alpha']) * field[0 if is_left else -1] +
-                sign * (150 - 1950 * coef['alpha']) * field[1 if is_left else -2] +
-                sign * (100 - 2400 * coef['alpha']) * field[2 if is_left else -3] +
-                sign * (50 - 1650 * coef['alpha']) * field[3 if is_left else -4] +
-                sign * (15 - 600 * coef['alpha']) * field[4 if is_left else -5] +
-                sign * (2 - 90 * coef['alpha']) * field[5 if is_left else -6]
-            ) / self.dx
+            # 一階微分の係数
+            coefficients = jnp.array([
+                10 + 150 * coef['alpha'],
+                77 - 840 * coef['alpha'],
+                150 - 1950 * coef['alpha'],
+                100 - 2400 * coef['alpha'],
+                50 - 1650 * coef['alpha'],
+                15 - 600 * coef['alpha'],
+                2 - 90 * coef['alpha']
+            ])
+            
+            sign = -1. if is_left else 1.
+            values = jnp.concatenate([jnp.array([field_gp]), field_values])
+            return sign * jnp.dot(coefficients, values) / (60 * self.dx)
         
-        elif derivative_type == DerivativeType.SECOND:
+        else:  # DerivativeType.SECOND
             coef = self.coefficients.second_order
-            return (1/180) * (
-                (137 + 180 * coef['gamma']) * field_gp +
-                -(147 + 1080 * coef['gamma']) * field[0 if is_left else -1] +
-                -(255 - 2700 * coef['gamma']) * field[1 if is_left else -2] +
-                (470 - 3600 * coef['gamma']) * field[2 if is_left else -3] +
-                -(285 - 2700 * coef['gamma']) * field[3 if is_left else -4] +
-                (93 - 1080 * coef['gamma']) * field[4 if is_left else -5] +
-                -(13 - 180 * coef['gamma']) * field[5 if is_left else -6]
-            ) / self.dx**2
+            # 二階微分の係数
+            coefficients = jnp.array([
+                137 + 180 * coef['gamma'],
+                -(147 + 1080 * coef['gamma']),
+                -(255 - 2700 * coef['gamma']),
+                470 - 3600 * coef['gamma'],
+                -(285 - 2700 * coef['gamma']),
+                93 - 1080 * coef['gamma'],
+                -(13 - 180 * coef['gamma'])
+            ])
+            
+            values = jnp.concatenate([jnp.array([field_gp]), field_values])
+            return jnp.dot(coefficients, values) / (180 * self.dx**2)
 
 class CCDLaplacianSolver(CompactDifferenceBase):
     """高精度コンパクト差分法によるラプラシアンソルバー"""
