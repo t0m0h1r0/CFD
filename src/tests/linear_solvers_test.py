@@ -1,257 +1,259 @@
 import os
+import unittest
 import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Callable, Tuple, Dict, Optional
 
-from src.core.linear_solvers.iterative.sor import SORCCDPoissonSolver as SORSolver
-from src.core.linear_solvers.base import LinearSolverConfig
-from src.core.spatial_discretization.base import SpatialDiscretizationBase
-from src.core.spatial_discretization.operators.ccd import CombinedCompactDifference
 from src.core.common.grid import GridManager, GridConfig
-from src.core.common.types import GridType, BoundaryCondition, BCType
+from src.core.common.types import GridType, BCType, BoundaryCondition
+from src.core.linear_solvers.sor_solver import PoissonSORSolver
 
-class LinearSolversTestSuite:
-    """線形ソルバーのテストスイート"""
+class PoissonSORSolverTestSuite(unittest.TestCase):
+    """
+    ポアソンSORソルバのテストスイート
+    
+    テスト内容:
+    1. 単純な解析解との比較
+    2. 異なる境界条件下での解の検証
+    3. パラメータ最適化の検証
+    4. エラー評価
+    """
     
     @classmethod
-    def _create_default_grid_manager(
-        cls, 
-        matrix_size: int
-    ) -> GridManager:
-        """
-        デフォルトのグリッドマネージャーを作成
-        
-        Args:
-            matrix_size: マトリクスのサイズ
-        
-        Returns:
-            GridManagerインスタンス
-        """
+    def setUpClass(cls):
+        """テスト共通の設定"""
+        # テスト結果保存用ディレクトリの作成
+        os.makedirs('test_results/poisson_sor', exist_ok=True)
+    
+    def _create_grid_manager(self, grid_size=64):
+        """均一グリッドの作成"""
         grid_config = GridConfig(
             dimensions=(1.0, 1.0, 1.0),
-            points=(matrix_size, matrix_size, 1),
+            points=(grid_size, grid_size, grid_size),
             grid_type=GridType.UNIFORM
         )
         return GridManager(grid_config)
     
-    @classmethod
-    def create_test_matrix(
-        cls, 
-        n: int, 
-        condition_number: float = 10.0, 
-        symmetric: bool = True,
-        key: Optional[jax.Array] = None
-    ) -> jnp.ndarray:
-        """
-        テスト用の対称正定値行列を生成
-        
-        Args:
-            n: 行列サイズ
-            condition_number: 条件数
-            symmetric: 対称行列かどうか
-            key: JAXのランダムキー
-        
-        Returns:
-            生成された行列
-        """
-        # ランダムキーの生成
-        if key is None:
-            key = jax.random.PRNGKey(0)
-        
-        # ランダムな対称行列の生成
-        A_rand = jax.random.normal(key, (n, n))
-        A = A_rand @ A_rand.T + n * jnp.eye(n)  # 対角優位性を確保
-        
-        # 固有値の計算
-        evals, evecs = jnp.linalg.eigh(A)
-        
-        # 固有値の調整
-        min_eval = 1.0
-        max_eval = condition_number
-        modified_evals = jnp.linspace(min_eval, max_eval, n)
-        
-        # 修正された固有値で行列を再構築
-        return evecs @ jnp.diag(modified_evals) @ evecs.T
+    def _create_default_boundary_conditions(self):
+        """デフォルトのディリクレ境界条件"""
+        return {
+            'left': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='left'),
+            'right': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='right'),
+            'bottom': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='bottom'),
+            'top': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='top'),
+            'front': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='front'),
+            'back': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='back')
+        }
     
-    @classmethod
-    def solve_linear_system(
-        cls,
-        solver_class,
-        matrix_size: int = 100,
-        condition_number: float = 10.0,
-        max_iterations: int = 1000,
-        tolerance: float = 1e-6,
-        preconditioner: Optional[Callable] = None,
-        key: Optional[jax.Array] = None,
-        grid_manager: Optional[GridManager] = None
-    ) -> Tuple[Dict, plt.Figure]:
-        """
-        線形システムの解法をテスト
+    def test_simple_source_term(self):
+        """単純な解析解との比較テスト"""
+        grid_manager = self._create_grid_manager()
+        boundary_conditions = self._create_default_boundary_conditions()
         
-        Args:
-            solver_class: テストする線形ソルバークラス
-            matrix_size: テスト行列のサイズ
-            condition_number: 行列の条件数
-            max_iterations: 最大反復回数
-            tolerance: 収束許容誤差
-            preconditioner: 前処理関数
-            key: JAXのランダムキー
-            grid_manager: グリッドマネージャー（オプション）
+        # 解析解の設定: p = sin(πx)sin(πy)sin(πz)に対応するソース項
+        x, y, z = grid_manager.get_coordinates()
+        X, Y, Z = jnp.meshgrid(x, y, z, indexing='ij')
         
-        Returns:
-            テスト結果と収束履歴の図
-        """
-        # ランダムキーの生成
-        if key is None:
-            key = jax.random.PRNGKey(0)
+        # ソース項の計算: -∇²p = -3π²sin(πx)sin(πy)sin(πz)
+        f = -3 * (jnp.pi**2) * jnp.sin(jnp.pi * X) * jnp.sin(jnp.pi * Y) * jnp.sin(jnp.pi * Z)
         
-        # グリッドマネージャーの作成（未指定の場合）
-        if grid_manager is None:
-            grid_manager = cls._create_default_grid_manager(matrix_size)
+        # 解析解
+        p_exact = jnp.sin(jnp.pi * X) * jnp.sin(jnp.pi * Y) * jnp.sin(jnp.pi * Z)
         
-        # テスト行列と右辺ベクトルの生成
-        key, subkey1, subkey2 = jax.random.split(key, 3)
-        A = cls.create_test_matrix(matrix_size, condition_number, key=subkey1)
-        x_true = jax.random.normal(subkey2, (matrix_size,))
-        b = A @ x_true
-        
-        # ソルバーの生成
-        solver = solver_class(
-            config=LinearSolverConfig(
-                max_iterations=max_iterations,
-                tolerance=tolerance,
-                record_history=True,
-            ),
+        # SORソルバの初期化と解法
+        solver = PoissonSORSolver(
             grid_manager=grid_manager,
-            discretization=CombinedCompactDifference(grid_manager=grid_manager)
+            boundary_conditions=boundary_conditions,
+            omega=1.5,
+            max_iterations=1000,
+            tolerance=1e-6,
+            verbose=False
         )
         
-        # 前処理が指定されている場合は適用
-        if preconditioner:
-            solver.preconditioner = preconditioner(A)
+        p_solved, history = solver.solve(f)
         
-        # 初期推定解
-        x0 = jnp.zeros_like(b)
+        # 相対誤差の計算
+        relative_error = jnp.linalg.norm(p_solved - p_exact) / jnp.linalg.norm(p_exact)
         
-        # システムを解く
-        x_solved, history = solver.solve(A, b, x0)
+        # 結果の可視化
+        plt.figure(figsize=(15, 5))
         
-        # エラー指標の計算
-        residual = jnp.linalg.norm(b - A @ x_solved)
-        relative_error = residual / jnp.linalg.norm(b)
-        solution_error = jnp.linalg.norm(x_true - x_solved)
+        plt.subplot(131)
+        plt.title('解析解')
+        plt.pcolormesh(X[0], Y[0], p_exact[0], shading='auto')
+        plt.colorbar()
         
-        # 収束履歴のプロット
-        fig, ax = plt.subplots(figsize=(10, 6))
+        plt.subplot(132)
+        plt.title('数値解')
+        plt.pcolormesh(X[0], Y[0], p_solved[0], shading='auto')
+        plt.colorbar()
         
-        if 'residual_history' in history and history['residual_history'] is not None:
-            ax.semilogy(history['residual_history'], '-o')
-            ax.set_xlabel('Iteration')
-            ax.set_ylabel('Residual Norm')
-            ax.set_title(f'Convergence of {solver_class.__name__}')
-            ax.grid(True)
+        plt.subplot(133)
+        plt.title('絶対誤差')
+        plt.pcolormesh(X[0], Y[0], jnp.abs(p_solved - p_exact)[0], shading='auto')
+        plt.colorbar()
         
-        # 結果の辞書
-        results = {
-            'matrix_size': matrix_size,
-            'condition_number': condition_number,
-            'residual': float(residual),
-            'relative_error': float(relative_error),
-            'solution_error': float(solution_error),
-            'iterations': history.get('iterations', 0),
-            'converged': history.get('converged', False)
-        }
+        plt.tight_layout()
+        plt.savefig('test_results/poisson_sor/simple_source_term.png')
+        plt.close()
         
-        return results, fig
+        # 検証
+        print(f"相対誤差: {relative_error}")
+        self.assertTrue(relative_error < 1e-3, 
+                        f"相対誤差が許容範囲を超えています: {relative_error}")
+        self.assertTrue(history['converged'], "収束しませんでした")
+    
+    def test_omega_optimization(self):
+        """緩和パラメータの最適化テスト"""
+        grid_manager = self._create_grid_manager(32)
+        boundary_conditions = self._create_default_boundary_conditions()
+        
+        # ソース項の生成
+        x, y, z = grid_manager.get_coordinates()
+        X, Y, Z = jnp.meshgrid(x, y, z, indexing='ij')
+        f = jnp.exp(-(X-0.5)**2 - (Y-0.5)**2 - (Z-0.5)**2)
+        
+        solver = PoissonSORSolver(
+            grid_manager=grid_manager,
+            boundary_conditions=boundary_conditions,
+            omega=1.5,
+            max_iterations=500,
+            tolerance=1e-5,
+            verbose=False
+        )
+        
+        # 最適な緩和パラメータの探索
+        optimal_omega = solver.optimize_omega(f)
+        
+        # 最適化された緩和パラメータでの解法
+        solver.omega = optimal_omega
+        p_solved, history = solver.solve(f)
+        
+        # 結果の可視化と検証
+        plt.figure(figsize=(15, 5))
+        plt.subplot(131)
+        plt.title(f'最適なω = {optimal_omega:.4f}')
+        plt.plot(history['residual_history'], label='収束曲線')
+        plt.xlabel('反復回数')
+        plt.ylabel('残差')
+        plt.yscale('log')
+        plt.legend()
+        
+        plt.subplot(132)
+        plt.title('解の中心スライス')
+        plt.pcolormesh(p_solved[p_solved.shape[0]//2], shading='auto')
+        plt.colorbar()
+        
+        plt.subplot(133)
+        plt.title('ソース項の中心スライス')
+        plt.pcolormesh(f[f.shape[0]//2], shading='auto')
+        plt.colorbar()
+        
+        plt.tight_layout()
+        plt.savefig('test_results/poisson_sor/omega_optimization.png')
+        plt.close()
+        
+        # 検証
+        print(f"最適な緩和パラメータ: {optimal_omega}")
+        self.assertTrue(1.0 < optimal_omega < 2.0, 
+                        f"最適なωが不正: {optimal_omega}")
+        self.assertTrue(history['converged'], "収束しませんでした")
+    
+    def test_different_boundary_conditions(self):
+        """異なる境界条件の検証"""
+        grid_manager = self._create_grid_manager(32)
+        
+        # テスト用の境界条件セット
+        test_cases = [
+            {
+                'name': 'Dirichlet境界条件',
+                'boundary_conditions': {
+                    'left': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='left'),
+                    'right': BoundaryCondition(type=BCType.DIRICHLET, value=1.0, location='right'),
+                    'bottom': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='bottom'),
+                    'top': BoundaryCondition(type=BCType.DIRICHLET, value=1.0, location='top'),
+                    'front': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='front'),
+                    'back': BoundaryCondition(type=BCType.DIRICHLET, value=1.0, location='back')
+                }
+            },
+            {
+                'name': '混合境界条件（ディリクレとノイマン）',
+                'boundary_conditions': {
+                    'left': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='left'),
+                    'right': BoundaryCondition(type=BCType.NEUMANN, value=1.0, location='right'),
+                    'bottom': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='bottom'),
+                    'top': BoundaryCondition(type=BCType.NEUMANN, value=1.0, location='top'),
+                    'front': BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='front'),
+                    'back': BoundaryCondition(type=BCType.NEUMANN, value=1.0, location='back')
+                }
+            }
+        ]
+        
+        for test_case in test_cases:
+            # ソース項の生成
+            x, y, z = grid_manager.get_coordinates()
+            X, Y, Z = jnp.meshgrid(x, y, z, indexing='ij')
+            
+            # ソース項: 複雑な関数を使用
+            f = jnp.exp(-(X-0.5)**2 - (Y-0.5)**2 - (Z-0.5)**2)
+            
+            # ソルバの初期化
+            solver = PoissonSORSolver(
+                grid_manager=grid_manager,
+                boundary_conditions=test_case['boundary_conditions'],
+                omega=1.5,
+                max_iterations=1000,
+                tolerance=1e-6,
+                verbose=False
+            )
+            
+            # 解法
+            p_solved, history = solver.solve(f)
+            
+            # 結果の可視化
+            plt.figure(figsize=(15, 5))
+            plt.suptitle(test_case['name'])
+            
+            plt.subplot(131)
+            plt.title('解の中心スライス')
+            plt.pcolormesh(p_solved[p_solved.shape[0]//2], shading='auto')
+            plt.colorbar()
+            
+            plt.subplot(132)
+            plt.title('ソース項の中心スライス')
+            plt.pcolormesh(f[f.shape[0]//2], shading='auto')
+            plt.colorbar()
+            
+            plt.subplot(133)
+            plt.title('残差履歴')
+            plt.plot(history['residual_history'])
+            plt.xlabel('反復回数')
+            plt.ylabel('残差')
+            plt.yscale('log')
+            
+            plt.tight_layout()
+            plt.savefig(f'test_results/poisson_sor/{test_case["name"].replace(" ", "_")}.png')
+            plt.close()
+            
+            # 検証
+            print(f"{test_case['name']}:")
+            print(f"  反復回数: {history['iterations']}")
+            print(f"  最終残差: {history['residual_history'][-1]}")
+            
+            self.assertTrue(history['converged'], 
+                            f"{test_case['name']}で収束しませんでした")
+            self.assertLess(history['residual_history'][-1], 1e-5, 
+                            f"{test_case['name']}での残差が大きすぎます")
     
     @classmethod
-    def run_tests(cls):
-        """
-        線形ソルバーの包括的なテスト
-        
-        Returns:
-            全テスト結果の辞書
-        """
-        # 出力ディレクトリの作成
-        os.makedirs('test_results/linear_solvers', exist_ok=True)
-        
-        # テストするソルバー
-        solvers = [
-            SORSolver,
-        ]
-        
-        # テスト設定
-        test_configs = [
-            {'matrix_size': 50, 'condition_number': 10.0},
-            {'matrix_size': 100, 'condition_number': 100.0},
-            {'matrix_size': 200, 'condition_number': 1000.0}
-        ]
-        
-        # テスト結果の保存
-        all_results = {}
-        
-        # テストの実行
-        for solver in solvers:
-            solver_results = []
-            
-            for config in test_configs:
-                # デフォルトのグリッドマネージャーを作成
-                grid_manager = cls._create_default_grid_manager(config['matrix_size'])
-                
-                # 追加の前処理オプション
-                preconditioners = [None]
-                                
-                # 各前処理オプションでテスト
-                for preconditioner in preconditioners:
-                    # テストの実行
-                    result, fig = cls.solve_linear_system(
-                        solver, 
-                        matrix_size=config['matrix_size'], 
-                        condition_number=config['condition_number'],
-                        preconditioner=preconditioner,
-                        grid_manager=grid_manager
-                    )
-                    
-                    # 図の保存
-                    precond_name = (
-                        preconditioner.__name__ if preconditioner 
-                        else 'None'
-                    )
-                    fig_filename = (
-                        f'test_results/linear_solvers/'
-                        f'{solver.__name__.lower()}_'
-                        f'{config["matrix_size"]}x{config["matrix_size"]}_'
-                        f'cond{config["condition_number"]}_'
-                        f'{precond_name}.png'
-                    )
-                    plt.savefig(fig_filename)
-                    plt.close(fig)
-                    
-                    # 結果の保存
-                    result['preconditioner'] = precond_name
-                    solver_results.append(result)
-            
-            # ソルバーごとの結果を保存
-            all_results[solver.__name__] = solver_results
-        
-        # 結果の出力
-        print("Linear solver test results:")
-        for solver_name, results in all_results.items():
-            print(f"\n{solver_name}:")
-            for result in results:
-                print(f"  Matrix size: {result['matrix_size']}")
-                print(f"    Condition number: {result['condition_number']}")
-                print(f"    Preconditioner: {result['preconditioner']}")
-                print(f"    Residual: {result['residual']:.6e}")
-                print(f"    Relative error: {result['relative_error']:.6e}")
-                print(f"    Solution error: {result['solution_error']:.6e}")
-                print(f"    Iterations: {result['iterations']}")
-                print(f"    Converged: {result['converged']}")
-        
-        return all_results
+    def tearDownClass(cls):
+        """テスト後処理"""
+        print("ポアソンSORソルバテストスイートが完了しました。")
 
-# スクリプトが直接実行された場合にテストを実行
+def run_tests():
+    """テストの実行"""
+    unittest.main(argv=[''], exit=False)
+
 if __name__ == '__main__':
-    LinearSolversTestSuite.run_tests()
+    run_tests()
