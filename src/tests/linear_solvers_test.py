@@ -96,7 +96,7 @@ class PoissonSolverTest(unittest.TestCase):
         # ポアソンソルバーの初期化
         self.solver = PoissonSolver(
             config=PoissonSolverConfig(
-                max_iterations=10,  # 最大反復回数を増加
+                max_iterations=10000,  # 最大反復回数を増加
                 tolerance=1e-6,        # 収束閾値
                 record_history=True,
                 relaxation_factor=1.2,
