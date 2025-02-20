@@ -257,7 +257,7 @@ class LaplacianSolverTestSuite:
             {
                 'name': 'Quadratic Function Laplacian',
                 'function': lambda x, y, z: x**2 + y**2 + z**2,
-                'laplacian': lambda x, y, z: 2 + 2 + 2 * jnp.ones_like(x)
+                'laplacian': lambda x, y, z: 2 * jnp.ones_like(x) + 2 * jnp.ones_like(y) + 2 * jnp.ones_like(x)
             },
             # Test Case 2: Sine Function Laplacian
             {
@@ -270,7 +270,7 @@ class LaplacianSolverTestSuite:
                 'name': 'Exponential Function Laplacian',
                 'function': lambda x, y, z: jnp.exp(x + y + z),
                 'laplacian': lambda x, y, z: jnp.exp(x + y + z)
-            }
+            },
         ]
         
         # Store test results
