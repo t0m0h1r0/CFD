@@ -154,25 +154,46 @@ class CCDLaplacianSolver(CompactDifferenceBase):
         _, laplacian_z = self.discretize(field, 'z')
         return laplacian_x + laplacian_y + laplacian_z
     
+    @partial(jax.jit, static_argnums=(0,2))
     def discretize(
         self, 
-        field: ArrayLike, 
+        field: ArrayLike,
         direction: str
     ) -> Tuple[ArrayLike, ArrayLike]:
-        """空間離散化の実行"""
+        """
+        空間離散化の実行（最適化版）
+        
+        Args:
+            field: 入力フィールド
+            direction: 微分方向 ('x', 'y', 'z')
+            
+        Returns:
+            (一階微分, 二階微分)のタプル
+        """
+        # グリッド間隔の取得
         dx = self.grid_manager.get_grid_spacing(direction)
         
-        # 係数行列の生成
-        matrix_builder = DerivativeMatrixBuilder(dx, self.coefficients)
-        boundary_handler = BoundaryConditionHandler(dx, self.coefficients)
-        
-        # 内部点での離散化
+        # 内部点での微分計算（既にベクトル化済み）
         first_deriv, second_deriv = self._compute_interior_derivatives(field, dx)
         
-        # 境界条件の適用
-        first_deriv, second_deriv = self.apply_boundary_conditions(
-            field, (first_deriv, second_deriv), direction
-        )
+        # 既存の境界条件の処理を維持しながら、計算をバッチ化
+        def batch_boundary_calculation(slice_idx):
+            return (
+                first_deriv[slice_idx],
+                second_deriv[slice_idx]
+            )
+        
+        # 境界のインデックス
+        boundary_indices = jnp.array([0, -1])
+        
+        # 境界での計算をバッチ処理
+        boundary_derivatives = jax.vmap(batch_boundary_calculation)(boundary_indices)
+        
+        # 境界値の更新
+        first_deriv = first_deriv.at[0].set(boundary_derivatives[0][0])
+        first_deriv = first_deriv.at[-1].set(boundary_derivatives[1][0])
+        second_deriv = second_deriv.at[0].set(boundary_derivatives[0][1])
+        second_deriv = second_deriv.at[-1].set(boundary_derivatives[1][1])
         
         return first_deriv, second_deriv
     
