@@ -184,7 +184,7 @@ class PoissonSolver(LinearSolverBase):
                 )
                 
                 # 緩和付き更新
-                field = field + (
+                field = field - (
                     self.config.relaxation_factor * 
                     safe_residual / diag_scale
                 )
