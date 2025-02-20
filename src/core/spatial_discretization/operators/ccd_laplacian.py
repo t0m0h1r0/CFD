@@ -47,12 +47,20 @@ class BoundaryConditionHandler:
         self.dx = dx
         self.coefficients = coefficients
 
+    @partial(jax.jit, static_argnums=(0,))
     def initialize_ghost_points(self, field: ArrayLike) -> Tuple[ArrayLike, ArrayLike]:
-        """ゴーストポイントの初期化"""
-        gp_left = (7*field[0] - 21*field[1] + 35*field[2] - 
-                  35*field[3] + 21*field[4] - 7*field[5] + field[6])
-        gp_right = (7*field[-1] - 21*field[-2] + 35*field[-3] - 
-                   35*field[-4] + 21*field[-5] - 7*field[-6] + field[-7])
+        """ゴーストポイントの初期化（最適化版）"""
+        # 係数配列の事前定義
+        coefs = jnp.array([7., -21., 35., -35., 21., -7., 1.])
+        
+        # 境界点の計算
+        def compute_ghost_point(field_slice):
+            return jnp.dot(coefs, field_slice)
+        
+        # 左右の境界値を計算
+        gp_left = compute_ghost_point(field[0:7])
+        gp_right = compute_ghost_point(field[-7:][::-1])
+        
         return gp_left, gp_right
 
     def apply_dirichlet_boundary(
