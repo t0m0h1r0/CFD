@@ -12,7 +12,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, project_root)
 
 from src.core.spatial_discretization.operators.ccd import CombinedCompactDifference
-from src.core.spatial_discretization.operators.laplacian_solver import CCDLaplacianSolver
+from src.core.spatial_discretization.operators.ccd_laplacian import CCDLaplacianSolver
 from src.core.common.grid import GridManager, GridConfig
 from src.core.common.types import GridType, BCType, BoundaryCondition
 
