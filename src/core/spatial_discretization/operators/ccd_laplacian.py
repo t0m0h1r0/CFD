@@ -49,17 +49,22 @@ class BoundaryConditionHandler:
 
     @partial(jax.jit, static_argnums=(0,))
     def initialize_ghost_points(self, field: ArrayLike) -> Tuple[ArrayLike, ArrayLike]:
-        """ゴーストポイントの初期化（最適化版）"""
+        """ゴーストポイントの初期化（修正版）"""
         # 係数配列の事前定義
         coefs = jnp.array([7., -21., 35., -35., 21., -7., 1.])
         
-        # 境界点の計算
+        # 境界点の計算（3次元データ対応）
         def compute_ghost_point(field_slice):
-            return jnp.dot(coefs, field_slice)
+            # 各点での重み付き和を計算
+            weighted_sum = field_slice * coefs[:, None, None]
+            return jnp.sum(weighted_sum)
         
         # 左右の境界値を計算
-        gp_left = compute_ghost_point(field[0:7])
-        gp_right = compute_ghost_point(field[-7:][::-1])
+        left_slice = field[0:7]  # 形状: (7, 32, 32)
+        right_slice = field[-7:][::-1]  # 形状: (7, 32, 32)
+        
+        gp_left = compute_ghost_point(left_slice)
+        gp_right = compute_ghost_point(right_slice)
         
         return gp_left, gp_right
 
@@ -126,10 +131,10 @@ class DerivativeMatrixBuilder:
         derivative_type: DerivativeType,
         is_left: bool
     ) -> ArrayLike:
-        """微分係数の行列を構築（最適化版）"""
+        """微分係数の行列を構築（修正版）"""
         # インデックスの計算を簡略化
         idx = jnp.arange(6) if is_left else -jnp.arange(1, 7)
-        field_values = field[idx]
+        field_values = field[idx]  # 形状: (6, 32, 32)
         
         if derivative_type == DerivativeType.FIRST:
             coef = self.coefficients.first_order
@@ -145,8 +150,13 @@ class DerivativeMatrixBuilder:
             ])
             
             sign = -1. if is_left else 1.
-            values = jnp.concatenate([jnp.array([field_gp]), field_values])
-            return sign * jnp.dot(coefficients, values) / (60 * self.dx)
+            # field_gpを適切な形状に拡張
+            expanded_gp = jnp.broadcast_to(field_gp, field_values[0].shape)
+            values = jnp.concatenate([expanded_gp[None, ...], field_values])
+            
+            # 係数との積和を計算
+            result = jnp.sum(coefficients[:, None, None] * values, axis=0)
+            return sign * result / (60 * self.dx)
         
         else:  # DerivativeType.SECOND
             coef = self.coefficients.second_order
@@ -161,8 +171,13 @@ class DerivativeMatrixBuilder:
                 -(13 - 180 * coef['gamma'])
             ])
             
-            values = jnp.concatenate([jnp.array([field_gp]), field_values])
-            return jnp.dot(coefficients, values) / (180 * self.dx**2)
+            # field_gpを適切な形状に拡張
+            expanded_gp = jnp.broadcast_to(field_gp, field_values[0].shape)
+            values = jnp.concatenate([expanded_gp[None, ...], field_values])
+            
+            # 係数との積和を計算
+            result = jnp.sum(coefficients[:, None, None] * values, axis=0)
+            return result / (180 * self.dx**2)
 
 class CCDLaplacianSolver(CompactDifferenceBase):
     """高精度コンパクト差分法によるラプラシアンソルバー"""
@@ -203,27 +218,56 @@ class CCDLaplacianSolver(CompactDifferenceBase):
         # グリッド間隔の取得
         dx = self.grid_manager.get_grid_spacing(direction)
         
-        # 内部点での微分計算（既にベクトル化済み）
+        # 内部点での微分計算
         first_deriv, second_deriv = self._compute_interior_derivatives(field, dx)
         
-        # 既存の境界条件の処理を維持しながら、計算をバッチ化
-        def batch_boundary_calculation(slice_idx):
-            return (
-                first_deriv[slice_idx],
-                second_deriv[slice_idx]
+        # 境界条件の設定を取得
+        bc_map = {'x': ('left', 'right'), 'y': ('bottom', 'top'), 'z': ('front', 'back')}
+        bc_left_key, bc_right_key = bc_map[direction]
+        
+        # バッチ処理向けに境界条件を準備
+        bc_left = self.boundary_conditions.get(
+            bc_left_key, 
+            BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location=bc_left_key)
+        )
+        bc_right = self.boundary_conditions.get(
+            bc_right_key, 
+            BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location=bc_right_key)
+        )
+        
+        # 境界条件の適用を効率化
+        boundary_handler = BoundaryConditionHandler(dx, self.coefficients)
+        gp_left, gp_right = boundary_handler.initialize_ghost_points(field)
+        
+        # 左境界の更新
+        if bc_left.type == BCType.DIRICHLET:
+            gp_left = boundary_handler.apply_dirichlet_boundary(
+                gp_left, bc_left.value, first_deriv[0], DerivativeType.FIRST, True
             )
         
-        # 境界のインデックス
-        boundary_indices = jnp.array([0, -1])
+        # 右境界の更新
+        if bc_right.type == BCType.DIRICHLET:
+            gp_right = boundary_handler.apply_dirichlet_boundary(
+                gp_right, bc_right.value, first_deriv[-1], DerivativeType.FIRST, False
+            )
         
-        # 境界での計算をバッチ処理
-        boundary_derivatives = jax.vmap(batch_boundary_calculation)(boundary_indices)
+        # 境界での微分値の計算
+        matrix_builder = DerivativeMatrixBuilder(dx, self.coefficients)
         
-        # 境界値の更新
-        first_deriv = first_deriv.at[0].set(boundary_derivatives[0][0])
-        first_deriv = first_deriv.at[-1].set(boundary_derivatives[1][0])
-        second_deriv = second_deriv.at[0].set(boundary_derivatives[0][1])
-        second_deriv = second_deriv.at[-1].set(boundary_derivatives[1][1])
+        # 一括で境界値を更新
+        first_deriv = first_deriv.at[0].set(
+            matrix_builder.build_derivative_coefficients(gp_left, field, DerivativeType.FIRST, True)
+        )
+        first_deriv = first_deriv.at[-1].set(
+            matrix_builder.build_derivative_coefficients(gp_right, field, DerivativeType.FIRST, False)
+        )
+        
+        second_deriv = second_deriv.at[0].set(
+            matrix_builder.build_derivative_coefficients(gp_left, field, DerivativeType.SECOND, True)
+        )
+        second_deriv = second_deriv.at[-1].set(
+            matrix_builder.build_derivative_coefficients(gp_right, field, DerivativeType.SECOND, False)
+        )
         
         return first_deriv, second_deriv
     
