@@ -63,25 +63,35 @@ class BoundaryConditionHandler:
         
         return gp_left, gp_right
 
+    @partial(jax.jit, static_argnums=(0,4,5))
     def apply_dirichlet_boundary(
-        self, 
+        self,
         ghost_point: ArrayLike,
         boundary_value: float,
         derivative: ArrayLike,
         derivative_type: DerivativeType,
         is_left: bool
     ) -> ArrayLike:
-        """Dirichlet境界条件の適用"""
-        if derivative_type == DerivativeType.FIRST:
-            coef = self.coefficients.first_order
-            factor = -10 - 150 * coef['alpha']
-            delta = (60 * self.dx) / factor * (boundary_value - derivative)
-        else:
-            coef = self.coefficients.second_order
-            factor = 137 + 180 * coef['gamma']
-            delta = (180 * self.dx**2) / factor * (boundary_value - derivative)
+        """Dirichlet境界条件の適用（最適化版）"""
         
-        return ghost_point + delta
+        # 係数とスケールファクターの計算をベクトル化
+        coef_first = self.coefficients.first_order
+        coef_second = self.coefficients.second_order
+        
+        # 条件分岐を行列演算に置き換え
+        factor_first = -10. - 150. * coef_first['alpha']
+        factor_second = 137. + 180. * coef_second['gamma']
+        
+        # 型に応じた補正項の計算
+        is_first = derivative_type == DerivativeType.FIRST
+        factor = jnp.where(is_first, factor_first, factor_second)
+        dx_power = jnp.where(is_first, self.dx, self.dx**2)
+        scale = jnp.where(is_first, 60., 180.)
+        
+        # 補正値の計算
+        correction = (scale * dx_power / factor) * (boundary_value - derivative)
+        
+        return ghost_point + correction
 
     def apply_neumann_boundary(
         self,
