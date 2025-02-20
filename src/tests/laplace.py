@@ -269,7 +269,7 @@ class LaplacianSolverTestSuite:
             {
                 'name': 'Exponential Function Laplacian',
                 'function': lambda x, y, z: jnp.exp(x + y + z),
-                'laplacian': lambda x, y, z: jnp.exp(x + y + z)
+                'laplacian': lambda x, y, z: 3 * jnp.exp(x + y + z)
             },
         ]
         
