@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Dict, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -175,20 +176,34 @@ class CCDLaplacianSolver(CompactDifferenceBase):
         
         return first_deriv, second_deriv
     
+    @partial(jax.jit, static_argnums=(0,))
     def _compute_interior_derivatives(
         self, 
         field: ArrayLike, 
         dx: float
     ) -> Tuple[ArrayLike, ArrayLike]:
-        """内部点での微分計算"""
+        """内部点での微分計算（ベクトル化バージョン）"""
+        
+        # ベクトル化された微分計算
+        def vectorized_first_derivative(slice_idx):
+            return (field[slice_idx + 1] - field[slice_idx - 1]) / (2 * dx)
+        
+        def vectorized_second_derivative(slice_idx):
+            return (field[slice_idx + 1] - 2 * field[slice_idx] + 
+                    field[slice_idx - 1]) / (dx**2)
+        
+        # インデックス範囲の生成
+        interior_indices = jnp.arange(1, field.shape[0] - 1)
+        
+        # vmap適用
         first_deriv = jnp.zeros_like(field)
         second_deriv = jnp.zeros_like(field)
         
         first_deriv = first_deriv.at[1:-1].set(
-            (field[2:] - field[:-2]) / (2 * dx)
+            jax.vmap(vectorized_first_derivative)(interior_indices)
         )
         second_deriv = second_deriv.at[1:-1].set(
-            (field[2:] - 2 * field[1:-1] + field[:-2]) / (dx**2)
+            jax.vmap(vectorized_second_derivative)(interior_indices)
         )
         
         return first_deriv, second_deriv
