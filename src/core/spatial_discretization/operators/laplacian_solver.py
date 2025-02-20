@@ -146,23 +146,6 @@ class CCDLaplacianSolver(CompactDifferenceBase):
             (field[2:] - 2 * field[1:-1] + field[:-2]) / (dx**2)
         )
         
-        # 境界点の特別な処理
-        # 左端
-        first_deriv = first_deriv.at[0].set(
-            (field[1] - field[0]) / dx
-        )
-        second_deriv = second_deriv.at[0].set(
-            (field[2] - 2 * field[1] + field[0]) / (dx**2)
-        )
-        
-        # 右端
-        first_deriv = first_deriv.at[-1].set(
-            (field[-1] - field[-2]) / dx
-        )
-        second_deriv = second_deriv.at[-1].set(
-            (field[-1] - 2 * field[-2] + field[-3]) / (dx**2)
-        )
-        
         return first_deriv, second_deriv
     
     def apply_boundary_conditions(
@@ -183,6 +166,11 @@ class CCDLaplacianSolver(CompactDifferenceBase):
             境界条件適用後の(一階微分, 二階微分)
         """
         first_deriv, second_deriv = derivatives
+        dx = self.grid_manager.get_grid_spacing(direction)
+        
+        # ゴーストポイントの初期化
+        field_gp_left = 7*field[0] - 21*field[1] + 35*field[2] - 35*field[3] + 21*field[4] - 7*field[5] + field[6]
+        field_gp_right = 7*field[-1] - 21*field[-2] + 35*field[-3] - 35*field[-4] + 21*field[-5] - 7*field[-6] + field[-7]
         
         # 方向に応じた境界条件の取得
         bc_dict = {
@@ -203,23 +191,69 @@ class CCDLaplacianSolver(CompactDifferenceBase):
         
         # Dirichlet境界条件の処理
         if bc_left.type == BCType.DIRICHLET:
-            first_deriv = first_deriv.at[0].set(
-                (field[1] - field[0]) / self.grid_manager.get_grid_spacing(direction)
-            )
-            second_deriv = second_deriv.at[0].set(
-                (field[2] - 2 * field[1] + field[0]) / 
-                (self.grid_manager.get_grid_spacing(direction)**2)
-            )
-        
+            delta_field_gp_left = (60*dx) / (-10 - 150*self.coefficients['alpha_1st']) * (bc_left.value - first_deriv[0])
+            field_gp_left += delta_field_gp_left
+            
         if bc_right.type == BCType.DIRICHLET:
-            first_deriv = first_deriv.at[-1].set(
-                (field[-1] - field[-2]) / self.grid_manager.get_grid_spacing(direction)
-            )
-            second_deriv = second_deriv.at[-1].set(
-                (field[-1] - 2 * field[-2] + field[-3]) / 
-                (self.grid_manager.get_grid_spacing(direction)**2)
-            )
+            delta_field_gp_right = (60*dx) / (-10 - 150*self.coefficients['alpha_1st']) * (bc_right.value - first_deriv[-1]) 
+            field_gp_right += delta_field_gp_right
+
+        # Neumann境界条件の処理
+        if bc_left.type == BCType.NEUMANN:
+            delta_field_gp_left = (180*dx**2) / (137 + 180*self.coefficients['gamma_2nd']) * (bc_left.value - second_deriv[0])
+            field_gp_left += delta_field_gp_left
         
+        if bc_right.type == BCType.NEUMANN:
+            delta_field_gp_right = (180*dx**2) / (137 + 180*self.coefficients['gamma_2nd']) * (bc_right.value - second_deriv[-1])
+            field_gp_right += delta_field_gp_right
+
+        # ゴーストポイントを使用した境界での微分計算
+        first_deriv = first_deriv.at[0].set(
+            (-1/60) * (
+                (10 + 150*self.coefficients['alpha_1st'])*field_gp_left
+                + (77 - 840*self.coefficients['alpha_1st'])*field[0]
+                - (150 - 1950*self.coefficients['alpha_1st'])*field[1]
+                + (100 - 2400*self.coefficients['alpha_1st'])*field[2]
+                - (50 - 1650*self.coefficients['alpha_1st'])*field[3]
+                + (15 - 600*self.coefficients['alpha_1st'])*field[4]
+                - (2 - 90*self.coefficients['alpha_1st'])*field[5]
+            ) / dx
+        )
+        first_deriv = first_deriv.at[-1].set(
+            (1/60) * (
+                (10 + 150*self.coefficients['alpha_1st'])*field_gp_right
+                - (77 - 840*self.coefficients['alpha_1st'])*field[-1]
+                + (150 - 1950*self.coefficients['alpha_1st'])*field[-2]
+                - (100 - 2400*self.coefficients['alpha_1st'])*field[-3]
+                + (50 - 1650*self.coefficients['alpha_1st'])*field[-4]
+                - (15 - 600*self.coefficients['alpha_1st'])*field[-5]
+                + (2 - 90*self.coefficients['alpha_1st'])*field[-6]
+            ) / dx
+        )
+
+        second_deriv = second_deriv.at[0].set(
+            (1/180) * (
+                (137 + 180*self.coefficients['gamma_2nd'])*field_gp_left
+                - (147 + 1080*self.coefficients['gamma_2nd'])*field[0]
+                - (255 - 2700*self.coefficients['gamma_2nd'])*field[1]
+                + (470 - 3600*self.coefficients['gamma_2nd'])*field[2]
+                - (285 - 2700*self.coefficients['gamma_2nd'])*field[3]
+                + (93 - 1080*self.coefficients['gamma_2nd'])*field[4]
+                - (13 - 180*self.coefficients['gamma_2nd'])*field[5]
+            ) / dx**2
+        )
+        second_deriv = second_deriv.at[-1].set(
+            (1/180) * (
+                (137 + 180*self.coefficients['gamma_2nd'])*field_gp_right
+                - (147 + 1080*self.coefficients['gamma_2nd'])*field[-1]
+                - (255 - 2700*self.coefficients['gamma_2nd'])*field[-2]
+                + (470 - 3600*self.coefficients['gamma_2nd'])*field[-3]
+                - (285 - 2700*self.coefficients['gamma_2nd'])*field[-4]
+                + (93 - 1080*self.coefficients['gamma_2nd'])*field[-5]
+                - (13 - 180*self.coefficients['gamma_2nd'])*field[-6]
+            ) / dx**2
+        )
+
         # 周期的境界条件の処理
         if (bc_left.type == BCType.PERIODIC and 
             bc_right.type == BCType.PERIODIC):
