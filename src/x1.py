@@ -1,8 +1,11 @@
 import jax
 import jax.numpy as jnp
+from jax import jit
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Tuple, List, Optional
+from functools import partial
+from jax.experimental import sparse
 
 @dataclass
 class GridConfig:
@@ -175,6 +178,7 @@ class CCDSolver:
         # ソルバー行列を計算 (L^{-1}K)
         self.solver_matrix = L_inv @ K
         
+    @partial(jit, static_argnums=(0,))
     def solve(self, f: jnp.ndarray) -> jnp.ndarray:
         """導関数を計算
         
@@ -317,28 +321,28 @@ class CCDMethodTester:
         
         # 元関数
         axes[0, 0].plot(x_fine, [test_func.f(x) for x in x_fine], 'b-', label='f(x)')
-        axes[0, 0].scatter(x_points, f_values, color='red', label='Grid Points')
+        axes[0, 0].plot(x_points, f_values, color='red', label='Grid Points')
         axes[0, 0].set_title('Original Function')
         axes[0, 0].legend()
         axes[0, 0].grid(True)
         
         # 1階導関数
         axes[0, 1].plot(x_fine, analytical_df, 'b-', label='Analytical')
-        axes[0, 1].scatter(x_points, numerical_derivatives[::3], color='red', label='Numerical')
+        axes[0, 1].plot(x_points, numerical_derivatives[::3], color='red', label='Numerical')
         axes[0, 1].set_title('First Derivative')
         axes[0, 1].legend()
         axes[0, 1].grid(True)
         
         # 2階導関数
         axes[1, 0].plot(x_fine, analytical_d2f, 'b-', label='Analytical')
-        axes[1, 0].scatter(x_points, numerical_derivatives[1::3], color='red', label='Numerical')
+        axes[1, 0].plot(x_points, numerical_derivatives[1::3], color='red', label='Numerical')
         axes[1, 0].set_title('Second Derivative')
         axes[1, 0].legend()
         axes[1, 0].grid(True)
         
         # 3階導関数
         axes[1, 1].plot(x_fine, analytical_d3f, 'b-', label='Analytical')
-        axes[1, 1].scatter(x_points, numerical_derivatives[2::3], color='red', label='Numerical')
+        axes[1, 1].plot(x_points, numerical_derivatives[2::3], color='red', label='Numerical')
         axes[1, 1].set_title('Third Derivative')
         axes[1, 1].legend()
         axes[1, 1].grid(True)
@@ -351,7 +355,7 @@ class CCDMethodTester:
 def run_tests():
     """テストの実行"""
     # グリッド設定
-    n = 4096
+    n = 256
     L = 2.0
     grid_config = GridConfig(n_points=n, h=L/(n-1))
     solver = CCDSolver(grid_config)
