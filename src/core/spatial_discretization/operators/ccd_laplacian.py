@@ -76,26 +76,6 @@ class CCDLaplacianSolver(CompactDifferenceBase):
         # CCDに委譲
         return self.ccd.discretize(field, direction)
 
-    def apply_boundary_conditions(
-        self, 
-        field: ArrayLike, 
-        derivatives: Tuple[ArrayLike, ArrayLike], 
-        direction: str
-    ) -> Tuple[ArrayLike, ArrayLike]:
-        """
-        境界条件の適用
-        
-        Args:
-            field: 入力フィールド
-            derivatives: 微分値のタプル（一階微分、二階微分）
-            direction: 適用する方向
-            
-        Returns:
-            境界条件適用後の微分値
-        """
-        # CCDに委譲
-        return self.ccd.apply_boundary_conditions(field, derivatives, direction)
-
     def solve_system(
         self,
         lhs: ArrayLike, 
@@ -115,33 +95,6 @@ class CCDLaplacianSolver(CompactDifferenceBase):
         """
         # CCDに委譲
         return self.ccd.solve_system(lhs, rhs, field)
-
-    def compute_central_derivatives(
-        self,
-        field: ArrayLike,
-        direction: str
-    ) -> Tuple[ArrayLike, ArrayLike]:
-        """
-        中心点における微分値の計算（診断用）
-        
-        Args:
-            field: 入力フィールド
-            direction: 微分方向
-            
-        Returns:
-            中心点での(一階微分, 二階微分)のタプル
-        """
-        dx = self.grid_manager.get_grid_spacing(direction)
-        
-        center_idx = field.shape[0] // 2
-        
-        # 中心差分による近似
-        first_deriv = (field[center_idx + 1] - field[center_idx - 1]) / (2 * dx)
-        second_deriv = (
-            field[center_idx + 1] - 2 * field[center_idx] + field[center_idx - 1]
-        ) / (dx**2)
-        
-        return first_deriv, second_deriv
 
     def verify_solution(
         self,
