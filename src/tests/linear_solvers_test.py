@@ -47,7 +47,7 @@ class PoissonSolverTest(unittest.TestCase):
             PoissonTestCase(
                 name="Polynomial",
                 solution=lambda x, y, z: x**2 + y**2 + z**2,
-                rhs=lambda x, y, z: -6 * jnp.ones_like(x)
+                rhs=lambda x, y, z: 2 * jnp.ones_like(x) + 2 * jnp.ones_like(y) + 2 * jnp.ones_like(z)
             ),
             PoissonTestCase(
                 name="Exponential",
