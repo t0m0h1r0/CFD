@@ -258,29 +258,47 @@ class CombinedCompactDifference(CompactDifferenceBase):
         field: ArrayLike, 
         dx: float
     ) -> Tuple[ArrayLike, ArrayLike]:
-        """内部点での微分計算（ベクトル化バージョン）"""
+        """
+        内部点での高精度CCD微分計算
         
-        # ベクトル化された微分計算
-        def vectorized_first_derivative(slice_idx):
-            return (field[slice_idx + 1] - field[slice_idx - 1]) / (2 * dx)
-        
-        def vectorized_second_derivative(slice_idx):
-            return (field[slice_idx + 1] - 2 * field[slice_idx] + 
-                    field[slice_idx - 1]) / (dx**2)
-        
+        Args:
+            field: 入力フィールド
+            dx: グリッド間隔
+            
+        Returns:
+            (一階微分, 二階微分)のタプル
+        """
+        # 係数の設定
+        alpha1, beta1, gamma1 = 15/16, -7/16, 1/16     # 一階微分の係数
+        alpha2, beta2, gamma2 = 12/13, -3/13, 1/13     # 二階微分の係数
+
         # インデックス範囲の生成
-        interior_indices = jnp.arange(1, field.shape[0] - 1)
+        n = field.shape[0]
+        i = jnp.arange(n)
         
-        # vmap適用
-        first_deriv = jnp.zeros_like(field)
-        second_deriv = jnp.zeros_like(field)
+        # 中心差分の計算（全点で）
+        d1_central = (field.at[i+1].get(mode='clip') - field.at[i-1].get(mode='clip')) / (2*dx)
+        d2_central = (field.at[i+1].get(mode='clip') - 2*field + field.at[i-1].get(mode='clip')) / (dx**2)
         
-        first_deriv = first_deriv.at[1:-1].set(
-            jax.vmap(vectorized_first_derivative)(interior_indices)
-        )
-        second_deriv = second_deriv.at[1:-1].set(
-            jax.vmap(vectorized_second_derivative)(interior_indices)
-        )
+        # 高次精度補正項の計算
+        d1_high = (beta1 * (field.at[i+2].get(mode='clip') - field.at[i-2].get(mode='clip')) / (4*dx) +
+                  gamma1 * (field.at[i+3].get(mode='clip') - field.at[i-3].get(mode='clip')) / (6*dx))
+        
+        d2_high = (beta2 * (field.at[i+2].get(mode='clip') - 2*field + field.at[i-2].get(mode='clip')) / (4*dx**2) +
+                  gamma2 * (field.at[i+3].get(mode='clip') - 2*field + field.at[i-3].get(mode='clip')) / (9*dx**2))
+        
+        # 内部点とそれ以外で場合分け
+        is_interior = (i >= 3) & (i < n-3)
+        
+        first_deriv = jnp.where(is_interior,
+                               alpha1 * d1_central + d1_high,
+                               d1_central)
+        
+        second_deriv = jnp.where(is_interior,
+                                alpha2 * d2_central + d2_high,
+                                d2_central)
+        
+        return first_deriv, second_deriv
         
         return first_deriv, second_deriv
 
