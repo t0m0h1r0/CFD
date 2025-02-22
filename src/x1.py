@@ -5,14 +5,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Tuple, List, Optional
 from functools import partial
-from jax.experimental import sparse
 
 @dataclass
 class GridConfig:
     """グリッド設定を保持するデータクラス"""
     n_points: int  # グリッド点の数
     h: float      # グリッド幅
-    
+
 class BlockMatrixBuilder(ABC):
     """ブロック行列生成の抽象基底クラス"""
     @abstractmethod
@@ -24,59 +23,78 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
     """左辺のブロック行列を生成するクラス"""
     def _build_interior_blocks(self, h: float) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """内部点のブロック行列A, B, Cを生成"""
-        A = jnp.array([
-            [7/16, h/16, h**2/32],
-            [-9/(8*h), -1/8, h/16],
-            [1/h**2, 1/(4*h), 0]
+        # スケーリング行列
+        S = jnp.array([
+            [1/h**2, 1/h, 1],
+            [1/h, 1, h],
+            [1, h, h**2]
         ])
         
+        # 左ブロック行列
+        A = jnp.array([
+            [19/32, -29/16, -105/16],
+            [1/8, -5/16, -15/8],
+            [1/96, -1/48, -3/16]
+        ]) * S
+        
+        # 中央ブロック行列
         B = jnp.eye(3)
         
+        # 右ブロック行列
         C = jnp.array([
-            [7/16, -h/16, -h**2/32],
-            [9/(8*h), -1/8, -h/16],
-            [-1/h**2, -1/(4*h), 0]
-        ])
+            [19/32, 29/16, -105/16],
+            [-1/8, -5/16, 15/8],
+            [1/96, 1/48, -3/16]
+        ]) * S
         
         return A, B, C
     
-    def _build_boundary_blocks(self, h: float) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    def _build_boundary_blocks(self, h: float) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """境界点のブロック行列を生成"""
+        S = jnp.array([
+            [1/h**2, 1/h, 1],
+            [1/h, 1, h],
+            [1, h, h**2]
+        ])
+        
+        # 左境界の行列（単位行列）
         B0 = jnp.array([
-            [1, 0, 0],
-            [0, h, 0],
-            [0, 0, h**2]
+            [14, 2, 0],
+            [1, 1/2, 1/6],
+            [2, 2, 4/3]
         ])
         
         C0 = jnp.array([
-            [2, -h/2, h**2/4],
-            [-6/h, 5/2, -h/4],
-            [1/h**2, -1/(4*h), 0]
-        ])
+            [16, -4, 0],
+            [0, 0, 0],
+            [0, 0, 0]  
+        ]) * S
         
         D0 = jnp.array([
-            [1/16, -h/16, -h**2/32],
-            [9/(16*h), -1/16, h/16],
-            [-1/h**2, 1/(4*h), 0]
-        ])
-        
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0]
+        ]) * S
+
+        # 右境界の行列（単位行列）
         BR = jnp.array([
-            [1, 0, 0],
-            [0, h, 0],
-            [0, 0, h**2]
+            [-14, 2, 0],
+            [-1, 1/2, -1/6],
+            [-2, 2, -4/3]
         ])
         
         AR = jnp.array([
-            [2, h/2, h**2/4],
-            [6/h, 5/2, h/4],
-            [-1/h**2, 1/(4*h), 0]
-        ])
+            [-16, -4, 0],
+            [0, 0, 0],
+            [0, 0, 0]
+        ]) * S
         
         ZR = jnp.array([
-            [1/16, h/16, h**2/32],
-            [-9/(16*h), 1/16, -h/16],
-            [1/h**2, -1/(4*h), 0]
-        ])
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0]
+        ]) * S
+        
         return B0, C0, D0, ZR, AR, BR
 
     def build_block(self, grid_config: GridConfig) -> jnp.ndarray:
@@ -85,7 +103,6 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         A, B, C = self._build_interior_blocks(h)
         B0, C0, D0, ZR, AR, BR = self._build_boundary_blocks(h)
         
-        # 全体行列のサイズを計算
         matrix_size = 3 * n
         L = jnp.zeros((matrix_size, matrix_size))
         
@@ -110,28 +127,44 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         return L
 
 class RightHandBlockBuilder(BlockMatrixBuilder):
-    """右辺のブロック行列を生成するクラス"""
+    """右辺のブロック行列を生成するクラス"""  
     def _build_interior_block(self, h: float) -> jnp.ndarray:
-        """内部点のブロック行列を生成"""
-        return jnp.array([
-            [-15/(16*h), 0, 15/(16*h)],
-            [3/h**2, -6/h**2, 3/h**2],
-            [-1/(2*h**3), 0, 1/(2*h**3)]
+        """右辺のブロック行列Kを生成"""
+        S = jnp.array([
+            [1/h, 1, h],
+            [1, h, h**2],
+            [h, h**2, h**3]
         ])
+        
+        K = jnp.array([
+            [-35/32, 0, 35/32],
+            [4, -8, 4],
+            [105/16, 0, -105/16]
+        ]) * S
+        
+        return K
 
     def _build_boundary_blocks(self, h: float) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """境界点のブロック行列を生成"""
-        K0 = (1/h) * jnp.array([
-            [-7/2, 4, -1/2],
-            [9, -12, 3],
-            [-2, 3, -1]
+        S = jnp.array([
+            [1/h, 1, h],
+            [1, h, h**2],
+            [h, h**2, h**3]
         ])
         
-        KR = (1/h) * jnp.array([
-            [1/2, -4, 7/2],
-            [3, -12, 9],
-            [1, -3, 2]
-        ])
+        # 左境界用の行列
+        K0 = jnp.array([
+            [-31, 32, -1],
+            [-1, 1, 0],
+            [-1, 0, 1]            
+        ]) * S
+        
+        # 右境界用の行列
+        KR = jnp.array([
+            [-1, 32, -31],
+            [0, 1, -1],
+            [1, 0, -1] 
+        ]) * S
         
         return K0, KR
 
@@ -245,6 +278,13 @@ class CCDMethodTester:
                 d3f=lambda x: 6
             ),
             TestFunction(
+                name="Line",
+                f=lambda x: x**2 + 2*x + 1,
+                df=lambda x: 2*x + 2,
+                d2f=lambda x: 2,
+                d3f=lambda x: 0
+            ),
+            TestFunction(
                 name="Exponential",
                 f=lambda x: jnp.exp(x),
                 df=lambda x: jnp.exp(x),
@@ -257,6 +297,13 @@ class CCDMethodTester:
                 df=lambda x: jnp.pi * jnp.cos(jnp.pi*x),
                 d2f=lambda x: -jnp.pi**2 * jnp.sin(jnp.pi*x),
                 d3f=lambda x: -jnp.pi**3 * jnp.cos(jnp.pi*x)
+            ),
+             TestFunction(
+                name="Cos",
+                f=lambda x: jnp.cos(jnp.pi*x),
+                df=lambda x: -jnp.pi * jnp.sin(jnp.pi*x),
+                d2f=lambda x: -jnp.pi**2 * jnp.cos(jnp.pi*x),
+                d3f=lambda x: jnp.pi**3 * jnp.sin(jnp.pi*x)
             ),
             TestFunction(
                 name="Complex",
