@@ -253,10 +253,10 @@ class CCDMethodTester:
             ),
             TestFunction(
                 name="Sine",
-                f=lambda x: jnp.sin(x),
-                df=lambda x: jnp.cos(x),
-                d2f=lambda x: -jnp.sin(x),
-                d3f=lambda x: -jnp.cos(x)
+                f=lambda x: jnp.sin(jnp.pi*x),
+                df=lambda x: jnp.pi * jnp.cos(jnp.pi*x),
+                d2f=lambda x: -jnp.pi**2 * jnp.sin(jnp.pi*x),
+                d3f=lambda x: -jnp.pi**3 * jnp.cos(jnp.pi*x)
             ),
             TestFunction(
                 name="Complex",
