@@ -25,16 +25,16 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         """内部点のブロック行列A, B, Cを生成"""
         # スケーリング行列
         S = jnp.array([
-            [1/h**2, 1/h, 1],
+            [1, h, h**2],
             [1/h, 1, h],
-            [1, h, h**2]
+            [1/h**2, 1/h, 1]
         ])
         
         # 左ブロック行列
         A = jnp.array([
-            [19/32, -29/16, -105/16],
-            [1/8, -5/16, -15/8],
-            [1/96, -1/48, -3/16]
+            [19/32, 1/8, 1/96],
+            [-29/16, -5/16, -1/48],
+            [-105/16, -15/8, -3/16]
         ]) * S
         
         # 中央ブロック行列
@@ -42,9 +42,9 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         
         # 右ブロック行列
         C = jnp.array([
-            [19/32, 29/16, -105/16],
-            [-1/8, -5/16, 15/8],
-            [1/96, 1/48, -3/16]
+            [19/32, -1/8, 1/96],
+            [29/16, -5/16, 1/48],
+            [-105/16, 15/8, -3/16]
         ]) * S
         
         return A, B, C
@@ -52,47 +52,47 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
     def _build_boundary_blocks(self, h: float) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """境界点のブロック行列を生成"""
         S = jnp.array([
-            [1/h**2, 1/h, 1],
-            [1/h, 1, h],
+            [1, h, h**2],
+            [1, h, h**2],
             [1, h, h**2]
         ])
         
         # 左境界の行列（単位行列）
         B0 = jnp.array([
-            [14, 2, 0],
-            [1, 1/2, 1/6],
-            [2, 2, 4/3]
+            [18, 3, 1],
+            [15, 2, 1/2],
+            [16, 3, 1]
         ])
         
         C0 = jnp.array([
-            [16, -4, 0],
-            [0, 0, 0],
-            [0, 0, 0]  
+            [12, -3, -1],
+            [12, -2, -1/2],
+            [12, -2, -1/2]  
         ]) * S
         
         D0 = jnp.array([
-            [0, 0, 0],
-            [0, 0, 0],
-            [0, 0, 0]
+            [0, 0, 1/2],
+            [3, 1, 1],
+            [2, 1/2, 1/4]
         ]) * S
 
         # 右境界の行列（単位行列）
         BR = jnp.array([
-            [-14, 2, 0],
-            [-1, 1/2, -1/6],
-            [-2, 2, -4/3]
+            [-18, 3, -1],
+            [-15, 2, -1/2],
+            [-16, 3, -1]
         ])
         
         AR = jnp.array([
-            [-16, -4, 0],
-            [0, 0, 0],
-            [0, 0, 0]
+            [-12, 3, -1],
+            [-12, 2, -1/2],
+            [-12, 2, -1/2]
         ]) * S
         
         ZR = jnp.array([
-            [0, 0, 0],
-            [0, 0, 0],
-            [0, 0, 0]
+            [0, 0, -1/2],
+            [-3, 1, -1],
+            [-2, 1/2, -1/4]
         ]) * S
         
         return B0, C0, D0, ZR, AR, BR
@@ -131,9 +131,9 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
     def _build_interior_block(self, h: float) -> jnp.ndarray:
         """右辺のブロック行列Kを生成"""
         S = jnp.array([
-            [1/h, 1, h],
-            [1, h, h**2],
-            [h, h**2, h**3]
+            [1/h],
+            [1/h**2],
+            [1/h**3]
         ])
         
         K = jnp.array([
@@ -147,23 +147,23 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
     def _build_boundary_blocks(self, h: float) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """境界点のブロック行列を生成"""
         S = jnp.array([
-            [1/h, 1, h],
-            [1, h, h**2],
-            [h, h**2, h**3]
+            [1/h],
+            [1/h],
+            [1/h]
         ])
-        
+    
         # 左境界用の行列
         K0 = jnp.array([
-            [-31, 32, -1],
-            [-1, 1, 0],
-            [-1, 0, 1]            
+            [-35, 36, -1],
+            [-33, 34, -1],
+            [-34, 35, -1]            
         ]) * S
         
         # 右境界用の行列
         KR = jnp.array([
-            [-1, 32, -31],
-            [0, 1, -1],
-            [1, 0, -1] 
+            [-1, 36, -35],
+            [-1, 34, -33],
+            [-1, 35, -34] 
         ]) * S
         
         return K0, KR
