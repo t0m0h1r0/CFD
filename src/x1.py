@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import jax.scipy as jsp
 from jax import jit
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -209,7 +210,7 @@ class CCDSolver:
         K = self.right_builder.build_block(self.grid_config)
         
         # 左辺の逆行列を計算
-        L_inv = jnp.linalg.inv(L)
+        L_inv = jsp.linalg.inv(L)
         
         # ソルバー行列を計算 (L^{-1}K)
         self.solver_matrix = L_inv @ K
@@ -274,6 +275,13 @@ class CCDMethodTester:
         """テスト関数群の初期化"""
         self.test_functions = [
             TestFunction(
+                name="Zero",
+                f=lambda x: 0,
+                df=lambda x: 0,
+                d2f=lambda x: 0,
+                d3f=lambda x: 0
+            ),
+            TestFunction(
                 name="Cubic",
                 f=lambda x: x**3 - 2*x**2 + 3*x - 1,
                 df=lambda x: 3*x**2 - 4*x + 3,
@@ -282,8 +290,15 @@ class CCDMethodTester:
             ),
             TestFunction(
                 name="Line",
-                f=lambda x: x**2 + 2*x + 1,
-                df=lambda x: 2*x + 2,
+                f=lambda x: x-1,
+                df=lambda x: 1,
+                d2f=lambda x: 0,
+                d3f=lambda x: 0
+            ),
+            TestFunction(
+                name="Parab",
+                f=lambda x: (x-1)**2,
+                df=lambda x: 2*(x-1),
                 d2f=lambda x: 2,
                 d3f=lambda x: 0
             ),
@@ -295,7 +310,7 @@ class CCDMethodTester:
                 d3f=lambda x: jnp.exp(x)
             ),
             TestFunction(
-                name="Sine",
+                name="Sin",
                 f=lambda x: jnp.sin(jnp.pi*x),
                 df=lambda x: jnp.pi * jnp.cos(jnp.pi*x),
                 d2f=lambda x: -jnp.pi**2 * jnp.sin(jnp.pi*x),
