@@ -405,7 +405,7 @@ class CCDMethodTester:
 def run_tests():
     """テストの実行"""
     # グリッド設定
-    n = 256
+    n = 16
     L = 2.0
     grid_config = GridConfig(n_points=n, h=L/(n-1))
     solver = CCDSolver(grid_config)
