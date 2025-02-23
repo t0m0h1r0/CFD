@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Tuple, List, Optional
 from functools import partial
 
+import scipy.linalg
+
 @dataclass
 class GridConfig:
     """グリッド設定を保持するデータクラス"""
@@ -27,8 +29,6 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         # スケーリング行列
         S = jnp.array([
             [1, h, h**2],
-            [1/h, 1, h],
-            [1/h**2, 1/h, 1]
         ])
         
         # 左ブロック行列
@@ -55,50 +55,48 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         # スケーリング行列の定義
         S = jnp.array([
             [1, h, h**2],
-            [1/h, 1, h],
-            [1/h**2, 1/h, 1]
         ])
-        
+
         # 左境界の行列
         B0 = jnp.array([
-            [1, 0, 0],    # Pattern 1
-            [0, 1, 0],         # Pattern 2
-            [0, 0, 1]             # Pattern 3
-        ])
-        
-        C0 = jnp.array([
-            [25/9, 7/9, 11/9],    # Pattern 1
-            [15/8, -6/8, 7/8],         # Pattern 2
-            [12/5, 6/5, 3/5]             # Pattern 3
+            [14, 2, 0],    # Pattern 1
+            [3, 1, 1/6],         # Pattern 2
+            [-14, -6, -4/3]             # Pattern 3
         ]) * S
-        
+
+        C0 = jnp.array([
+            [16, -4, 0],    # Pattern 1
+            [1, 0, 0],         # Pattern 2
+            [0, 0, 0]             # Pattern 3
+        ]) * S
+
         D0 = jnp.array([
-            [-13/9, -15/9, -17/9],         # Pattern 1
-            [-10/8, 2/8, -5/8],        # Pattern 2
-            [-9/5, -4/5, -8/5]              # Pattern 3
+            [0, 0, 0],         # Pattern 1
+            [0, 0, 0],        # Pattern 2
+            [0, 0, 0]              # Pattern 3
         ]) * S
 
         # 右境界の行列 - 対称性を考慮して修正
         BR = jnp.array([
-            [1, 0, 0],    # Pattern 1
-            [0, 1, 0],         # Pattern 2
-            [0, 0, 1]             # Pattern 3
-        ])
-        
+            [14, -2, 0],    # Pattern 1
+            [3, -1, 1/6],         # Pattern 2
+            [-14, 6, -4/3]             # Pattern 3
+        ]) * S
+
         # ZRはC0の符号を反転した形で対称性を保持
         ZR = jnp.array([
-            [25/9, -7/9, 11/9],    # Pattern 1
-            [-15/8, -6/8, -7/8],         # Pattern 2
-            [12/5, -6/5, 3/5]             # Pattern 3
+            [16, 4, 0],    # Pattern 1
+            [1, 0, 0],         # Pattern 2
+            [0, 0, 0]             # Pattern 3
         ]) * S
-        
+
         # ARはD0と同様のパターンで符号を調整
         AR = jnp.array([
-            [-13/9, 15/9, -17/9],         # Pattern 1
-            [10/8, 2/8, 5/8],        # Pattern 2
-            [-9/5, 4/5, -8/5]              # Pattern 3
+            [0, 0, 0],         # Pattern 1
+            [0, 0, 0],        # Pattern 2
+            [0, 0, 0]              # Pattern 3
         ]) * S
-        
+
         return B0, C0, D0, ZR, AR, BR
 
     def build_block(self, grid_config: GridConfig) -> jnp.ndarray:
@@ -134,42 +132,30 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
     """右辺のブロック行列を生成するクラス"""  
     def _build_interior_block(self, h: float) -> jnp.ndarray:
         """右辺のブロック行列Kを生成"""
-        S = jnp.array([
-            [1/h],
-            [1/h**2],
-            [1/h**3]
-        ])
-        
         K = jnp.array([
             [-35/32, 0, 35/32],
             [4, -8, 4],
             [105/16, 0, -105/16]
-        ]) * S
+        ]) / h
         
         return K
 
     def _build_boundary_blocks(self, h: float) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """境界点のブロック行列を生成"""
-        S = jnp.array([
-            [1/h],
-            [1/h**2],
-            [1/h**3]
-        ])
-    
         # 左境界用の行列
         K0 = jnp.array([
-            [-41/9, 58/9, -17/9],
-            [-29/8, 44/8, -17/8],
-            [-37/5, 10, -13/5]            
-        ]) * S
-        
+            [-31, 32, -1],
+            [-4, 4, 0],
+            [15, -16, 1]            
+        ]) / h
+
         # 右境界用の行列 - K0と対称的なパターン
         KR = jnp.array([
-            [17/9, -58/9, 41/9],
-            [-17/8, 44/8, -29/8],
-            [13/5, -10, 37/5]            
-        ]) * S
-        
+            [1, -32, 31],
+            [0, -4, 4],
+            [-1, 16, -15]            
+        ]) / h
+
         return K0, KR
 
     def build_block(self, grid_config: GridConfig) -> jnp.ndarray:
@@ -181,7 +167,6 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
         matrix_size = 3 * n
         vector_size = n
         K = jnp.zeros((matrix_size, vector_size))
-        
         # 左境界条件を設定
         K = K.at[0:3, 0:3].set(K0)
         
@@ -208,12 +193,16 @@ class CCDSolver:
         """ソルバーの初期化: 左辺の逆行列と右辺行列の積を計算"""
         L = self.left_builder.build_block(self.grid_config)
         K = self.right_builder.build_block(self.grid_config)
+
+        D = jnp.diag(1.0 / jnp.sqrt(jnp.abs(jnp.diag(L))))
+        L_scaled = D @ L @ D
+        K_scaled = D @ K
         
-        # 左辺の逆行列を計算
-        L_inv = jsp.linalg.inv(L)
+        # 逆行列を計算
+        L_inv = jnp.linalg.inv(L_scaled)
         
         # ソルバー行列を計算 (L^{-1}K)
-        self.solver_matrix = L_inv @ K
+        self.solver_matrix = D @ L_inv @ K_scaled
         
     @partial(jit, static_argnums=(0,))
     def solve(self, f: jnp.ndarray) -> jnp.ndarray:
@@ -420,7 +409,7 @@ class CCDMethodTester:
 def run_tests():
     """テストの実行"""
     # グリッド設定
-    n = 16
+    n = 128
     L = 2.0
     grid_config = GridConfig(n_points=n, h=L/(n-1))
     solver = CCDSolver(grid_config)
