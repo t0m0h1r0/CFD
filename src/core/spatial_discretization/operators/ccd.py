@@ -1,8 +1,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple, Dict, Union
+from typing import Optional, Tuple, Dict
 
-import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
@@ -21,6 +20,7 @@ class BoundaryConditionApplicator:
       - y: ('front', 'back')
       - z: ('bottom', 'top')   ← z軸は高さを表す
     """
+
     def __init__(self, grid_manager: GridManager):
         self.grid_manager = grid_manager
 
@@ -28,19 +28,21 @@ class BoundaryConditionApplicator:
         self,
         field: ArrayLike,
         boundary_conditions: Dict[str, BoundaryCondition],
-        direction: str
+        direction: str,
     ) -> ArrayLike:
         boundary_map = {
-            'x': ('left', 'right'),
-            'y': ('front', 'back'),
-            'z': ('bottom', 'top')
+            "x": ("left", "right"),
+            "y": ("front", "back"),
+            "z": ("bottom", "top"),
         }
         try:
             left_key, right_key = boundary_map[direction]
         except KeyError:
             raise ValueError(f"Invalid direction: {direction}")
 
-        default_bc = BoundaryCondition(type=BCType.DIRICHLET, value=0.0, location='default')
+        default_bc = BoundaryCondition(
+            type=BCType.DIRICHLET, value=0.0, location="default"
+        )
         left_bc = boundary_conditions.get(left_key, default_bc)
         right_bc = boundary_conditions.get(right_key, default_bc)
 
@@ -67,20 +69,18 @@ class SpatialDiscretizationBase(ABC):
     CCDCompactDifferenceでは、solve_system（＝ compute_derivatives ）を直接利用するため、
     discretize() は不要としています。
     """
+
     def __init__(
         self,
         grid_manager: GridManager,
-        boundary_conditions: Optional[Dict[str, BoundaryCondition]] = None
+        boundary_conditions: Optional[Dict[str, BoundaryCondition]] = None,
     ):
         self.grid_manager = grid_manager
         self.boundary_conditions = boundary_conditions or {}
         self.boundary_condition_applicator = BoundaryConditionApplicator(grid_manager)
 
     def apply_boundary_conditions(
-        self,
-        field: ArrayLike,
-        derivatives: Tuple[ArrayLike, ...],
-        direction: str
+        self, field: ArrayLike, derivatives: Tuple[ArrayLike, ...], direction: str
     ) -> Tuple[ArrayLike, ...]:
         # CCDソルバ内で既に境界補正済みであればそのまま返す
         return derivatives
@@ -94,7 +94,7 @@ class CompactDifferenceBase(SpatialDiscretizationBase, ABC):
         self,
         grid_manager: GridManager,
         boundary_conditions: Optional[Dict[str, BoundaryCondition]] = None,
-        coefficients: Optional[Dict] = None
+        coefficients: Optional[Dict] = None,
     ):
         super().__init__(grid_manager, boundary_conditions)
         self.coefficients = coefficients or {}
@@ -121,12 +121,13 @@ class CCDCompactDifference(CompactDifferenceBase):
       を解くことで高精度な微分値（D）を得ます。
     ・境界点では、一側差分により補正を行っています。
     """
+
     def __init__(
         self,
         grid_manager: GridManager,
         direction: str,
         boundary_conditions: Optional[Dict[str, BoundaryCondition]] = None,
-        coefficients: Optional[Dict[str, Dict[str, float]]] = None
+        coefficients: Optional[Dict[str, Dict[str, float]]] = None,
     ):
         """
         Args:
@@ -148,17 +149,25 @@ class CCDCompactDifference(CompactDifferenceBase):
         self.n = self.grid_manager.get_grid_points(direction)
         # 既定の係数（上書き可能）
         default_coeff = {
-            'first': {'alpha': 15/16, 'beta': -7/16, 'gamma': 1/16},
-            'second': {'alpha': 12/13, 'beta': -3/13, 'gamma': 1/13},
-            'third': {'alpha': 10/11, 'beta': -5/11, 'gamma': 1/11}
+            "first": {"alpha": 15 / 16, "beta": -7 / 16, "gamma": 1 / 16},
+            "second": {"alpha": 12 / 13, "beta": -3 / 13, "gamma": 1 / 13},
+            "third": {"alpha": 10 / 11, "beta": -5 / 11, "gamma": 1 / 11},
         }
         self.coefficients = {**default_coeff, **(coefficients or {})}
-        self.A_first, self.B_first = self._build_first_derivative_matrices(self.n, self.dx, self.coefficients['first'])
-        self.A_second, self.B_second = self._build_second_derivative_matrices(self.n, self.dx, self.coefficients['second'])
-        self.A_third, self.B_third = self._build_third_derivative_matrices(self.n, self.dx, self.coefficients['third'])
+        self.A_first, self.B_first = self._build_first_derivative_matrices(
+            self.n, self.dx, self.coefficients["first"]
+        )
+        self.A_second, self.B_second = self._build_second_derivative_matrices(
+            self.n, self.dx, self.coefficients["second"]
+        )
+        self.A_third, self.B_third = self._build_third_derivative_matrices(
+            self.n, self.dx, self.coefficients["third"]
+        )
 
     @staticmethod
-    def _build_first_derivative_matrices(n: int, dx: float, coeff: Dict[str, float]) -> Tuple[ArrayLike, ArrayLike]:
+    def _build_first_derivative_matrices(
+        n: int, dx: float, coeff: Dict[str, float]
+    ) -> Tuple[ArrayLike, ArrayLike]:
         """
         一次微分用行列の構築
 
@@ -170,24 +179,26 @@ class CCDCompactDifference(CompactDifferenceBase):
         # A行列
         A = jnp.eye(n)
         interior = jnp.arange(1, n - 1)
-        A = A.at[interior, interior].set(coeff['alpha'])
-        A = A.at[interior, interior - 1].set(coeff['beta'])
-        A = A.at[interior, interior + 1].set(coeff['beta'])
+        A = A.at[interior, interior].set(coeff["alpha"])
+        A = A.at[interior, interior - 1].set(coeff["beta"])
+        A = A.at[interior, interior + 1].set(coeff["beta"])
 
         # B行列
         B = jnp.zeros((n, n))
         # 内部: 中心差分
-        B = B.at[interior, interior - 1].set(-1/(2 * dx))
-        B = B.at[interior, interior + 1].set(1/(2 * dx))
+        B = B.at[interior, interior - 1].set(-1 / (2 * dx))
+        B = B.at[interior, interior + 1].set(1 / (2 * dx))
         # 境界: 前方／後方差分
-        forward = jnp.zeros(n).at[0].set(-1/dx).at[1].set(1/dx)
-        backward = jnp.zeros(n).at[-2].set(-1/dx).at[-1].set(1/dx)
+        forward = jnp.zeros(n).at[0].set(-1 / dx).at[1].set(1 / dx)
+        backward = jnp.zeros(n).at[-2].set(-1 / dx).at[-1].set(1 / dx)
         B = B.at[0, :].set(forward)
         B = B.at[-1, :].set(backward)
         return A, B
 
     @staticmethod
-    def _build_second_derivative_matrices(n: int, dx: float, coeff: Dict[str, float]) -> Tuple[ArrayLike, ArrayLike]:
+    def _build_second_derivative_matrices(
+        n: int, dx: float, coeff: Dict[str, float]
+    ) -> Tuple[ArrayLike, ArrayLike]:
         """
         二次微分用行列の構築
 
@@ -199,31 +210,33 @@ class CCDCompactDifference(CompactDifferenceBase):
         # A行列
         A = jnp.eye(n)
         interior = jnp.arange(1, n - 1)
-        A = A.at[interior, interior].set(coeff['alpha'])
-        A = A.at[interior, interior - 1].set(coeff['beta'])
-        A = A.at[interior, interior + 1].set(coeff['beta'])
+        A = A.at[interior, interior].set(coeff["alpha"])
+        A = A.at[interior, interior - 1].set(coeff["beta"])
+        A = A.at[interior, interior + 1].set(coeff["beta"])
 
         # B行列
         B = jnp.zeros((n, n))
-        B = B.at[interior, interior - 1].set(1/(dx**2))
-        B = B.at[interior, interior].set(-2/(dx**2))
-        B = B.at[interior, interior + 1].set(1/(dx**2))
+        B = B.at[interior, interior - 1].set(1 / (dx**2))
+        B = B.at[interior, interior].set(-2 / (dx**2))
+        B = B.at[interior, interior + 1].set(1 / (dx**2))
         # 境界: 前方差分（i=0）
         row0 = jnp.zeros(n)
-        row0 = row0.at[0].set(1/(dx**2))
-        row0 = row0.at[1].set(-2/(dx**2))
-        row0 = row0.at[2].set(1/(dx**2))
+        row0 = row0.at[0].set(1 / (dx**2))
+        row0 = row0.at[1].set(-2 / (dx**2))
+        row0 = row0.at[2].set(1 / (dx**2))
         B = B.at[0, :].set(row0)
         # 境界: 後方差分（i=n-1）
         row_last = jnp.zeros(n)
-        row_last = row_last.at[-3].set(1/(dx**2))
-        row_last = row_last.at[-2].set(-2/(dx**2))
-        row_last = row_last.at[-1].set(1/(dx**2))
+        row_last = row_last.at[-3].set(1 / (dx**2))
+        row_last = row_last.at[-2].set(-2 / (dx**2))
+        row_last = row_last.at[-1].set(1 / (dx**2))
         B = B.at[-1, :].set(row_last)
         return A, B
 
     @staticmethod
-    def _build_third_derivative_matrices(n: int, dx: float, coeff: Dict[str, float]) -> Tuple[ArrayLike, ArrayLike]:
+    def _build_third_derivative_matrices(
+        n: int, dx: float, coeff: Dict[str, float]
+    ) -> Tuple[ArrayLike, ArrayLike]:
         """
         三次微分用行列の構築
 
@@ -236,42 +249,42 @@ class CCDCompactDifference(CompactDifferenceBase):
         # A行列
         A = jnp.eye(n)
         interior = jnp.arange(2, n - 2)
-        A = A.at[interior, interior].set(coeff['alpha'])
-        A = A.at[interior, interior - 1].set(coeff['beta'])
-        A = A.at[interior, interior + 1].set(coeff['beta'])
+        A = A.at[interior, interior].set(coeff["alpha"])
+        A = A.at[interior, interior - 1].set(coeff["beta"])
+        A = A.at[interior, interior + 1].set(coeff["beta"])
 
         # B行列
         B = jnp.zeros((n, n))
         # 内部: 5点中心差分 stencil (分母は 2*dx³)
-        B = B.at[interior, interior - 2].set(1/(2 * dx**3))
-        B = B.at[interior, interior - 1].set(-2/(2 * dx**3))
-        B = B.at[interior, interior + 1].set(2/(2 * dx**3))
-        B = B.at[interior, interior + 2].set(-1/(2 * dx**3))
+        B = B.at[interior, interior - 2].set(1 / (2 * dx**3))
+        B = B.at[interior, interior - 1].set(-2 / (2 * dx**3))
+        B = B.at[interior, interior + 1].set(2 / (2 * dx**3))
+        B = B.at[interior, interior + 2].set(-1 / (2 * dx**3))
         # 境界: 前方差分（i=0,1）
         row0 = jnp.zeros(n)
-        row0 = row0.at[0].set(1/(dx**3))
-        row0 = row0.at[1].set(-3/(dx**3))
-        row0 = row0.at[2].set(3/(dx**3))
-        row0 = row0.at[3].set(-1/(dx**3))
+        row0 = row0.at[0].set(1 / (dx**3))
+        row0 = row0.at[1].set(-3 / (dx**3))
+        row0 = row0.at[2].set(3 / (dx**3))
+        row0 = row0.at[3].set(-1 / (dx**3))
         B = B.at[0, :].set(row0)
         row1 = jnp.zeros(n)
-        row1 = row1.at[0].set(1/(dx**3))
-        row1 = row1.at[1].set(-3/(dx**3))
-        row1 = row1.at[2].set(3/(dx**3))
-        row1 = row1.at[3].set(-1/(dx**3))
+        row1 = row1.at[0].set(1 / (dx**3))
+        row1 = row1.at[1].set(-3 / (dx**3))
+        row1 = row1.at[2].set(3 / (dx**3))
+        row1 = row1.at[3].set(-1 / (dx**3))
         B = B.at[1, :].set(row1)
         # 境界: 後方差分（i=n-2, n-1）
         row_last = jnp.zeros(n)
-        row_last = row_last.at[-4].set(1/(dx**3))
-        row_last = row_last.at[-3].set(-3/(dx**3))
-        row_last = row_last.at[-2].set(3/(dx**3))
-        row_last = row_last.at[-1].set(-1/(dx**3))
+        row_last = row_last.at[-4].set(1 / (dx**3))
+        row_last = row_last.at[-3].set(-3 / (dx**3))
+        row_last = row_last.at[-2].set(3 / (dx**3))
+        row_last = row_last.at[-1].set(-1 / (dx**3))
         B = B.at[-1, :].set(row_last)
         row_second_last = jnp.zeros(n)
-        row_second_last = row_second_last.at[-4].set(1/(dx**3))
-        row_second_last = row_second_last.at[-3].set(-3/(dx**3))
-        row_second_last = row_second_last.at[-2].set(3/(dx**3))
-        row_second_last = row_second_last.at[-1].set(-1/(dx**3))
+        row_second_last = row_second_last.at[-4].set(1 / (dx**3))
+        row_second_last = row_second_last.at[-3].set(-3 / (dx**3))
+        row_second_last = row_second_last.at[-2].set(3 / (dx**3))
+        row_second_last = row_second_last.at[-1].set(-1 / (dx**3))
         B = B.at[-2, :].set(row_second_last)
         return A, B
 
@@ -283,17 +296,19 @@ class CCDCompactDifference(CompactDifferenceBase):
            A * D = γ · (B @ field)
         """
         # 一次微分
-        rhs_first = self.coefficients['first']['gamma'] * (self.B_first @ field)
+        rhs_first = self.coefficients["first"]["gamma"] * (self.B_first @ field)
         D_first = jnp.linalg.solve(self.A_first, rhs_first)
         # 二次微分
-        rhs_second = self.coefficients['second']['gamma'] * (self.B_second @ field)
+        rhs_second = self.coefficients["second"]["gamma"] * (self.B_second @ field)
         D_second = jnp.linalg.solve(self.A_second, rhs_second)
         # 三次微分
-        rhs_third = self.coefficients['third']['gamma'] * (self.B_third @ field)
+        rhs_third = self.coefficients["third"]["gamma"] * (self.B_third @ field)
         D_third = jnp.linalg.solve(self.A_third, rhs_third)
         return D_first, D_second, D_third
 
-    def compute_derivatives(self, field: ArrayLike) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
+    def compute_derivatives(
+        self, field: ArrayLike
+    ) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
         """
         CCDソルバを用いて、一・二・三階微分を計算する。
 
