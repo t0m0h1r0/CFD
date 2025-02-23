@@ -187,7 +187,13 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
     def _build_interior_block(self, h: float) -> jnp.ndarray:
         """右辺のブロック行列Kを生成"""
         K = (
-            jnp.array([[-35 / 32, 0, 35 / 32], [4, -8, 4], [105 / 16, 0, -105 / 16]])
+            jnp.array(
+                [
+                    [-35 / 32, 0, 35 / 32],
+                    [4, -8, 4],
+                    [105 / 16, 0, -105 / 16]
+                ]
+            )
             / h
         )
 
