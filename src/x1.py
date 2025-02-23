@@ -59,42 +59,42 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
 
         # 左境界の行列
         B0 = jnp.array([
-            [14, 2, 0],             # Pattern 3
-            [1, 1/2, 1/6],    # Pattern 1
+            [311, 90, 8],             # Pattern 3
             [34, 10, 4/3],         # Pattern 2
+            [0, 16, 3],    # Pattern 1
         ]) * S
 
         C0 = jnp.array([
-            [16, -4, 0],             # Pattern 3
-            [1, 1/2, 1/6],    # Pattern 1
+            [144, 0, 0],             # Pattern 3
             [16, 0, 0],         # Pattern 2
+            [-140, 44, 31/3],    # Pattern 1
         ]) * S
 
         D0 = jnp.array([
-            [0, 0, 0],              # Pattern 3
-            [0, 0, 0],         # Pattern 1
+            [-3, 0, 0],              # Pattern 3
             [0, 0, 0],        # Pattern 2
+            [0, 0, 0],         # Pattern 1
         ]) * S
 
         # 右境界の行列 - 対称性を考慮して修正
         BR = jnp.array([
-            [14, -2, 0],             # Pattern 3
-            [1, -1/2, 1/6],    # Pattern 1
-            [34, -10, 4/3],         # Pattern 2
+            [-311, 90, -8],             # Pattern 3
+            [-34, 10, -4/3],         # Pattern 2
+            [0, 16, -3],    # Pattern 1
         ]) * S
 
         # ZRはC0の符号を反転した形で対称性を保持
         ZR = jnp.array([
-            [16, 4, 0],             # Pattern 3
-            [1, -1/2, 1/6],    # Pattern 1
-            [16, 0, 0],         # Pattern 2
+            [-144, 0, 0],             # Pattern 3
+            [-16, 0, 0],         # Pattern 2
+            [140, 44, -31/3],    # Pattern 1
         ]) * S
 
         # ARはD0と同様のパターンで符号を調整
         AR = jnp.array([
-            [0, 0, 0],          # Pattern 3
-            [0, 0, 0],         # Pattern 1
+            [3, 0, 0],          # Pattern 3
             [0, 0, 0],        # Pattern 2
+            [0, 0, 0],         # Pattern 1
         ]) * S
 
         return B0, C0, D0, ZR, AR, BR
@@ -144,16 +144,16 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
         """境界点のブロック行列を生成"""
         # 左境界用の行列
         K0 = jnp.array([
-            [-31, 32, -1],     
-            [-1, 0, 1],
+            [-450, 448, 2],     
             [-49, 48, 1],
+            [130, -120, -10],
         ]) / h
 
         # 右境界用の行列 - K0と対称的なパターン
         KR = jnp.array([
-            [1, -32, 31],          
-            [-1, 0, 1],
-            [-1, -48, 49],
+            [2, 448, -450],          
+            [1, 48, -49],
+            [-10, -120, 130],
         ]) / h
 
         return K0, KR
