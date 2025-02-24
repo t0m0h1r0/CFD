@@ -33,7 +33,7 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         # スケーリング行列
         S = jnp.array(
             [
-                [1, h, h**2],
+                [h, h**2, h**3],
             ]
         )
 
@@ -50,7 +50,7 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         )
 
         # 中央ブロック行列
-        B = jnp.eye(3)
+        B = jnp.eye(3) * S
 
         # 右ブロック行列
         C = (
@@ -75,7 +75,7 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         # スケーリング行列の定義
         S = jnp.array(
             [
-                [1, h, h**2],
+                [h, h**2, h**3],
             ]
         )
 
@@ -194,7 +194,6 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
                     [105 / 16, 0, -105 / 16]
                 ]
             )
-            / h
         )
 
         return K
@@ -210,7 +209,6 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
                     [130, -120, -10],
                 ]
             )
-            / h
         )
 
         # 右境界用の行列 - K0と対称的なパターン
@@ -222,7 +220,6 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
                     [-10, -120, 130],
                 ]
             )
-            / h
         )
 
         return K0, KR
@@ -337,71 +334,65 @@ class CCDMethodTester:
         self._initialize_test_functions()
 
     def _initialize_test_functions(self):
-        """テスト関数群の初期化"""
-        self.test_functions = [
-            TestFunction(
-                name="Zero",
-                f=lambda x: 0,
-                df=lambda x: 0,
-                d2f=lambda x: 0,
-                d3f=lambda x: 0,
-            ),
-            TestFunction(
-                name="Cubic",
-                f=lambda x: x**3 - 2 * x**2 + 3 * x - 1,
-                df=lambda x: 3 * x**2 - 4 * x + 3,
-                d2f=lambda x: 6 * x - 4,
-                d3f=lambda x: 6,
-            ),
-            TestFunction(
-                name="Line",
-                f=lambda x: x - 1,
-                df=lambda x: 1,
-                d2f=lambda x: 0,
-                d3f=lambda x: 0,
-            ),
-            TestFunction(
-                name="Parab",
-                f=lambda x: (x - 1) ** 2,
-                df=lambda x: 2 * (x - 1),
-                d2f=lambda x: 2,
-                d3f=lambda x: 0,
-            ),
-            TestFunction(
-                name="Exponential",
-                f=lambda x: jnp.exp(x),
-                df=lambda x: jnp.exp(x),
-                d2f=lambda x: jnp.exp(x),
-                d3f=lambda x: jnp.exp(x),
-            ),
-            TestFunction(
-                name="Sin",
-                f=lambda x: jnp.sin(jnp.pi * x),
-                df=lambda x: jnp.pi * jnp.cos(jnp.pi * x),
-                d2f=lambda x: -(jnp.pi**2) * jnp.sin(jnp.pi * x),
-                d3f=lambda x: -(jnp.pi**3) * jnp.cos(jnp.pi * x),
-            ),
-            TestFunction(
-                name="Cos",
-                f=lambda x: jnp.cos(jnp.pi * x),
-                df=lambda x: -jnp.pi * jnp.sin(jnp.pi * x),
-                d2f=lambda x: -(jnp.pi**2) * jnp.cos(jnp.pi * x),
-                d3f=lambda x: jnp.pi**3 * jnp.sin(jnp.pi * x),
-            ),
-            TestFunction(
-                name="Complex",
-                f=lambda x: jnp.exp(-(x**2)) * jnp.sin(2 * x),
-                df=lambda x: jnp.exp(-(x**2))
-                * (2 * jnp.cos(2 * x) - 2 * x * jnp.sin(2 * x)),
-                d2f=lambda x: jnp.exp(-(x**2))
-                * ((-4 + 4 * x**2) * jnp.sin(2 * x) - 8 * x * jnp.cos(2 * x)),
-                d3f=lambda x: jnp.exp(-(x**2))
-                * (
-                    (-12 * x + 4 * x**3) * jnp.sin(2 * x)
-                    + (-12 + 8 * x**2) * jnp.cos(2 * x)
+            """テスト関数群の初期化"""
+            self.test_functions = [
+                TestFunction(
+                    name="Zero",
+                    f=lambda x: 0.0,  # すでに両端でゼロ
+                    df=lambda x: 0.0,
+                    d2f=lambda x: 0.0,
+                    d3f=lambda x: 0.0
                 ),
-            ),
-        ]
+                TestFunction(
+                    name="QuadPoly",
+                    f=lambda x: (1 - x**2),  # シンプルな2次関数
+                    df=lambda x: -2*x,
+                    d2f=lambda x: -2,
+                    d3f=lambda x: 0
+                ),
+                TestFunction(
+                    name="CubicPoly",
+                    f=lambda x: (1 - x)*(1 + x)*(x + 0.5),  # 3次関数
+                    df=lambda x: -(2*x)*(x + 0.5) + (1 - x**2),
+                    d2f=lambda x: -2*(x + 0.5) - 4*x,
+                    d3f=lambda x: -6
+                ),
+                TestFunction(
+                    name="Sine",
+                    f=lambda x: jnp.sin(jnp.pi*x),  # 両端でゼロ
+                    df=lambda x: jnp.pi*jnp.cos(jnp.pi*x),
+                    d2f=lambda x: -(jnp.pi**2)*jnp.sin(jnp.pi*x),
+                    d3f=lambda x: -(jnp.pi**3)*jnp.cos(jnp.pi*x)
+                ),
+                TestFunction(
+                    name="Cosine",
+                    f=lambda x: jnp.cos(jnp.pi*x) - 1,  # 平行移動で両端でゼロ
+                    df=lambda x: -jnp.pi*jnp.sin(jnp.pi*x),
+                    d2f=lambda x: -(jnp.pi**2)*jnp.cos(jnp.pi*x),
+                    d3f=lambda x: jnp.pi**3*jnp.sin(jnp.pi*x)
+                ),
+                TestFunction(
+                    name="ExpMod",
+                    f=lambda x: jnp.exp(-x**2) - jnp.exp(-1),  # 平行移動で両端でゼロ
+                    df=lambda x: -2*x*jnp.exp(-x**2),
+                    d2f=lambda x: (-2 + 4*x**2)*jnp.exp(-x**2),
+                    d3f=lambda x: (12*x - 8*x**3)*jnp.exp(-x**2)
+                ),
+                TestFunction(
+                    name="HigherPoly",
+                    f=lambda x: x**4 - x**2,  # 4次関数
+                    df=lambda x: 4*x**3 - 2*x,
+                    d2f=lambda x: 12*x**2 - 2,
+                    d3f=lambda x: 24*x
+                ),
+                TestFunction(
+                    name="CompoundPoly",
+                    f=lambda x: x**2 * (1 - x**2),  # 両端でゼロの4次関数
+                    df=lambda x: 2*x*(1 - x**2) - 2*x**3,
+                    d2f=lambda x: 2*(1 - x**2) - 8*x**2,
+                    d3f=lambda x: -12*x
+                )
+            ]
 
     def compute_errors(self, test_func: TestFunction) -> Tuple[float, float, float]:
         """各導関数の誤差を計算"""
@@ -504,25 +495,25 @@ class CCDMethodTester:
 def run_tests():
     """テストの実行"""
     # グリッド設定
-    n = 128
-    L = 2.0
+    n = 256
+    L = 2.0  # 区間の長さ（-1から1まで）
     grid_config = GridConfig(n_points=n, h=L / (n - 1))
     solver = CCDSolver(grid_config)
 
     # テスターの初期化
-    x_range = (0.0, L)
+    x_range = (-1.0, 1.0)  # 区間を[-1,1]に変更
     tester = CCDMethodTester(solver, x_range)
 
     # 各テスト関数に対してテストを実行
     print("Error Analysis Results:")
     print("-" * 60)
-    print(f"{'Function':<12} {'1st Der.':<12} {'2nd Der.':<12} {'3rd Der.':<12}")
+    print(f"{'Function':<15} {'1st Der.':<12} {'2nd Der.':<12} {'3rd Der.':<12}")
     print("-" * 60)
 
     for test_func in tester.test_functions:
         errors = tester.compute_errors(test_func)
         print(
-            f"{test_func.name:<12} {errors[0]:<12.2e} {errors[1]:<12.2e} {errors[2]:<12.2e}"
+            f"{test_func.name:<15} {errors[0]:<12.2e} {errors[1]:<12.2e} {errors[2]:<12.2e}"
         )
 
         # 結果の可視化と保存
