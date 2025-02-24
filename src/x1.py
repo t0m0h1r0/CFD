@@ -263,27 +263,18 @@ class CCDSolver:
         self._initialize_solver()
 
     def _initialize_solver(self):
-        """ソルバーの初期化: 左辺行列と右辺行列から解行列を計算"""
+        """ソルバーの初期化: スケーリングされた左辺行列と右辺行列を準備"""
+        # 左辺行列と右辺行列の生成
         L = self.left_builder.build_block(self.grid_config)
         K = self.right_builder.build_block(self.grid_config)
 
         # スケーリング行列の計算
         D = jnp.diag(1.0 / jnp.sqrt(jnp.abs(jnp.diag(L))))
-        L_scaled = D @ L @ D
-        K_scaled = D @ K
-
-        # AX = B の形で解を求める準備
-        # L_scaled @ X = K_scaled @ f となるXを求める必要がある
-        # K_scaledの各列に対してL_scaled @ x = kを解く
-
-        # K_scaledの列数（関数値の数）だけ単位行列を用意
-        n_points = K_scaled.shape[1]
-        I = jnp.eye(n_points)
-
-        # 各列について連立方程式を解く
-        # L_scaled @ X = K_scaled は以下と等価:
-        # L_scaled @ self.solver_matrix = K_scaled
-        self.solver_matrix = D @ linalg.solve(L_scaled, K_scaled)
+        
+        # スケーリングされた行列を保存
+        self.L_scaled = D @ L @ D
+        self.K_scaled = D @ K
+        self.D = D
 
     @partial(jit, static_argnums=(0,))
     def solve(self, f: jnp.ndarray) -> jnp.ndarray:
@@ -295,7 +286,14 @@ class CCDSolver:
         Returns:
             X: 導関数ベクトル (3n,) - [f'_0, f''_0, f'''_0, f'_1, f''_1, f'''_1, ...]
         """
-        return self.solver_matrix @ f
+        # K_scaled @ f を計算
+        rhs = self.K_scaled @ f
+        
+        # L_scaled @ X = rhs を解く
+        X_scaled = linalg.solve(self.L_scaled, rhs)
+        
+        # スケーリングを戻す
+        return self.D @ X_scaled
 
 
 # 使用例
