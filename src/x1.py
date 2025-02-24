@@ -533,5 +533,98 @@ def run_tests():
     print("-" * 60)
 
 
+class CCDSolverDiagnostics:
+    """CCD法ソルバーの診断を行うクラス"""
+    
+    def __init__(self, grid_config: GridConfig):
+        self.grid_config = grid_config
+        self.left_builder = LeftHandBlockBuilder()
+        self.right_builder = RightHandBlockBuilder()
+        
+    def check_boundary_blocks(self):
+        """境界ブロック行列の確認"""
+        n, h = self.grid_config.n_points, self.grid_config.h
+        
+        # 左境界のブロック行列を取得
+        B0, C0, D0, ZR, AR, BR = self.left_builder._build_boundary_blocks(h)
+        
+        print("=== 境界ブロック行列の確認 ===")
+        print("\n左境界:")
+        print("B0 (左端):\n", B0)
+        print("\nC0 (左端の次):\n", C0)
+        print("\nD0 (左端の次の次):\n", D0)
+        
+        print("\n右境界:")
+        print("BR (右端):\n", BR)
+        print("\nAR (右端の手前):\n", AR)
+        print("\nZR (右端の手前の手前):\n", ZR)
+        
+        # 対称性の確認
+        print("\n=== 対称性の確認 ===")
+        print("B0とBRの対応する要素の比:")
+        print(B0 / (-BR))  # 対称なら絶対値が近い値になるはず
+        
+        print("\nC0とZRの対応する要素の比:")
+        print(C0 / (-ZR))  # 対称なら絶対値が近い値になるはず
+
+    def check_full_matrix(self):
+        """全体の行列構造の確認"""
+        L = self.left_builder.build_block(self.grid_config)
+        K = self.right_builder.build_block(self.grid_config)
+        
+        print("=== 全体行列の確認 ===")
+        print("\n左辺行列の条件数:", jnp.linalg.cond(L))
+        
+        # 左端と右端の3×9ブロックを抽出
+        left_boundary = L[:3, :9]
+        right_boundary = L[-3:, -9:]
+        
+        print("\n左端3×9ブロック:\n", left_boundary)
+        print("\n右端3×9ブロック:\n", right_boundary)
+        
+        # 行列の対称性を確認
+        print("\n行列の対称性 (L + L.T)の最大絶対値:", 
+              jnp.max(jnp.abs(L + L.T)))
+
+    def check_scaling(self):
+        """スケーリングの影響確認"""
+        L = self.left_builder.build_block(self.grid_config)
+        
+        # オリジナルのスケーリング行列
+        D = jnp.diag(1.0 / jnp.sqrt(jnp.abs(jnp.diag(L))))
+        
+        print("=== スケーリングの確認 ===")
+        print("\nスケーリング係数 (先頭10個):", D.diagonal()[:10])
+        print("\nスケーリング係数 (末尾10個):", D.diagonal()[-10:])
+        
+        # スケーリング後の行列
+        L_scaled = D @ L @ D
+        print("\nスケーリング後の条件数:", jnp.linalg.cond(L_scaled))
+        
+        # スケーリング後の境界部分
+        print("\nスケーリング後の左端3×9ブロック:\n", L_scaled[:3, :9])
+        print("\nスケーリング後の右端3×9ブロック:\n", L_scaled[-3:, -9:])
+
+def run_diagnostics():
+    """診断の実行"""
+    # グリッド設定
+    n = 256
+    L = 2.0
+    grid_config = GridConfig(n_points=n, h=L / (n - 1))
+    
+    # 診断の実行
+    diagnostics = CCDSolverDiagnostics(grid_config)
+    
+    print("\n=== 境界ブロックの確認 ===")
+    diagnostics.check_boundary_blocks()
+    
+    print("\n=== 全体行列の確認 ===")
+    diagnostics.check_full_matrix()
+    
+    print("\n=== スケーリングの確認 ===")
+    diagnostics.check_scaling()
+
+
 if __name__ == "__main__":
-    run_tests()
+    run_diagnostics()
+    #run_tests()
