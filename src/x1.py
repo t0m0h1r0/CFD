@@ -69,25 +69,20 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
             BR: 右境界の主ブロック
         """
         # 左境界の行列群
-        B0 = jnp.array([
-            # f',  f'',  f'''
-            [1,  90/311,    8/311],  # Pattern 3: 高次の境界条件
-            [ 34/10,  1,  4/30],  # Pattern 2: 中間の境界条件
-            [  0,  16/3,    1]   # Pattern 1: 基本の境界条件
-        ])
+        B0 = jnp.eye(3)
 
         C0 = jnp.array([
             # f',  f'',  f'''
-            [144/311,   0,    0],  # Pattern 3
-            [ 16/10,   0,    0],  # Pattern 2
-            [-140/3, 44/3, 31/9]   # Pattern 1
+            [  0,  -2,  0],  # Pattern 3
+            [  8,  12,  0],  # Pattern 2
+            [-48, -39,  0]   # Pattern 1
         ])
 
         D0 = jnp.array([
             # f',  f'',  f'''
-            [ -3/311,   0,    0],  # Pattern 3
-            [  0,   0,    0],  # Pattern 2
-            [  0,   0,    0]   # Pattern 1
+            [ -1,   0,   0],  # Pattern 3
+            [  7,   0,   0],  # Pattern 2
+            [-27,   0,   0]   # Pattern 1
         ])
 
         # 右境界の行列 - 左境界と完全に対称的に
@@ -170,9 +165,9 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
         # 左境界用の行列
         K0 = jnp.array([
             # 左点,  中点,  右点
-            [-450/311,    448/311,     2/311],  # 1階導関数の係数
-            [ -49/10,     48/10,     1/10],  # 2階導関数の係数
-            [ 130/3,   -120/3,   -10/3]   # 3階導関数の係数
+            [   -4,   8,    -4],  # 1階導関数の係数
+            [ 25/2, -40,  55/2],  # 2階導関数の係数
+            [-57/2, 132,-207/2]   # 3階導関数の係数
         ])
 
         # K0の1列目と3列目を入れ替え
@@ -186,12 +181,14 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
         K_interior = self._build_interior_block()
         K0, KR = self._build_boundary_blocks()
         DEGREE = jnp.array([
-            [1/h, 1/h**2, 1/h**3],
+            [1/h,  ],
+            [1/h**2],
+            [1/h**3],
             ])
         
-        K_interior = K_interior * DEGREE.T
-        K0 = K0 * DEGREE.T
-        KR = KR * DEGREE.T
+        K_interior = K_interior * DEGREE
+        K0 = K0 * DEGREE
+        KR = KR * DEGREE
 
         matrix_size = 3 * n
         vector_size = n
@@ -465,7 +462,7 @@ class CCDMethodTester:
 def run_tests():
     """テストの実行"""
     # グリッド設定
-    n = 64
+    n = 256
     L = 2.0  # 区間の長さ（-1から1まで）
     grid_config = GridConfig(n_points=n, h=L / (n - 1))
     solver = CCDSolver(grid_config)
