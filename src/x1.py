@@ -27,85 +27,90 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
     """左辺のブロック行列を生成するクラス"""
 
     def _build_interior_blocks(self) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        """内部点のブロック行列A, B, Cを生成"""
-        # 左ブロック行列
-        A = jnp.array(
-            [
-                [19 / 32, 1 / 8, 1 / 96],
-                [-29 / 16, -5 / 16, -1 / 48],
-                [-105 / 16, -15 / 8, -3 / 16],
-            ]
-        )
+        """内部点のブロック行列A, B, Cを生成
+        
+        Returns:
+            A: 左側のブロック行列
+            B: 中央のブロック行列
+            C: 右側のブロック行列
+        """
+        # 左ブロック行列 A
+        A = jnp.array([
+            # f',    f'',   f'''
+            [ 19/32,  1/8,   1/96],  # 左側ブロックの1行目
+            [-29/16, -5/16, -1/48],  # 左側ブロックの2行目
+            [-105/16,-15/8, -3/16]   # 左側ブロックの3行目
+        ])
 
-        # 中央ブロック行列
+        # 中央ブロック行列 B - 単位行列
         B = jnp.eye(3)
 
-        # 右ブロック行列
-        C = jnp.array(
-            [
-                [19 / 32, -1 / 8, 1 / 96],
-                [29 / 16, -5 / 16, 1 / 48],
-                [-105 / 16, 15 / 8, -3 / 16],
-            ]
-        )
+        # 右ブロック行列 C - Aに対して反対称的な構造
+        C = jnp.array([
+            # f',    f'',    f'''
+            [ 19/32, -1/8,   1/96],  # 右側ブロックの1行目
+            [ 29/16, -5/16,  1/48],  # 右側ブロックの2行目
+            [-105/16, 15/8, -3/16]   # 右側ブロックの3行目
+        ])
 
         return A, B, C
 
     def _build_boundary_blocks(self) -> Tuple[
         jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
     ]:
-        """境界点のブロック行列を生成"""
-        # 左境界の行列
-        B0 = jnp.array(
-            [
-                [311, 90, 8],  # Pattern 3
-                [34, 10, 4 / 3],  # Pattern 2
-                [0, 16, 3],  # Pattern 1
-            ]
-        )
+        """境界点のブロック行列を生成
+        
+        Returns:
+            B0: 左境界の主ブロック
+            C0: 左境界の第2ブロック
+            D0: 左境界の第3ブロック
+            ZR: 右境界の第1ブロック
+            AR: 右境界の第2ブロック
+            BR: 右境界の主ブロック
+        """
+        # 左境界の行列群
+        B0 = jnp.array([
+            # f',  f'',  f'''
+            [311,  90,    8],  # Pattern 3: 高次の境界条件
+            [ 34,  10,  4/3],  # Pattern 2: 中間の境界条件
+            [  0,  16,    3]   # Pattern 1: 基本の境界条件
+        ])
 
-        C0 = jnp.array(
-            [
-                [144, 0, 0],  # Pattern 3
-                [16, 0, 0],  # Pattern 2
-                [-140, 44, 31 / 3],  # Pattern 1
-            ]
-        )
+        C0 = jnp.array([
+            # f',  f'',  f'''
+            [144,   0,    0],  # Pattern 3
+            [ 16,   0,    0],  # Pattern 2
+            [-140, 44, 31/3]   # Pattern 1
+        ])
 
-        D0 = jnp.array(
-            [
-                [-3, 0, 0],  # Pattern 3
-                [0, 0, 0],  # Pattern 2
-                [0, 0, 0],  # Pattern 1
-            ]
-        )
+        D0 = jnp.array([
+            # f',  f'',  f'''
+            [ -3,   0,    0],  # Pattern 3
+            [  0,   0,    0],  # Pattern 2
+            [  0,   0,    0]   # Pattern 1
+        ])
 
-        # 右境界の行列 - 対称性を考慮して修正
-        BR = jnp.array(
-            [
-                [-311, 90, -8],  # Pattern 3
-                [-34, 10, -4 / 3],  # Pattern 2
-                [0, 16, -3],  # Pattern 1
-            ]
-        )
+        # 右境界の行列群 - 左境界に対して対称的な構造
+        BR = jnp.array([
+            # f',   f'',   f'''
+            [-311,   90,   -8],  # Pattern 3
+            [ -34,   10, -4/3],  # Pattern 2
+            [   0,   16,   -3]   # Pattern 1
+        ])
 
-        # ZRはC0の符号を反転した形で対称性を保持
-        ZR = jnp.array(
-            [
-                [-144, 0, 0],  # Pattern 3
-                [-16, 0, 0],  # Pattern 2
-                [140, 44, -31 / 3],  # Pattern 1
-            ]
-        )
+        ZR = jnp.array([
+            # f',  f'',   f'''
+            [-144,   0,    0],  # Pattern 3
+            [ -16,   0,    0],  # Pattern 2
+            [ 140,  44, -31/3]  # Pattern 1
+        ])
 
-        # ARはD0と同様のパターンで符号を調整
-        AR = jnp.array(
-            [
-                [3, 0, 0],  # Pattern 3
-                [0, 0, 0],  # Pattern 2
-                [0, 0, 0],  # Pattern 1
-            ]
-        )
+        AR = jnp.array([
+            # f',  f'',  f'''
+            [  3,   0,    0],  # Pattern 3
+            [  0,   0,    0],  # Pattern 2
+            [  0,   0,    0]   # Pattern 1
+        ])
 
         return B0, C0, D0, ZR, AR, BR
 
@@ -153,43 +158,46 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         return L
 
 
+
 class RightHandBlockBuilder(BlockMatrixBuilder):
     """右辺のブロック行列を生成するクラス"""
 
     def _build_interior_block(self) -> jnp.ndarray:
         """右辺のブロック行列Kを生成"""
-        K = jnp.array(
-            [
-                [-35 / 32, 0, 35 / 32],
-                [4, -8, 4],
-                [105 / 16, 0, -105 / 16]
-            ]
-        )
+        K = jnp.array([
+            # 左点,  中点,  右点
+            [-35/32,    0,  35/32],  # 1階導関数の係数
+            [     4,   -8,      4],  # 2階導関数の係数
+            [105/16,    0, -105/16]  # 3階導関数の係数
+        ])
 
         return K
 
     def _build_boundary_blocks(self) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """境界点のブロック行列を生成"""
+        """境界点のブロック行列を生成
+        
+        Returns:
+            K0: 左境界用の行列
+            KR: 右境界用の行列（K0と対称的な構造）
+        """
         # 左境界用の行列
-        K0 = jnp.array(
-            [
-                [-450, 448, 2],
-                [-49, 48, 1],
-                [130, -120, -10],
-            ]
-        )
+        K0 = jnp.array([
+            # 左点,  中点,  右点
+            [-450,    448,     2],  # 1階導関数の係数
+            [ -49,     48,     1],  # 2階導関数の係数
+            [ 130,   -120,   -10]   # 3階導関数の係数
+        ])
 
         # 右境界用の行列 - K0と対称的なパターン
-        KR = jnp.array(
-            [
-                [2, 448, -450],
-                [1, 48, -49],
-                [-10, -120, 130],
-            ]
-        )
+        KR = jnp.array([
+            # 左点,  中点,   右点
+            [    2,   448,  -450],  # 1階導関数の係数
+            [    1,    48,   -49],  # 2階導関数の係数
+            [  -10,  -120,   130]   # 3階導関数の係数
+        ])
 
         return K0, KR
-
+    
     def build_block(self, grid_config: GridConfig) -> jnp.ndarray:
         """右辺のブロック行列全体を生成"""
         n, h = grid_config.n_points, grid_config.h
@@ -514,7 +522,7 @@ class CCDSolverDiagnostics:
         n, h = self.grid_config.n_points, self.grid_config.h
         
         # 左境界のブロック行列を取得
-        B0, C0, D0, ZR, AR, BR = self.left_builder._build_boundary_blocks(h)
+        B0, C0, D0, ZR, AR, BR = self.left_builder._build_boundary_blocks()
         
         print("=== 境界ブロック行列の確認 ===")
         print("\n左境界:")
