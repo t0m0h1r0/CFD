@@ -71,46 +71,29 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         # 左境界の行列群
         B0 = jnp.array([
             # f',  f'',  f'''
-            [311,  90,    8],  # Pattern 3: 高次の境界条件
-            [ 34,  10,  4/3],  # Pattern 2: 中間の境界条件
-            [  0,  16,    3]   # Pattern 1: 基本の境界条件
+            [1,  90/311,    8/311],  # Pattern 3: 高次の境界条件
+            [ 34/10,  1,  4/30],  # Pattern 2: 中間の境界条件
+            [  0,  16/3,    1]   # Pattern 1: 基本の境界条件
         ])
 
         C0 = jnp.array([
             # f',  f'',  f'''
-            [144,   0,    0],  # Pattern 3
-            [ 16,   0,    0],  # Pattern 2
-            [-140, 44, 31/3]   # Pattern 1
+            [144/311,   0,    0],  # Pattern 3
+            [ 16/10,   0,    0],  # Pattern 2
+            [-140/3, 44/3, 31/9]   # Pattern 1
         ])
 
         D0 = jnp.array([
             # f',  f'',  f'''
-            [ -3,   0,    0],  # Pattern 3
+            [ -3/311,   0,    0],  # Pattern 3
             [  0,   0,    0],  # Pattern 2
             [  0,   0,    0]   # Pattern 1
         ])
 
-        # 右境界の行列群 - 左境界に対して対称的な構造
-        BR = jnp.array([
-            # f',   f'',   f'''
-            [-311,   90,   -8],  # Pattern 3
-            [ -34,   10, -4/3],  # Pattern 2
-            [   0,   16,   -3]   # Pattern 1
-        ])
-
-        ZR = jnp.array([
-            # f',  f'',   f'''
-            [-144,   0,    0],  # Pattern 3
-            [ -16,   0,    0],  # Pattern 2
-            [ 140,  44, -31/3]  # Pattern 1
-        ])
-
-        AR = jnp.array([
-            # f',  f'',  f'''
-            [  3,   0,    0],  # Pattern 3
-            [  0,   0,    0],  # Pattern 2
-            [  0,   0,    0]   # Pattern 1
-        ])
+        # 右境界の行列 - 左境界と完全に対称的に
+        BR = -B0.at[:, [0,2]].set(B0[:, [0,2]])  # f'とf'''の符号のみ反転
+        ZR = -C0.at[:, [0,2]].set(C0[:, [0,2]])
+        AR = -D0.at[:, [0,2]].set(D0[:, [0,2]])
 
         return B0, C0, D0, ZR, AR, BR
 
@@ -120,19 +103,23 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         A, B, C = self._build_interior_blocks()
         B0, C0, D0, ZR, AR, BR = self._build_boundary_blocks()
 
-        # スケーリング行列の定義
-        S = jnp.array([[h, h**2, h**3]])
+        # 次数行列の定義
+        DEGREE = jnp.array([
+            [1, h, h**2],
+            [1/h, 1, h],
+            [1/h**2, h, 1],
+            ])
 
-        # スケーリングを適用
-        A = A * S
-        B = B * S
-        C = C * S
-        B0 = B0 * S
-        C0 = C0 * S
-        D0 = D0 * S
-        ZR = ZR * S
-        AR = AR * S
-        BR = BR * S
+        # 次数を適用
+        A = A * DEGREE
+        B = B * DEGREE
+        C = C * DEGREE
+        B0 = B0 * DEGREE
+        C0 = C0 * DEGREE
+        D0 = D0 * DEGREE
+        ZR = ZR * DEGREE
+        AR = AR * DEGREE
+        BR = BR * DEGREE
 
         matrix_size = 3 * n
         L = jnp.zeros((matrix_size, matrix_size))
@@ -183,18 +170,13 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
         # 左境界用の行列
         K0 = jnp.array([
             # 左点,  中点,  右点
-            [-450,    448,     2],  # 1階導関数の係数
-            [ -49,     48,     1],  # 2階導関数の係数
-            [ 130,   -120,   -10]   # 3階導関数の係数
+            [-450/311,    448/311,     2/311],  # 1階導関数の係数
+            [ -49/10,     48/10,     1/10],  # 2階導関数の係数
+            [ 130/3,   -120/3,   -10/3]   # 3階導関数の係数
         ])
 
-        # 右境界用の行列 - K0と対称的なパターン
-        KR = jnp.array([
-            # 左点,  中点,   右点
-            [    2,   448,  -450],  # 1階導関数の係数
-            [    1,    48,   -49],  # 2階導関数の係数
-            [  -10,  -120,   130]   # 3階導関数の係数
-        ])
+        # K0の1列目と3列目を入れ替え
+        KR = K0.at[:, [0,2]].set(K0[:, [2,0]])
 
         return K0, KR
     
@@ -203,12 +185,17 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
         n, h = grid_config.n_points, grid_config.h
         K_interior = self._build_interior_block()
         K0, KR = self._build_boundary_blocks()
+        DEGREE = jnp.array([
+            [1/h, 1/h**2, 1/h**3],
+            ])
+        
+        K_interior = K_interior * DEGREE.T
+        K0 = K0 * DEGREE.T
+        KR = KR * DEGREE.T
 
         matrix_size = 3 * n
         vector_size = n
         K = jnp.zeros((matrix_size, vector_size))
-
-        # スケーリング行列は不要 - 右辺の行列はスケーリングしない
 
         # 左境界条件を設定
         K = K.at[0:3, 0:3].set(K0)
@@ -239,15 +226,14 @@ class CCDSolver:
         self._initialize_solver()
 
     def _initialize_solver(self):
-        """ソルバーの初期化: スケーリングされた左辺行列と右辺行列を準備"""
-        # 左辺行列と右辺行列の生成
         L = self.left_builder.build_block(self.grid_config)
         K = self.right_builder.build_block(self.grid_config)
-
-        # スケーリング行列の計算
-        D = jnp.diag(1.0 / jnp.sqrt(jnp.abs(jnp.diag(L))))
         
-        # スケーリングされた行列を保存
+        # より安定したスケーリング手法の採用
+        row_norms = jnp.sqrt(jnp.sum(L * L, axis=1))
+        col_norms = jnp.sqrt(jnp.sum(L * L, axis=0))
+        D = jnp.diag(1.0 / jnp.sqrt(row_norms * col_norms))
+        
         self.L_scaled = D @ L @ D
         self.K_scaled = D @ K
         self.D = D
@@ -262,15 +248,12 @@ class CCDSolver:
         Returns:
             X: 導関数ベクトル (3n,) - [f'_0, f''_0, f'''_0, f'_1, f''_1, f'''_1, ...]
         """
-        # K_scaled @ f を計算
         rhs = self.K_scaled @ f
         
-        # L_scaled @ X = rhs を解く
-        X_scaled = linalg.solve(self.L_scaled, rhs)
+        # より安定な解法の採用
+        X_scaled = linalg.solve(self.L_scaled, rhs, assume_a='sym')
         
-        # スケーリングを戻す
         return self.D @ X_scaled
-
 
 # 使用例
 def example_usage():
@@ -482,7 +465,7 @@ class CCDMethodTester:
 def run_tests():
     """テストの実行"""
     # グリッド設定
-    n = 256
+    n = 64
     L = 2.0  # 区間の長さ（-1から1まで）
     grid_config = GridConfig(n_points=n, h=L / (n - 1))
     solver = CCDSolver(grid_config)
@@ -542,6 +525,13 @@ class CCDSolverDiagnostics:
         
         print("\nC0とZRの対応する要素の比:")
         print(C0 / (-ZR))  # 対称なら絶対値が近い値になるはず
+        
+        # 境界条件の階数チェック
+        print("\n=== 境界条件の階数チェック ===")
+        left_block = jnp.concatenate([B0, C0, D0], axis=1)
+        right_block = jnp.concatenate([ZR, AR, BR], axis=1)
+        print("左境界ブロックの階数:", jnp.linalg.matrix_rank(left_block))
+        print("右境界ブロックの階数:", jnp.linalg.matrix_rank(right_block))
 
     def check_full_matrix(self):
         """全体の行列構造の確認"""
@@ -559,48 +549,79 @@ class CCDSolverDiagnostics:
         print("\n右端3×9ブロック:\n", right_boundary)
         
         # 行列の対称性を確認
-        print("\n行列の対称性 (L + L.T)の最大絶対値:", 
-              jnp.max(jnp.abs(L + L.T)))
+        sym_diff = L + L.T
+        max_asym = jnp.max(jnp.abs(sym_diff))
+        mean_asym = jnp.mean(jnp.abs(sym_diff))
+        print("\n行列の非対称性:")
+        print(f"最大絶対値: {max_asym}")
+        print(f"平均絶対値: {mean_asym}")
+        
+        # スパース性の確認
+        zeros = jnp.sum(jnp.abs(L) < 1e-10)
+        sparsity = zeros / L.size
+        print(f"\n疎行列度: {sparsity:.2%}")
 
     def check_scaling(self):
         """スケーリングの影響確認"""
         L = self.left_builder.build_block(self.grid_config)
+        K = self.right_builder.build_block(self.grid_config)
         
-        # オリジナルのスケーリング行列
-        D = jnp.diag(1.0 / jnp.sqrt(jnp.abs(jnp.diag(L))))
+        # 新しいスケーリング方式
+        row_norms = jnp.sqrt(jnp.sum(L * L, axis=1))
+        col_norms = jnp.sqrt(jnp.sum(L * L, axis=0))
+        D = jnp.diag(1.0 / jnp.sqrt(row_norms * col_norms))
         
         print("=== スケーリングの確認 ===")
-        print("\nスケーリング係数 (先頭10個):", D.diagonal()[:10])
-        print("\nスケーリング係数 (末尾10個):", D.diagonal()[-10:])
+        print("\nスケーリング特性:")
+        print(f"最大スケーリング係数: {jnp.max(D.diagonal())}")
+        print(f"最小スケーリング係数: {jnp.min(D.diagonal())}")
+        print(f"スケーリング係数の比率: {jnp.max(D.diagonal()) / jnp.min(D.diagonal())}")
         
         # スケーリング後の行列
         L_scaled = D @ L @ D
-        print("\nスケーリング後の条件数:", jnp.linalg.cond(L_scaled))
+        K_scaled = D @ K
         
-        # スケーリング後の境界部分
-        print("\nスケーリング後の左端3×9ブロック:\n", L_scaled[:3, :9])
-        print("\nスケーリング後の右端3×9ブロック:\n", L_scaled[-3:, -9:])
+        print("\n行列特性:")
+        print(f"スケーリング前の条件数: {jnp.linalg.cond(L)}")
+        print(f"スケーリング後の条件数: {jnp.linalg.cond(L_scaled)}")
+        
+        # 行と列のノルムの均一性チェック
+        scaled_row_norms = jnp.sqrt(jnp.sum(L_scaled * L_scaled, axis=1))
+        scaled_col_norms = jnp.sqrt(jnp.sum(L_scaled * L_scaled, axis=0))
+        
+        print("\nスケーリング後の行列ノルム:")
+        print(f"行ノルムの最大/最小比: {jnp.max(scaled_row_norms) / jnp.min(scaled_row_norms)}")
+        print(f"列ノルムの最大/最小比: {jnp.max(scaled_col_norms) / jnp.min(scaled_col_norms)}")
+
+    def perform_full_diagnosis(self):
+        """総合的な診断を実行"""
+        print("\n========== CCD法ソルバーの総合診断 ==========")
+        
+        print("\n1. 境界条件の診断")
+        print("-" * 40)
+        self.check_boundary_blocks()
+        
+        print("\n2. 全体行列の診断")
+        print("-" * 40)
+        self.check_full_matrix()
+        
+        print("\n3. スケーリングの診断")
+        print("-" * 40)
+        self.check_scaling()
+        
+        print("\n========== 診断完了 ==========")
 
 def run_diagnostics():
     """診断の実行"""
     # グリッド設定
-    n = 256
+    n = 64
     L = 2.0
     grid_config = GridConfig(n_points=n, h=L / (n - 1))
     
     # 診断の実行
     diagnostics = CCDSolverDiagnostics(grid_config)
-    
-    print("\n=== 境界ブロックの確認 ===")
-    diagnostics.check_boundary_blocks()
-    
-    print("\n=== 全体行列の確認 ===")
-    diagnostics.check_full_matrix()
-    
-    print("\n=== スケーリングの確認 ===")
-    diagnostics.check_scaling()
-
+    diagnostics.perform_full_diagnosis()
 
 if __name__ == "__main__":
     run_diagnostics()
-    #run_tests()
+    run_tests()
