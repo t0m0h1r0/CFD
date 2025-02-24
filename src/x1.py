@@ -248,6 +248,11 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
         return K
 
 
+from jax import jit
+import jax.numpy as jnp
+from jax.scipy import linalg
+from functools import partial
+
 class CCDSolver:
     """CCD法による導関数計算ソルバー"""
 
@@ -258,19 +263,27 @@ class CCDSolver:
         self._initialize_solver()
 
     def _initialize_solver(self):
-        """ソルバーの初期化: 左辺の逆行列と右辺行列の積を計算"""
+        """ソルバーの初期化: 左辺行列と右辺行列から解行列を計算"""
         L = self.left_builder.build_block(self.grid_config)
         K = self.right_builder.build_block(self.grid_config)
 
+        # スケーリング行列の計算
         D = jnp.diag(1.0 / jnp.sqrt(jnp.abs(jnp.diag(L))))
         L_scaled = D @ L @ D
         K_scaled = D @ K
 
-        # 逆行列を計算
-        L_inv = jnp.linalg.inv(L_scaled)
+        # AX = B の形で解を求める準備
+        # L_scaled @ X = K_scaled @ f となるXを求める必要がある
+        # K_scaledの各列に対してL_scaled @ x = kを解く
 
-        # ソルバー行列を計算 (L^{-1}K)
-        self.solver_matrix = D @ L_inv @ K_scaled
+        # K_scaledの列数（関数値の数）だけ単位行列を用意
+        n_points = K_scaled.shape[1]
+        I = jnp.eye(n_points)
+
+        # 各列について連立方程式を解く
+        # L_scaled @ X = K_scaled は以下と等価:
+        # L_scaled @ self.solver_matrix = K_scaled
+        self.solver_matrix = D @ linalg.solve(L_scaled, K_scaled)
 
     @partial(jit, static_argnums=(0,))
     def solve(self, f: jnp.ndarray) -> jnp.ndarray:
@@ -366,10 +379,10 @@ class CCDMethodTester:
                 ),
                 TestFunction(
                     name="Cosine",
-                    f=lambda x: jnp.cos(jnp.pi*x) - 1,  # 平行移動で両端でゼロ
-                    df=lambda x: -jnp.pi*jnp.sin(jnp.pi*x),
-                    d2f=lambda x: -(jnp.pi**2)*jnp.cos(jnp.pi*x),
-                    d3f=lambda x: jnp.pi**3*jnp.sin(jnp.pi*x)
+                    f=lambda x: jnp.cos(2*jnp.pi*x),  # 平行移動で両端でゼロ
+                    df=lambda x: -2*jnp.pi*jnp.sin(2*jnp.pi*x),
+                    d2f=lambda x: -4*(jnp.pi**2)*jnp.cos(2*jnp.pi*x),
+                    d3f=lambda x: 8*jnp.pi**3*jnp.sin(2*jnp.pi*x)
                 ),
                 TestFunction(
                     name="ExpMod",
