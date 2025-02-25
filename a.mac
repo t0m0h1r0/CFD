@@ -1,24 +1,24 @@
 /* テイラー展開の定義 */
 /* f1のテイラー展開 */
-f1_expansion: f0 - fp0*h + fpp0*h^2/2 - fppp0*h^3/6 + fpppp0*h^4/24 - fppppp0*h^5/120;
+f1_expansion: f0 + fp0*h + fpp0*h^2/2 + fppp0*h^3/6 + fpppp0*h^4/24 + fppppp0*h^5/120 + fpppppp0*h^6/720;
 
 /* f2のテイラー展開 */
-f2_expansion: f0 - 2*fp0*h + 2*fpp0*h^2 - 4*fppp0*h^3/3 + 2*fpppp0*h^4/3 - 4*fppppp0*h^5/15;
+f2_expansion: f0 + 2*fp0*h + 2*fpp0*h^2 + 4*fppp0*h^3/3 + 2*fpppp0*h^4/3 + 4*fppppp0*h^5/15 + 4*fpppppp0*h^6/45;
 
 /* fp1のテイラー展開 */
-fp1_expansion: fp0 - fpp0*h + fppp0*h^2/2 - fpppp0*h^3/6 + fppppp0*h^4/24;
+fp1_expansion: fp0 + fpp0*h + fppp0*h^2/2 + fpppp0*h^3/6 + fppppp0*h^4/24 + fpppppp0*h^5/120;
 
 /* fp2のテイラー展開 */
-fp2_expansion: fp0 - 2*fpp0*h + 2*fppp0*h^2 - 4*fpppp0*h^3/3 + 2*fppppp0*h^4/3;
+fp2_expansion: fp0 + 2*fpp0*h + 2*fppp0*h^2 + 4*fpppp0*h^3/3 + 2*fppppp0*h^4/3 + 4*fpppppp0*h^5/15;
 
 /* fpp1のテイラー展開 */
-fpp1_expansion: fpp0 - fppp0*h + fpppp0*h^2/2 - fppppp0*h^3/6;
+fpp1_expansion: fpp0 + fppp0*h + fpppp0*h^2/2 + fppppp0*h^3/6 + fpppppp0*h^4/24;
 
 /* fpp2のテイラー展開 */
-fpp2_expansion: fpp0 - 2*fppp0*h + 2*fpppp0*h^2 - 4*fppppp0*h^3/3;
+fpp2_expansion: fpp0 + 2*fppp0*h + 2*fpppp0*h^2 + 4*fppppp0*h^3/3 + 2*fpppppp0*h^4/3;
 
 /* 線形結合の展開 */
-linear_combination: a*f1_expansion + b*f2_expansion + c*fp1_expansion*h + d*fp2_expansion*h + r*fpp1_expansion*h^2 + s*fpp2_expansion*h^2;
+linear_combination: a*f1_expansion + b*f2_expansion + c*fp1_expansion*h + d*fp2_expansion*h + r*fpp1_expansion*h^2 + s*fpp2_expansion*h^2 + t*fppp1_expansion + u*fppp2_expansion;
 
 /* 展開して整理 */
 expanded: expand(linear_combination);
@@ -30,6 +30,7 @@ eq2: coeff(coeff(expanded,h,2),fpp0);
 eq3: coeff(coeff(expanded,h,3),fppp0);
 eq4: coeff(coeff(expanded,h,4),fpppp0);
 eq5: coeff(coeff(expanded,h,5),fppppp0);
+eq6: coeff(coeff(expanded,h,6),fpppppp0);
 
 /* 3つのCCD解 */
 /* 2-5がゼロ */

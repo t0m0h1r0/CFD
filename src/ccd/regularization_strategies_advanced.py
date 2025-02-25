@@ -1,10 +1,12 @@
 """
-高度な正則化戦略モジュール
+高度な正則化戦略モジュール（バグ修正版）
 
 CCD法の高度な正則化戦略（Total Variation, L1, Elastic Net）を提供します。
+JAXのJIT互換に修正しています。
 """
 
 import jax.numpy as jnp
+from jax import lax
 
 from regularization_strategies_base import RegularizationStrategy
 
@@ -51,6 +53,11 @@ class TotalVariationRegularization(RegularizationStrategy):
         for i in range(3):
             D = D.at[i*(n-1):(i+1)*(n-1), i*n:(i+1)*n].set(D_blocks[i])
         
+        # ADMM用の前処理
+        DTD = D.T @ D
+        LTL = self.L_T @ self.L
+        A = LTL + self.alpha * DTD
+        
         # ソルバー関数（ADMM: Alternating Direction Method of Multipliers）
         def solver_func(rhs):
             # 初期解を標準的な最小二乗解に設定
@@ -58,37 +65,32 @@ class TotalVariationRegularization(RegularizationStrategy):
             z = D @ x
             u = jnp.zeros_like(z)  # 双対変数
             
-            # ADMM反復
-            for _ in range(self.iterations):
+            # JAX対応の反復処理：lax.scanを使用
+            def body_fun(carry, _):
+                x_prev, z_prev, u_prev = carry
+                
                 # x-update (最小二乗問題)
-                A = self.L_T @ self.L + self.alpha * D.T @ D
-                b = self.L_T @ rhs + self.alpha * D.T @ (z - u)
+                b = self.L_T @ rhs + self.alpha * D.T @ (z_prev - u_prev)
                 x_new = jnp.linalg.solve(A, b)
                 
                 # z-update (縮小演算子)
                 Dx = D @ x_new
-                z_new = self._shrinkage(Dx + u, 1.0/self.alpha)
+                z_new = self._shrinkage(Dx + u_prev, 1.0/self.alpha)
                 
                 # u-update (双対変数の更新)
-                u_new = u + Dx - z_new
+                u_new = u_prev + Dx - z_new
                 
-                # 収束判定
-                primal_residual = jnp.linalg.norm(Dx - z_new)
-                dual_residual = self.alpha * jnp.linalg.norm(D.T @ (z_new - z))
-                
-                if primal_residual < self.tol and dual_residual < self.tol:
-                    break
-                
-                # 変数の更新
-                x, z, u = x_new, z_new, u_new
+                return (x_new, z_new, u_new), None
             
-            return x
+            # lax.scanで反復処理を実行
+            (x_final, _, _), _ = lax.scan(body_fun, (x, z, u), jnp.arange(self.iterations))
+            return x_final
         
         return self.L, self.K, solver_func
     
-    def _shrinkage(self, x, kappa):
+    def _shrinkage(self, x, threshold):
         """縮小演算子（soft thresholding）"""
-        return jnp.sign(x) * jnp.maximum(jnp.abs(x) - kappa, 0)
+        return jnp.sign(x) * jnp.maximum(jnp.abs(x) - threshold, 0)
 
 
 class L1Regularization(RegularizationStrategy):
@@ -129,22 +131,19 @@ class L1Regularization(RegularizationStrategy):
             lambda_max = jnp.linalg.norm(ATA, ord=2)
             step_size = 1.0 / lambda_max
             
-            # 近位勾配法（ISTA: Iterative Shrinkage-Thresholding Algorithm）
-            for _ in range(self.iterations):
+            # JAX対応の反復処理：lax.scanを使用
+            def body_fun(x_prev, _):
                 # 勾配ステップ
-                grad = ATA @ x - ATb
-                x_grad = x - step_size * grad
+                grad = ATA @ x_prev - ATb
+                x_grad = x_prev - step_size * grad
                 
                 # 近位演算子ステップ（軟閾値処理）
                 x_new = self._soft_threshold(x_grad, self.alpha * step_size)
-                
-                # 収束判定
-                if jnp.linalg.norm(x_new - x) < self.tol:
-                    break
-                
-                x = x_new
+                return x_new, None
             
-            return x
+            # lax.scanで反復処理を実行
+            x_final, _ = lax.scan(body_fun, x, jnp.arange(self.iterations))
+            return x_final
         
         return self.L, self.K, solver_func
     
@@ -199,22 +198,19 @@ class ElasticNetRegularization(RegularizationStrategy):
             lambda_max = jnp.linalg.norm(ATA_l2, ord=2)
             step_size = 1.0 / lambda_max
             
-            # 近位勾配法（ISTA）
-            for _ in range(self.iterations):
+            # JAX対応の反復処理：lax.scanを使用
+            def body_fun(x_prev, _):
                 # 勾配ステップ（L2正則化項を含む）
-                grad = ATA_l2 @ x - ATb
-                x_grad = x - step_size * grad
+                grad = ATA_l2 @ x_prev - ATb
+                x_grad = x_prev - step_size * grad
                 
                 # 近位演算子ステップ（L1正則化のみ）
                 x_new = self._soft_threshold(x_grad, alpha_l1 * step_size)
-                
-                # 収束判定
-                if jnp.linalg.norm(x_new - x) < self.tol:
-                    break
-                
-                x = x_new
+                return x_new, None
             
-            return x
+            # lax.scanで反復処理を実行
+            x_final, _ = lax.scan(body_fun, x, jnp.arange(self.iterations))
+            return x_final
         
         return self.L, self.K, solver_func
     
