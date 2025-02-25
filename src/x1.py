@@ -73,22 +73,34 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
 
         C0 = jnp.array([
             # f',  f'',  f'''
-            [  0,  -2,  0],  # Pattern 3
+            [  0,  -2,  0],  # Pattern 1
             [  8,  12,  0],  # Pattern 2
-            [-48, -39,  0]   # Pattern 1
+            [-48, -39,  0]   # Pattern 3
         ])
 
         D0 = jnp.array([
             # f',  f'',  f'''
-            [ -1,   0,   0],  # Pattern 3
+            [ -1,   0,   0],  # Pattern 1
             [  7,   0,   0],  # Pattern 2
-            [-27,   0,   0]   # Pattern 1
+            [-27,   0,   0]   # Pattern 3
         ])
 
         # 右境界の行列 - 左境界と完全に対称的に
-        BR = -B0.at[:, [0,2]].set(B0[:, [0,2]])  # f'とf'''の符号のみ反転
-        ZR = -C0.at[:, [0,2]].set(C0[:, [0,2]])
-        AR = -D0.at[:, [0,2]].set(D0[:, [0,2]])
+        BR = jnp.eye(3)
+
+        AR = jnp.array([
+            # f',  f'',  f'''
+            [  0,   2,  0],  # Pattern 1
+            [ -8,  12,  0],  # Pattern 2
+            [-48,  39,  0]   # Pattern 3
+        ])
+
+        ZR = jnp.array([
+            # f',  f'',  f'''
+            [ -1,   0,   0],  # Pattern 1
+            [ -7,   0,   0],  # Pattern 2
+            [-27,   0,   0]   # Pattern 3
+        ])
 
         return B0, C0, D0, ZR, AR, BR
 
@@ -170,8 +182,13 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
             [-57/2, 132,-207/2]   # 3階導関数の係数
         ])
 
-        # K0の1列目と3列目を入れ替え
-        KR = K0.at[:, [0,2]].set(K0[:, [2,0]])
+        KR = jnp.array([
+            # 左点,  中点,  右点
+            [   -4,   8,    -4],  # 1階導関数の係数
+            [ 55/2, -40,  25/2],  # 2階導関数の係数
+            [207/2,-132,  57/2]   # 3階導関数の係数
+        ])
+
 
         return K0, KR
     
@@ -459,10 +476,9 @@ class CCDMethodTester:
         plt.close()
 
 
-def run_tests():
+def run_tests(n=64):
     """テストの実行"""
     # グリッド設定
-    n = 256
     L = 2.0  # 区間の長さ（-1から1まで）
     grid_config = GridConfig(n_points=n, h=L / (n - 1))
     solver = CCDSolver(grid_config)
@@ -520,8 +536,10 @@ class CCDSolverDiagnostics:
         print("B0とBRの対応する要素の比:")
         print(B0 / (-BR))  # 対称なら絶対値が近い値になるはず
         
-        print("\nC0とZRの対応する要素の比:")
-        print(C0 / (-ZR))  # 対称なら絶対値が近い値になるはず
+        print("\nC0とARの対応する要素の比:")
+        print(C0 / (-AR))  # 対称なら絶対値が近い値になるはず
+        print("\nD0とZRの対応する要素の比:")
+        print(D0 / (-ZR))  # 対称なら絶対値が近い値になるはず
         
         # 境界条件の階数チェック
         print("\n=== 境界条件の階数チェック ===")
@@ -608,10 +626,9 @@ class CCDSolverDiagnostics:
         
         print("\n========== 診断完了 ==========")
 
-def run_diagnostics():
+def run_diagnostics(n=64):
     """診断の実行"""
     # グリッド設定
-    n = 64
     L = 2.0
     grid_config = GridConfig(n_points=n, h=L / (n - 1))
     
@@ -620,5 +637,5 @@ def run_diagnostics():
     diagnostics.perform_full_diagnosis()
 
 if __name__ == "__main__":
-    run_diagnostics()
-    run_tests()
+    run_diagnostics(n=256)
+    run_tests(n=256)
