@@ -76,16 +76,16 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
 
         C0 = jnp.array([
             # f',  f'',  f'''
-            [  0, -2,  0],  # Pattern 1
-            [  8, 12,  0],  # Pattern 2
-            [-48,-39,  0]   # Pattern 3
+            [ -8,   -4,   0],  # Pattern 1
+            [ 72,   28,   0],  # Pattern 2
+            [-348,-114,   0]   # Pattern 3
         ])
 
         D0 = jnp.array([
             # f',  f'',  f'''
-            [ -1,  0,  0],  # Pattern 1
-            [  7,  0,  0],  # Pattern 2
-            [-27,  0,  0]   # Pattern 3
+            [    -8,    1,  0],  # Pattern 1
+            [    63,   -8,  0],  # Pattern 2
+            [-579/2, 75/2,  0]   # Pattern 3
         ])
 
         # 右境界の行列 - 左境界と完全に対称的に
@@ -98,16 +98,16 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
 
         AR = jnp.array([
             # f',  f'',  f'''
-            [  0,  2,  0],  # Pattern 1
-            [ -8, 12,  0],  # Pattern 2
-            [-48, 39,  0]   # Pattern 3
+            [ -8,   4,   0],  # Pattern 1
+            [-72,  28,   0],  # Pattern 2
+            [ -348, 114,   0]   # Pattern 3
         ])
 
         ZR = jnp.array([
             # f',  f'',  f'''
-            [ -1,  0,  0],  # Pattern 1
-            [ -7,  0,  0],  # Pattern 2
-            [-27,  0,  0]   # Pattern 3
+            [    -8,   -1,  0],  # Pattern 1
+            [   -63,   -8,  0],  # Pattern 2
+            [-579/2,-75/2,  0]   # Pattern 3
         ])
 
         return B0, C0, D0, ZR, AR, BR
@@ -189,16 +189,16 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
         # 左境界用の行列
         K0 = jnp.array([
             # 左点,  中点,  右点
-            [   -4,   8,    -4],  # 1階導関数の係数
-            [ 25/2, -40,  55/2],  # 2階導関数の係数
-            [-57/2, 132,-207/2]   # 3階導関数の係数
+            [  -9/2,  24,   -39/2],  # 1階導関数の係数
+            [  33/2, -168,  303/2],  # 2階導関数の係数
+            [-189/4,  732,-2739/4]   # 3階導関数の係数
         ])
 
         KR = jnp.array([
             # 左点,  中点,  右点
-            [    4,  -8,     4],  # 1階導関数の係数
-            [ 55/2, -40,  25/2],  # 2階導関数の係数
-            [207/2,-132,  57/2]   # 3階導関数の係数
+            [  39/2,  -24,   9/2],  # 1階導関数の係数
+            [  303/2,-168,  33/2],  # 2階導関数の係数
+            [2739/4, -732,189/4]   # 3階導関数の係数
         ])
 
         return K0, KR
