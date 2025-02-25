@@ -1,21 +1,24 @@
 """
-コマンドラインインターフェースモジュール
+コマンドラインインターフェースモジュール - 簡素化版
 
-CCD法のテスト・診断・比較のためのコマンドラインツールを提供します。
+CCD法のテスト・診断・比較のためのシンプルなコマンドラインツールを提供します。
 """
 
 import argparse
-import inspect
+import os
 from typing import Dict, Any, List, Tuple
 
 from ccd_core import GridConfig
 from unified_solver import CCDCompositeSolver
-from presets import get_scaling_presets, get_regularization_presets, get_combined_presets, get_preset_by_name
+from presets import get_combined_presets, get_preset_by_name
+from ccd_tester import CCDMethodTester
+from ccd_diagnostics import CCDSolverDiagnostics
+from solver_comparator import SolverComparator
 
 
 def parse_args():
-    """コマンドライン引数をパース"""
-    parser = argparse.ArgumentParser(description='CCD法のテストと診断')
+    """コマンドライン引数をシンプルにパース"""
+    parser = argparse.ArgumentParser(description='CCD法のテストと診断（簡素化版）')
     
     # 共通オプション
     parser.add_argument('--n', type=int, default=256, help='グリッド点の数')
@@ -23,83 +26,58 @@ def parse_args():
                       help='x軸の範囲 (開始点 終了点)')
     
     # サブコマンドの設定
-    subparsers = parser.add_subparsers(dest='command', help='実行するコマンド')
-    
-    # プリセット名のリストを取得
-    preset_names = [preset[0].lower() for preset in get_combined_presets()]
+    subparsers = parser.add_subparsers(dest='command', help='実行するコマンド', required=True)
     
     # テストコマンド
     test_parser = subparsers.add_parser('test', help='テストを実行')
-    test_parser.add_argument('--preset', type=str, default=None, choices=preset_names,
-                          help='プリセットソルバー設定')
-    test_parser.add_argument('--prefix', type=str, default='', help='出力ファイルの接頭辞')
-    test_parser.add_argument('--param', nargs='+', help='プリセットのパラメータ ("名前:値" 形式)')
+    test_parser.add_argument('--preset', type=str, help='プリセットソルバー設定')
+    test_parser.add_argument('--scaling', type=str, default='none', help='スケーリング手法')
+    test_parser.add_argument('--reg', type=str, default='none', help='正則化手法')
+    test_parser.add_argument('--params', type=str, help='パラメータ (key1=value1,key2=value2 形式)')
     test_parser.add_argument('--no-viz', action='store_true', help='可視化を無効化')
-    test_parser.add_argument('--scaling', type=str, default='none',
-                          choices=CCDCompositeSolver.available_scaling_methods(),
-                          help='スケーリング手法')
-    test_parser.add_argument('--regularization', type=str, default='none',
-                          choices=CCDCompositeSolver.available_regularization_methods(),
-                          help='正則化手法')
-    test_parser.add_argument('--scaling-param', nargs='+', 
-                          help='スケーリングパラメータ ("名前:値" 形式)')
-    test_parser.add_argument('--reg-param', nargs='+',
-                          help='正則化パラメータ ("名前:値" 形式)')
     
     # 診断コマンド
     diag_parser = subparsers.add_parser('diagnostics', help='診断を実行')
-    diag_parser.add_argument('--preset', type=str, default=None, choices=preset_names,
-                          help='プリセットソルバー設定')
-    diag_parser.add_argument('--param', nargs='+', help='プリセットのパラメータ ("名前:値" 形式)')
+    diag_parser.add_argument('--preset', type=str, help='プリセットソルバー設定')
+    diag_parser.add_argument('--scaling', type=str, default='none', help='スケーリング手法')
+    diag_parser.add_argument('--reg', type=str, default='none', help='正則化手法')
+    diag_parser.add_argument('--params', type=str, help='パラメータ (key1=value1,key2=value2 形式)')
     diag_parser.add_argument('--viz', action='store_true', help='可視化を有効化')
-    diag_parser.add_argument('--scaling', type=str, default='none',
-                          choices=CCDCompositeSolver.available_scaling_methods(),
-                          help='スケーリング手法')
-    diag_parser.add_argument('--regularization', type=str, default='none',
-                          choices=CCDCompositeSolver.available_regularization_methods(),
-                          help='正則化手法')
-    diag_parser.add_argument('--scaling-param', nargs='+', 
-                          help='スケーリングパラメータ ("名前:値" 形式)')
-    diag_parser.add_argument('--reg-param', nargs='+',
-                          help='正則化パラメータ ("名前:値" 形式)')
     
     # 比較コマンド
     compare_parser = subparsers.add_parser('compare', help='ソルバー間の比較を実行')
-    compare_parser.add_argument('--configs', nargs='+', 
-                              help='比較する設定 ("名前:スケーリング:正則化:パラメータ" 形式)')
-    compare_parser.add_argument('--presets', action='store_true', help='プリセット設定を比較')
-    compare_parser.add_argument('--scaling-presets', action='store_true', help='スケーリングプリセットを比較')
-    compare_parser.add_argument('--reg-presets', action='store_true', help='正則化プリセットを比較')
-    compare_parser.add_argument('--custom', nargs='+', 
-                              help='独自組み合わせ ("スケーリング:正則化" 形式の組み合わせのリスト)')
+    compare_parser.add_argument('--mode', choices=['presets', 'scaling', 'reg', 'custom'], 
+                             default='presets', help='比較モード')
+    compare_parser.add_argument('--configs', type=str, help='カスタム設定 ("scaling1:reg1,scaling2:reg2" 形式)')
     compare_parser.add_argument('--no-viz', action='store_true', help='可視化を無効化')
     compare_parser.add_argument('--no-save', action='store_true', help='結果の保存を無効化')
     
     # 一覧表示コマンド
     list_parser = subparsers.add_parser('list', help='使用可能な設定を一覧表示')
-    list_parser.add_argument('--scaling', action='store_true', help='スケーリング手法のみ表示')
-    list_parser.add_argument('--regularization', action='store_true', help='正則化手法のみ表示')
-    list_parser.add_argument('--presets', action='store_true', help='プリセット設定のみ表示')
+    list_parser.add_argument('--type', choices=['all', 'scaling', 'reg', 'presets'], 
+                          default='all', help='表示する情報の種類')
     
     return parser.parse_args()
 
 
-def parse_params(param_list: List[str]) -> Dict[str, Any]:
+def parse_params(param_str: str) -> Dict[str, Any]:
     """
-    パラメータリストをディクショナリに変換
+    パラメータ文字列をディクショナリに変換
     
     Args:
-        param_list: "名前:値" 形式のパラメータリスト
+        param_str: "key1=value1,key2=value2" 形式のパラメータ文字列
         
     Returns:
         パラメータディクショナリ
     """
-    if not param_list:
+    if not param_str:
         return {}
     
     params = {}
-    for p in param_list:
-        name, value = p.split(':', 1)
+    for p in param_str.split(','):
+        if not p or '=' not in p:
+            continue
+        key, value = p.split('=', 1)
         # 数値変換を試みる
         try:
             value = float(value)
@@ -110,97 +88,78 @@ def parse_params(param_list: List[str]) -> Dict[str, Any]:
             # 数値変換できない場合はそのまま文字列として使用
             pass
         
-        params[name] = value
+        params[key] = value
     
     return params
 
 
-def parse_config_spec(config_spec: str) -> Tuple[str, str, str, Dict[str, Any]]:
-    """
-    設定仕様文字列をパース
+def get_solver(args, grid_config: GridConfig):
+    """コマンドライン引数からソルバーを取得"""
+    if args.preset:
+        # プリセット設定を使用
+        scaling, regularization, preset_params = get_preset_by_name(args.preset)
+        # パラメータがあれば上書き
+        if hasattr(args, 'params') and args.params:
+            user_params = parse_params(args.params)
+            preset_params.update(user_params)
+    else:
+        # カスタム設定を使用
+        scaling = args.scaling
+        regularization = args.reg
+        preset_params = {}
+        if hasattr(args, 'params') and args.params:
+            preset_params = parse_params(args.params)
     
-    Args:
-        config_spec: "名前:スケーリング:正則化:パラメータ" 形式の文字列
-        
-    Returns:
-        (名前, スケーリング, 正則化, パラメータ辞書)
-    """
-    parts = config_spec.split(':')
-    name = parts[0]
-    scaling = parts[1] if len(parts) > 1 else "none"
-    regularization = parts[2] if len(parts) > 2 else "none"
+    # スケーリングパラメータと正則化パラメータを分離
+    scaling_params = {k: v for k, v in preset_params.items() if k in ["max_iter", "tol"]}
+    reg_params = {k: v for k, v in preset_params.items() if k not in ["max_iter", "tol"]}
     
-    # パラメータ部分を解析
-    params = {}
-    if len(parts) > 3:
-        param_str = parts[3]
-        for p in param_str.split(','):
-            if not p:
-                continue
-            param_parts = p.split('=')
-            if len(param_parts) == 2:
-                key, value = param_parts
-                # 数値変換を試みる
-                try:
-                    value = float(value)
-                    if value.is_integer():
-                        value = int(value)
-                except ValueError:
-                    pass
-                params[key] = value
+    # ソルバーを作成
+    solver = CCDCompositeSolver(
+        grid_config,
+        scaling=scaling,
+        regularization=regularization,
+        scaling_params=scaling_params,
+        regularization_params=reg_params
+    )
     
-    return name, scaling, regularization, params
+    return solver
 
 
-def get_custom_configs(custom_specs: List[str]) -> List[Tuple[str, str, str, Dict[str, Any]]]:
-    """
-    カスタム設定仕様からソルバー設定を生成
-    
-    Args:
-        custom_specs: "スケーリング:正則化" 形式の設定リスト
-        
-    Returns:
-        [(名前, スケーリング, 正則化, パラメータ辞書), ...] の形式のリスト
-    """
+def parse_custom_configs(config_str: str) -> List[Tuple[str, str, str, Dict[str, Any]]]:
+    """カスタム設定文字列から設定リストを生成"""
     configs = []
+    if not config_str:
+        return configs
     
-    for spec in custom_specs:
-        parts = spec.split(':')
-        scaling = parts[0]
-        regularization = parts[1] if len(parts) > 1 else "none"
-        
-        # デフォルトパラメータ
-        params = {}
-        # 正則化パラメータ
-        if regularization == "tikhonov":
-            params = {"alpha": 1e-6}
-        elif regularization == "svd":
-            params = {"threshold": 1e-10}
-        elif regularization == "tsvd":
-            params = {"threshold_ratio": 1e-5}
-        elif regularization in ["landweber", "precomputed_landweber"]:
-            params = {"iterations": 20, "relaxation": 0.1}
-        elif regularization == "lsqr":
-            params = {"iterations": 20, "damp": 0}
-        elif regularization in ["total_variation", "l1"]:
-            params = {"alpha": 1e-4, "iterations": 50, "tol": 1e-6}
-        elif regularization == "elastic_net":
-            params = {"alpha": 1e-4, "l1_ratio": 0.5, "iterations": 100, "tol": 1e-6}
-        
-        # スケーリングパラメータ
-        if scaling == "iterative":
-            params.update({"max_iter": 10, "tol": 1e-8})
-        
-        # 名前を設定
-        name = f"{scaling.capitalize()}_{regularization.capitalize()}"
-        
-        configs.append((name, scaling, regularization, params))
+    for config_item in config_str.split(','):
+        if not config_item or ':' not in config_item:
+            continue
+        scaling, reg = config_item.split(':', 1)
+        name = f"{scaling.capitalize()}_{reg.capitalize()}"
+        configs.append((name, scaling, reg, {}))
     
     return configs
 
 
+def print_available_methods():
+    """使用可能な手法を表示"""
+    print("=== 使用可能なスケーリング手法 ===")
+    for method in CCDCompositeSolver.available_scaling_methods():
+        print(f"- {method}")
+    
+    print("\n=== 使用可能な正則化手法 ===")
+    for method in CCDCompositeSolver.available_regularization_methods():
+        print(f"- {method}")
+    
+    print("\n=== 使用可能なプリセット設定 ===")
+    for name, scaling, regularization, params in get_combined_presets():
+        param_str = ", ".join([f"{k}={v}" for k, v in params.items()]) if params else "なし"
+        print(f"- {name}: スケーリング={scaling}, 正則化={regularization}, パラメータ={param_str}")
+
+
 def run_cli():
-    """コマンドラインインターフェースの実行"""
+    """シンプル化されたコマンドラインインターフェースの実行"""
     args = parse_args()
     
     # グリッド設定
@@ -211,133 +170,53 @@ def run_cli():
     
     # コマンドに応じた処理
     if args.command == 'test':
-        from ccd_tester import CCDMethodTester
+        # ソルバーの生成
+        solver = get_solver(args, grid_config)
+        # テスターの実行
+        tester = CCDMethodTester(CCDCompositeSolver, grid_config, x_range, {})
+        tester.solver = solver  # 直接インスタンスを設定
         
-        if args.preset:
-            # プリセット設定を使用
-            scaling, regularization, preset_params = get_preset_by_name(args.preset)
-            
-            # コマンドラインパラメータで上書き
-            if args.param:
-                user_params = parse_params(args.param)
-                preset_params.update(user_params)
-            
-            solver_name = args.preset.capitalize()
-            print(f"プリセット設定: {solver_name}, スケーリング={scaling}, 正則化={regularization}")
-            
-            solver = CCDCompositeSolver(
-                grid_config,
-                scaling=scaling,
-                regularization=regularization,
-                scaling_params={k: v for k, v in preset_params.items() 
-                               if k in ["max_iter", "tol"]},
-                regularization_params={k: v for k, v in preset_params.items() 
-                                      if k not in ["max_iter", "tol"]}
-            )
-            
-            tester = CCDMethodTester(CCDCompositeSolver, grid_config, x_range, {})
-            tester.solver = solver  # 直接インスタンスを設定
-            tester.run_tests(prefix=f"{args.prefix}{solver_name.lower()}_", visualize=not args.no_viz)
-        else:
-            # カスタム設定を使用
-            scaling_params = parse_params(args.scaling_param)
-            reg_params = parse_params(args.reg_param)
-            
-            # ソルバーの設定
-            solver_name = f"{args.scaling.capitalize()}_{args.regularization.capitalize()}"
-            print(f"ソルバー設定: スケーリング={args.scaling}, 正則化={args.regularization}")
-            
-            solver = CCDCompositeSolver(
-                grid_config,
-                scaling=args.scaling,
-                regularization=args.regularization,
-                scaling_params=scaling_params,
-                regularization_params=reg_params
-            )
-            
-            tester = CCDMethodTester(CCDCompositeSolver, grid_config, x_range, {})
-            tester.solver = solver  # 直接インスタンスを設定
-            tester.run_tests(prefix=f"{args.prefix}{solver_name.lower()}_", visualize=not args.no_viz)
+        solver_name = args.preset.capitalize() if args.preset else f"{args.scaling.capitalize()}_{args.reg.capitalize()}"
+        print(f"テスト実行中: {solver_name}")
+        tester.run_tests(prefix=f"{solver_name.lower()}_", visualize=not args.no_viz)
         
     elif args.command == 'diagnostics':
-        from ccd_diagnostics import CCDSolverDiagnostics
+        # ソルバーの生成
+        solver = get_solver(args, grid_config)
+        # 診断の実行
+        diagnostics = CCDSolverDiagnostics(CCDCompositeSolver, grid_config, {})
+        diagnostics.solver = solver  # 直接インスタンスを設定
         
-        if args.preset:
-            # プリセット設定を使用
-            scaling, regularization, preset_params = get_preset_by_name(args.preset)
-            
-            # コマンドラインパラメータで上書き
-            if args.param:
-                user_params = parse_params(args.param)
-                preset_params.update(user_params)
-            
-            solver_name = args.preset.capitalize()
-            print(f"プリセット設定: {solver_name}, スケーリング={scaling}, 正則化={regularization}")
-            
-            solver = CCDCompositeSolver(
-                grid_config,
-                scaling=scaling,
-                regularization=regularization,
-                scaling_params={k: v for k, v in preset_params.items() 
-                               if k in ["max_iter", "tol"]},
-                regularization_params={k: v for k, v in preset_params.items() 
-                                      if k not in ["max_iter", "tol"]}
-            )
-            
-            diagnostics = CCDSolverDiagnostics(CCDCompositeSolver, grid_config, {})
-            diagnostics.solver = solver  # 直接インスタンスを設定
-            diagnostics.perform_full_diagnosis(visualize=args.viz)
-        else:
-            # カスタム設定を使用
-            scaling_params = parse_params(args.scaling_param)
-            reg_params = parse_params(args.reg_param)
-            
-            # ソルバーの設定
-            solver_name = f"{args.scaling.capitalize()}_{args.regularization.capitalize()}"
-            print(f"ソルバー設定: スケーリング={args.scaling}, 正則化={args.regularization}")
-            
-            solver = CCDCompositeSolver(
-                grid_config,
-                scaling=args.scaling,
-                regularization=args.regularization,
-                scaling_params=scaling_params,
-                regularization_params=reg_params
-            )
-            
-            diagnostics = CCDSolverDiagnostics(CCDCompositeSolver, grid_config, {})
-            diagnostics.solver = solver  # 直接インスタンスを設定
-            diagnostics.perform_full_diagnosis(visualize=args.viz)
+        solver_name = args.preset.capitalize() if args.preset else f"{args.scaling.capitalize()}_{args.reg.capitalize()}"
+        print(f"診断実行中: {solver_name}")
+        diagnostics.perform_full_diagnosis(visualize=args.viz)
         
     elif args.command == 'compare':
-        from solver_comparator import SolverComparator
-        
         configs = []
         
-        if args.presets:
+        if args.mode == 'presets':
             # プリセット設定を比較
             configs = get_combined_presets()
-        elif args.scaling_presets:
-            # スケーリングプリセットのみを比較
-            scaling_presets = get_scaling_presets()
-            configs = [(name, scaling, "none", params) for name, scaling, params in scaling_presets]
-        elif args.reg_presets:
-            # 正則化プリセットのみを比較
-            reg_presets = get_regularization_presets()
-            configs = [(name, "none", reg, params) for name, reg, params in reg_presets]
-        elif args.custom:
+        elif args.mode == 'scaling':
+            # 代表的なスケーリング手法を比較
+            scaling_methods = CCDCompositeSolver.available_scaling_methods()
+            configs = [(s.capitalize(), s, "none", {}) for s in scaling_methods]
+        elif args.mode == 'reg':
+            # 代表的な正則化手法を比較
+            reg_methods = CCDCompositeSolver.available_regularization_methods()
+            configs = [(r.capitalize(), "none", r, {}) for r in reg_methods]
+        elif args.mode == 'custom' and args.configs:
             # カスタム設定を比較
-            configs = get_custom_configs(args.custom)
-        elif args.configs:
-            # 指定された設定を比較
-            configs = [parse_config_spec(spec) for spec in args.configs]
-        else:
-            print("エラー: --presets, --scaling-presets, --reg-presets, --custom, または --configs のいずれかを指定してください")
+            configs = parse_custom_configs(args.configs)
+        
+        if not configs:
+            print("エラー: 比較する設定が指定されていません")
             return
         
-        # ソルバーリストを生成
+        # ソルバーリストの生成
         solvers_list = []
         for name, scaling, regularization, params in configs:
-            # パラメータを分離
+            # スケーリングと正則化のパラメータを分離
             scaling_params = {k: v for k, v in params.items() if k in ["max_iter", "tol"]}
             reg_params = {k: v for k, v in params.items() if k not in ["max_iter", "tol"]}
             
@@ -353,58 +232,26 @@ def run_cli():
             solvers_list.append((name, CCDCompositeSolver, {"solver": solver}))
         
         # 比較を実行
+        print(f"比較実行中: {len(configs)}個の設定を比較します")
         comparator = SolverComparator(solvers_list, grid_config, x_range)
         comparator.run_comparison(save_results=not args.no_save, visualize=not args.no_viz)
     
     elif args.command == 'list':
-        # 利用可能な設定を一覧表示
-        if args.scaling:
-            # スケーリング手法のみ表示
-            print("=== 利用可能なスケーリング手法 ===")
-            for i, method in enumerate(CCDCompositeSolver.available_scaling_methods(), 1):
-                print(f"{i}. {method}")
-        elif args.regularization:
-            # 正則化手法のみ表示
-            print("=== 利用可能な正則化手法 ===")
-            for i, method in enumerate(CCDCompositeSolver.available_regularization_methods(), 1):
-                print(f"{i}. {method}")
-        elif args.presets:
-            # プリセット設定のみ表示
-            print("=== 利用可能なプリセット設定 ===")
+        if args.type == 'all':
+            print_available_methods()
+        elif args.type == 'scaling':
+            print("=== 使用可能なスケーリング手法 ===")
+            for method in CCDCompositeSolver.available_scaling_methods():
+                print(f"- {method}")
+        elif args.type == 'reg':
+            print("=== 使用可能な正則化手法 ===")
+            for method in CCDCompositeSolver.available_regularization_methods():
+                print(f"- {method}")
+        elif args.type == 'presets':
+            print("=== 使用可能なプリセット設定 ===")
             for name, scaling, regularization, params in get_combined_presets():
                 param_str = ", ".join([f"{k}={v}" for k, v in params.items()]) if params else "なし"
                 print(f"- {name}: スケーリング={scaling}, 正則化={regularization}, パラメータ={param_str}")
-        else:
-            # すべての情報を表示
-            print("=== CCDCompositeSolver - 統合ソルバー ===")
-            
-            print("\n=== スケーリング手法 ===")
-            for i, method in enumerate(CCDCompositeSolver.available_scaling_methods(), 1):
-                print(f"{i}. {method}")
-            
-            print("\n=== 正則化手法 ===")
-            for i, method in enumerate(CCDCompositeSolver.available_regularization_methods(), 1):
-                print(f"{i}. {method}")
-            
-            print("\n=== プリセット設定 ===")
-            for name, scaling, regularization, params in get_combined_presets():
-                param_str = ", ".join([f"{k}={v}" for k, v in params.items()]) if params else "なし"
-                print(f"- {name}: スケーリング={scaling}, 正則化={regularization}, パラメータ={param_str}")
-            
-            print("\n=== 使用例 ===")
-            print("# プリセット設定を使用")
-            print("python main.py test --preset tikhonov --param alpha:1e-5")
-            print("python main.py test --preset rehu")
-            print("\n# カスタム設定を使用")
-            print("python main.py test --scaling rehu --regularization tikhonov --reg-param alpha:1e-6")
-            print("\n# 複数設定の比較")
-            print("python main.py compare --presets")
-            print("python main.py compare --custom \"rehu:tikhonov\" \"normalization:landweber\"")
-            print("python main.py compare --scaling-presets")
-            print("python main.py compare --reg-presets")
-    
-    else:
-        print("有効なコマンドを指定してください: test, diagnostics, compare, または list")
 
 
 if __name__ == "__main__":

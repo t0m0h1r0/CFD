@@ -58,8 +58,9 @@ def visualize_derivative_results(
 
     # 1階導関数
     axes[0, 1].plot(x_fine, analytical_df, "b-", label="Analytical")
+    # 線で表示するように変更
     axes[0, 1].plot(
-        x_points, numerical_derivatives[::3], "ro", label="Numerical"
+        x_points, numerical_derivatives[::3], "r-", label="Numerical"
     )
     axes[0, 1].set_title("First Derivative")
     axes[0, 1].legend()
@@ -67,8 +68,9 @@ def visualize_derivative_results(
 
     # 2階導関数
     axes[1, 0].plot(x_fine, analytical_d2f, "b-", label="Analytical")
+    # 線で表示するように変更
     axes[1, 0].plot(
-        x_points, numerical_derivatives[1::3], "ro", label="Numerical"
+        x_points, numerical_derivatives[1::3], "r-", label="Numerical"
     )
     axes[1, 0].set_title("Second Derivative")
     axes[1, 0].legend()
@@ -76,8 +78,9 @@ def visualize_derivative_results(
 
     # 3階導関数
     axes[1, 1].plot(x_fine, analytical_d3f, "b-", label="Analytical")
+    # 線で表示するように変更
     axes[1, 1].plot(
-        x_points, numerical_derivatives[2::3], "ro", label="Numerical"
+        x_points, numerical_derivatives[2::3], "r-", label="Numerical"
     )
     axes[1, 1].set_title("Third Derivative")
     axes[1, 1].legend()
