@@ -196,7 +196,7 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
 
         KR = jnp.array([
             # 左点,  中点,  右点
-            [   -4,   8,    -4],  # 1階導関数の係数
+            [    4,  -8,     4],  # 1階導関数の係数
             [ 55/2, -40,  25/2],  # 2階導関数の係数
             [207/2,-132,  57/2]   # 3階導関数の係数
         ])
