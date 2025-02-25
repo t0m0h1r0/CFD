@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Tuple
 
 from ccd_core import GridConfig
 from unified_solver import CCDCompositeSolver
+from presets import get_scaling_presets, get_regularization_presets, get_combined_presets, get_preset_by_name
 
 
 def parse_args():
@@ -24,11 +25,12 @@ def parse_args():
     # サブコマンドの設定
     subparsers = parser.add_subparsers(dest='command', help='実行するコマンド')
     
+    # プリセット名のリストを取得
+    preset_names = [preset[0].lower() for preset in get_combined_presets()]
+    
     # テストコマンド
     test_parser = subparsers.add_parser('test', help='テストを実行')
-    test_parser.add_argument('--preset', type=str, default=None,
-                          choices=['basic', 'normalization', 'rehu', 'tikhonov', 
-                                  'landweber', 'precomputed_landweber', 'iterative'],
+    test_parser.add_argument('--preset', type=str, default=None, choices=preset_names,
                           help='プリセットソルバー設定')
     test_parser.add_argument('--prefix', type=str, default='', help='出力ファイルの接頭辞')
     test_parser.add_argument('--param', nargs='+', help='プリセットのパラメータ ("名前:値" 形式)')
@@ -46,9 +48,7 @@ def parse_args():
     
     # 診断コマンド
     diag_parser = subparsers.add_parser('diagnostics', help='診断を実行')
-    diag_parser.add_argument('--preset', type=str, default=None,
-                          choices=['basic', 'normalization', 'rehu', 'tikhonov', 
-                                  'landweber', 'precomputed_landweber', 'iterative'],
+    diag_parser.add_argument('--preset', type=str, default=None, choices=preset_names,
                           help='プリセットソルバー設定')
     diag_parser.add_argument('--param', nargs='+', help='プリセットのパラメータ ("名前:値" 形式)')
     diag_parser.add_argument('--viz', action='store_true', help='可視化を有効化')
@@ -68,6 +68,8 @@ def parse_args():
     compare_parser.add_argument('--configs', nargs='+', 
                               help='比較する設定 ("名前:スケーリング:正則化:パラメータ" 形式)')
     compare_parser.add_argument('--presets', action='store_true', help='プリセット設定を比較')
+    compare_parser.add_argument('--scaling-presets', action='store_true', help='スケーリングプリセットを比較')
+    compare_parser.add_argument('--reg-presets', action='store_true', help='正則化プリセットを比較')
     compare_parser.add_argument('--custom', nargs='+', 
                               help='独自組み合わせ ("スケーリング:正則化" 形式の組み合わせのリスト)')
     compare_parser.add_argument('--no-viz', action='store_true', help='可視化を無効化')
@@ -75,6 +77,9 @@ def parse_args():
     
     # 一覧表示コマンド
     list_parser = subparsers.add_parser('list', help='使用可能な設定を一覧表示')
+    list_parser.add_argument('--scaling', action='store_true', help='スケーリング手法のみ表示')
+    list_parser.add_argument('--regularization', action='store_true', help='正則化手法のみ表示')
+    list_parser.add_argument('--presets', action='store_true', help='プリセット設定のみ表示')
     
     return parser.parse_args()
 
@@ -147,72 +152,6 @@ def parse_config_spec(config_spec: str) -> Tuple[str, str, str, Dict[str, Any]]:
     return name, scaling, regularization, params
 
 
-def create_preset_solver(preset: str, grid_config: GridConfig, params: Dict[str, Any] = None) -> CCDCompositeSolver:
-    """
-    プリセット設定からソルバーを作成
-    
-    Args:
-        preset: プリセット名
-        grid_config: グリッド設定
-        params: 追加パラメータ
-        
-    Returns:
-        設定されたソルバーインスタンス
-    """
-    params = params or {}
-    
-    if preset == "basic":
-        return CCDCompositeSolver.create_basic_solver(grid_config)
-    elif preset == "normalization":
-        return CCDCompositeSolver.create_normalization_solver(grid_config)
-    elif preset == "rehu":
-        return CCDCompositeSolver.create_rehu_solver(grid_config)
-    elif preset == "iterative":
-        max_iter = params.get("max_iter", 10)
-        tol = params.get("tol", 1e-8)
-        return CCDCompositeSolver.create_iterative_solver(grid_config, max_iter, tol)
-    elif preset == "tikhonov":
-        alpha = params.get("alpha", 1e-6)
-        return CCDCompositeSolver.create_tikhonov_solver(grid_config, alpha)
-    elif preset == "landweber":
-        iterations = params.get("iterations", 20)
-        relaxation = params.get("relaxation", 0.1)
-        return CCDCompositeSolver.create_landweber_solver(grid_config, iterations, relaxation)
-    elif preset == "precomputed_landweber":
-        iterations = params.get("iterations", 20)
-        relaxation = params.get("relaxation", 0.1)
-        return CCDCompositeSolver.create_precomputed_landweber_solver(grid_config, iterations, relaxation)
-    else:
-        # デフォルトは基本ソルバー
-        return CCDCompositeSolver.create_basic_solver(grid_config)
-
-
-def get_preset_configs() -> List[Tuple[str, str, str, Dict[str, Any]]]:
-    """
-    すべてのプリセット設定を取得
-    
-    Returns:
-        [(名前, スケーリング, 正則化, パラメータ辞書), ...] の形式のリスト
-    """
-    presets = [
-        ("Basic", "none", "none", {}),
-        ("Normalization", "normalization", "none", {}),
-        ("Rehu", "rehu", "none", {}),
-        ("Equalization", "equalization", "none", {}),
-        ("Iterative", "iterative", "none", {"max_iter": 10, "tol": 1e-8}),
-        ("Tikhonov", "none", "tikhonov", {"alpha": 1e-6}),
-        ("Tikhonov_Strong", "none", "tikhonov", {"alpha": 1e-4}),
-        ("Landweber", "none", "landweber", {"iterations": 20, "relaxation": 0.1}),
-        ("PrecomputedLandweber", "none", "precomputed_landweber", {"iterations": 20, "relaxation": 0.1}),
-        ("SVD", "none", "svd", {"threshold": 1e-10}),
-        ("Rehu_Tikhonov", "rehu", "tikhonov", {"alpha": 1e-6}),
-        ("Normalization_Landweber", "normalization", "landweber", {"iterations": 20, "relaxation": 0.1}),
-        ("Iterative_SVD", "iterative", "svd", {"max_iter": 10, "tol": 1e-8, "threshold": 1e-10})
-    ]
-    
-    return presets
-
-
 def get_custom_configs(custom_specs: List[str]) -> List[Tuple[str, str, str, Dict[str, Any]]]:
     """
     カスタム設定仕様からソルバー設定を生成
@@ -232,12 +171,25 @@ def get_custom_configs(custom_specs: List[str]) -> List[Tuple[str, str, str, Dic
         
         # デフォルトパラメータ
         params = {}
+        # 正則化パラメータ
         if regularization == "tikhonov":
             params = {"alpha": 1e-6}
-        elif regularization in ["landweber", "precomputed_landweber"]:
-            params = {"iterations": 20, "relaxation": 0.1}
         elif regularization == "svd":
             params = {"threshold": 1e-10}
+        elif regularization == "tsvd":
+            params = {"threshold_ratio": 1e-5}
+        elif regularization in ["landweber", "precomputed_landweber"]:
+            params = {"iterations": 20, "relaxation": 0.1}
+        elif regularization == "lsqr":
+            params = {"iterations": 20, "damp": 0}
+        elif regularization in ["total_variation", "l1"]:
+            params = {"alpha": 1e-4, "iterations": 50, "tol": 1e-6}
+        elif regularization == "elastic_net":
+            params = {"alpha": 1e-4, "l1_ratio": 0.5, "iterations": 100, "tol": 1e-6}
+        
+        # スケーリングパラメータ
+        if scaling == "iterative":
+            params.update({"max_iter": 10, "tol": 1e-8})
         
         # 名前を設定
         name = f"{scaling.capitalize()}_{regularization.capitalize()}"
@@ -263,15 +215,29 @@ def run_cli():
         
         if args.preset:
             # プリセット設定を使用
-            params = parse_params(args.param)
-            solver = create_preset_solver(args.preset, grid_config, params)
-            solver_name = args.preset.capitalize()
+            scaling, regularization, preset_params = get_preset_by_name(args.preset)
             
-            # ソルバーインスタンスを直接使用する場合、grid_configは渡さない
-            tester = CCDMethodTester(solver.__class__, grid_config, x_range, {})
+            # コマンドラインパラメータで上書き
+            if args.param:
+                user_params = parse_params(args.param)
+                preset_params.update(user_params)
+            
+            solver_name = args.preset.capitalize()
+            print(f"プリセット設定: {solver_name}, スケーリング={scaling}, 正則化={regularization}")
+            
+            solver = CCDCompositeSolver(
+                grid_config,
+                scaling=scaling,
+                regularization=regularization,
+                scaling_params={k: v for k, v in preset_params.items() 
+                               if k in ["max_iter", "tol"]},
+                regularization_params={k: v for k, v in preset_params.items() 
+                                      if k not in ["max_iter", "tol"]}
+            )
+            
+            tester = CCDMethodTester(CCDCompositeSolver, grid_config, x_range, {})
             tester.solver = solver  # 直接インスタンスを設定
             tester.run_tests(prefix=f"{args.prefix}{solver_name.lower()}_", visualize=not args.no_viz)
-        # カスタム設定を使用する部分の修正
         else:
             # カスタム設定を使用
             scaling_params = parse_params(args.scaling_param)
@@ -289,8 +255,7 @@ def run_cli():
                 regularization_params=reg_params
             )
             
-            # 同様に空の辞書を渡し、直接インスタンスを設定
-            tester = CCDMethodTester(solver.__class__, grid_config, x_range, {})
+            tester = CCDMethodTester(CCDCompositeSolver, grid_config, x_range, {})
             tester.solver = solver  # 直接インスタンスを設定
             tester.run_tests(prefix=f"{args.prefix}{solver_name.lower()}_", visualize=not args.no_viz)
         
@@ -299,13 +264,27 @@ def run_cli():
         
         if args.preset:
             # プリセット設定を使用
-            params = parse_params(args.param)
-            solver = create_preset_solver(args.preset, grid_config, params)
-            solver_name = args.preset.capitalize()
+            scaling, regularization, preset_params = get_preset_by_name(args.preset)
             
-            # ソルバークラスとインスタンスを直接渡す
-            diagnostics = CCDSolverDiagnostics(solver.__class__, grid_config, 
-                                              {"grid_config": grid_config})
+            # コマンドラインパラメータで上書き
+            if args.param:
+                user_params = parse_params(args.param)
+                preset_params.update(user_params)
+            
+            solver_name = args.preset.capitalize()
+            print(f"プリセット設定: {solver_name}, スケーリング={scaling}, 正則化={regularization}")
+            
+            solver = CCDCompositeSolver(
+                grid_config,
+                scaling=scaling,
+                regularization=regularization,
+                scaling_params={k: v for k, v in preset_params.items() 
+                               if k in ["max_iter", "tol"]},
+                regularization_params={k: v for k, v in preset_params.items() 
+                                      if k not in ["max_iter", "tol"]}
+            )
+            
+            diagnostics = CCDSolverDiagnostics(CCDCompositeSolver, grid_config, {})
             diagnostics.solver = solver  # 直接インスタンスを設定
             diagnostics.perform_full_diagnosis(visualize=args.viz)
         else:
@@ -325,18 +304,26 @@ def run_cli():
                 regularization_params=reg_params
             )
             
-            # ソルバークラスとインスタンスを直接渡す
-            diagnostics = CCDSolverDiagnostics(solver.__class__, grid_config, 
-                                              {"grid_config": grid_config})
+            diagnostics = CCDSolverDiagnostics(CCDCompositeSolver, grid_config, {})
             diagnostics.solver = solver  # 直接インスタンスを設定
             diagnostics.perform_full_diagnosis(visualize=args.viz)
         
     elif args.command == 'compare':
         from solver_comparator import SolverComparator
         
+        configs = []
+        
         if args.presets:
             # プリセット設定を比較
-            configs = get_preset_configs()
+            configs = get_combined_presets()
+        elif args.scaling_presets:
+            # スケーリングプリセットのみを比較
+            scaling_presets = get_scaling_presets()
+            configs = [(name, scaling, "none", params) for name, scaling, params in scaling_presets]
+        elif args.reg_presets:
+            # 正則化プリセットのみを比較
+            reg_presets = get_regularization_presets()
+            configs = [(name, "none", reg, params) for name, reg, params in reg_presets]
         elif args.custom:
             # カスタム設定を比較
             configs = get_custom_configs(args.custom)
@@ -344,20 +331,15 @@ def run_cli():
             # 指定された設定を比較
             configs = [parse_config_spec(spec) for spec in args.configs]
         else:
-            print("エラー: --presets, --custom, または --configs のいずれかを指定してください")
+            print("エラー: --presets, --scaling-presets, --reg-presets, --custom, または --configs のいずれかを指定してください")
             return
         
         # ソルバーリストを生成
         solvers_list = []
         for name, scaling, regularization, params in configs:
-            # スケーリングと正則化のパラメータを分離
-            scaling_params = {}
-            reg_params = {}
-            for key, value in params.items():
-                if key in ["alpha", "threshold", "iterations", "relaxation"]:
-                    reg_params[key] = value
-                else:
-                    scaling_params[key] = value
+            # パラメータを分離
+            scaling_params = {k: v for k, v in params.items() if k in ["max_iter", "tol"]}
+            reg_params = {k: v for k, v in params.items() if k not in ["max_iter", "tol"]}
             
             # ソルバーを作成
             solver = CCDCompositeSolver(
@@ -368,7 +350,7 @@ def run_cli():
                 regularization_params=reg_params
             )
             
-            solvers_list.append((name, solver.__class__, {"grid_config": grid_config, "solver": solver}))
+            solvers_list.append((name, CCDCompositeSolver, {"solver": solver}))
         
         # 比較を実行
         comparator = SolverComparator(solvers_list, grid_config, x_range)
@@ -376,30 +358,50 @@ def run_cli():
     
     elif args.command == 'list':
         # 利用可能な設定を一覧表示
-        print("=== CCDCompositeSolver - 使用可能な設定 ===")
-        
-        print("\n=== スケーリング手法 ===")
-        for i, method in enumerate(CCDCompositeSolver.available_scaling_methods(), 1):
-            print(f"{i}. {method}")
-        
-        print("\n=== 正則化手法 ===")
-        for i, method in enumerate(CCDCompositeSolver.available_regularization_methods(), 1):
-            print(f"{i}. {method}")
-        
-        print("\n=== プリセット設定 ===")
-        for name, scaling, regularization, params in get_preset_configs():
-            param_str = ", ".join([f"{k}={v}" for k, v in params.items()]) if params else "なし"
-            print(f"- {name}: スケーリング={scaling}, 正則化={regularization}, パラメータ={param_str}")
-        
-        print("\n=== 使用例 ===")
-        print("# プリセット設定を使用")
-        print("python main.py test --preset tikhonov --param alpha:1e-5")
-        print("python main.py test --preset rehu")
-        print("\n# カスタム設定を使用")
-        print("python main.py test --scaling rehu --regularization tikhonov --reg-param alpha:1e-6")
-        print("\n# 複数設定の比較")
-        print("python main.py compare --presets")
-        print("python main.py compare --custom \"rehu:tikhonov\" \"normalization:landweber\"")
+        if args.scaling:
+            # スケーリング手法のみ表示
+            print("=== 利用可能なスケーリング手法 ===")
+            for i, method in enumerate(CCDCompositeSolver.available_scaling_methods(), 1):
+                print(f"{i}. {method}")
+        elif args.regularization:
+            # 正則化手法のみ表示
+            print("=== 利用可能な正則化手法 ===")
+            for i, method in enumerate(CCDCompositeSolver.available_regularization_methods(), 1):
+                print(f"{i}. {method}")
+        elif args.presets:
+            # プリセット設定のみ表示
+            print("=== 利用可能なプリセット設定 ===")
+            for name, scaling, regularization, params in get_combined_presets():
+                param_str = ", ".join([f"{k}={v}" for k, v in params.items()]) if params else "なし"
+                print(f"- {name}: スケーリング={scaling}, 正則化={regularization}, パラメータ={param_str}")
+        else:
+            # すべての情報を表示
+            print("=== CCDCompositeSolver - 統合ソルバー ===")
+            
+            print("\n=== スケーリング手法 ===")
+            for i, method in enumerate(CCDCompositeSolver.available_scaling_methods(), 1):
+                print(f"{i}. {method}")
+            
+            print("\n=== 正則化手法 ===")
+            for i, method in enumerate(CCDCompositeSolver.available_regularization_methods(), 1):
+                print(f"{i}. {method}")
+            
+            print("\n=== プリセット設定 ===")
+            for name, scaling, regularization, params in get_combined_presets():
+                param_str = ", ".join([f"{k}={v}" for k, v in params.items()]) if params else "なし"
+                print(f"- {name}: スケーリング={scaling}, 正則化={regularization}, パラメータ={param_str}")
+            
+            print("\n=== 使用例 ===")
+            print("# プリセット設定を使用")
+            print("python main.py test --preset tikhonov --param alpha:1e-5")
+            print("python main.py test --preset rehu")
+            print("\n# カスタム設定を使用")
+            print("python main.py test --scaling rehu --regularization tikhonov --reg-param alpha:1e-6")
+            print("\n# 複数設定の比較")
+            print("python main.py compare --presets")
+            print("python main.py compare --custom \"rehu:tikhonov\" \"normalization:landweber\"")
+            print("python main.py compare --scaling-presets")
+            print("python main.py compare --reg-presets")
     
     else:
         print("有効なコマンドを指定してください: test, diagnostics, compare, または list")

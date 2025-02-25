@@ -69,45 +69,45 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         # 左境界の行列群
         B0 = jnp.array([
             # f',  f'',  f'''
-            [  1,   0,  0],  # Pattern 1
-            [  0,   1,  0],  # Pattern 2
-            [ 14,   2,  0]   # Pattern 3
+            [  1,  0,  0],  # Pattern 1
+            [  0,  1,  0],  # Pattern 2
+            [  0,  0,  1]   # Pattern 3
         ])
 
         C0 = jnp.array([
             # f',  f'',  f'''
-            [  2,  -1,  0],  # Pattern 1
-            [ -6,   5,  0],  # Pattern 2
-            [ 16,  -4,  0]   # Pattern 3
+            [  0, -2,  0],  # Pattern 1
+            [  8, 12,  0],  # Pattern 2
+            [-48,-39,  0]   # Pattern 3
         ])
 
         D0 = jnp.array([
             # f',  f'',  f'''
-            [  0,   0,   0],  # Pattern 1
-            [  0,   0,   0],  # Pattern 2
-            [  0,   0,   0]   # Pattern 3
+            [ -1,  0,  0],  # Pattern 1
+            [  7,  0,  0],  # Pattern 2
+            [-27,  0,  0]   # Pattern 3
         ])
 
         # 右境界の行列 - 左境界と完全に対称的に
         BR = jnp.array([
             # f',  f'',  f'''
-            [  1,   0,  0],  # Pattern 1
-            [  0,   1,  0],  # Pattern 2
-            [ 14,  -2,  0]   # Pattern 3
+            [  1,  0,  0],  # Pattern 1
+            [  0,  1,  0],  # Pattern 2
+            [  0,  0,  1]   # Pattern 3
         ])
 
         AR = jnp.array([
             # f',  f'',  f'''
-            [  2,   1,  0],  # Pattern 1
-            [  6,   5,  0],  # Pattern 2
-            [ 16,   4,  0]   # Pattern 3
+            [  0,  2,  0],  # Pattern 1
+            [ -8, 12,  0],  # Pattern 2
+            [-48, 39,  0]   # Pattern 3
         ])
 
         ZR = jnp.array([
             # f',  f'',  f'''
-            [  0,   0,   0],  # Pattern 1
-            [  0,   0,   0],  # Pattern 2
-            [  0,   0,   0]   # Pattern 3
+            [ -1,  0,  0],  # Pattern 1
+            [ -7,  0,  0],  # Pattern 2
+            [-27,  0,  0]   # Pattern 3
         ])
 
         return B0, C0, D0, ZR, AR, BR
@@ -126,8 +126,8 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
             ])
         DEGREE_B = jnp.array([
             [1, h, h**2],
-            [1, h, h**2],
-            [1, h, h**2],
+            [1/h, 1, h],
+            [1/h**2, h, 1],
             ])
 
         # 次数を適用
@@ -189,16 +189,16 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
         # 左境界用の行列
         K0 = jnp.array([
             # 左点,  中点,  右点
-            [ -7/2,   4,  -1/2],  # 1階導関数の係数
-            [    9, -12,     3],  # 2階導関数の係数
-            [  -31,   2,    -1]   # 3階導関数の係数
+            [   -4,   8,    -4],  # 1階導関数の係数
+            [ 25/2, -40,  55/2],  # 2階導関数の係数
+            [-57/2, 132,-207/2]   # 3階導関数の係数
         ])
 
         KR = jnp.array([
             # 左点,  中点,  右点
-            [  1/2,  -4,   7/2],  # 1階導関数の係数
-            [    3, -12,     9],  # 2階導関数の係数
-            [    1,  -2,    31]   # 3階導関数の係数
+            [   -4,   8,    -4],  # 1階導関数の係数
+            [ 55/2, -40,  25/2],  # 2階導関数の係数
+            [207/2,-132,  57/2]   # 3階導関数の係数
         ])
 
         return K0, KR
@@ -215,8 +215,8 @@ class RightHandBlockBuilder(BlockMatrixBuilder):
             ])
         DEGREE_B = jnp.array([
             [1/h,  ],
-            [1/h   ],
-            [1/h   ],
+            [1/h**2],
+            [1/h**3],
             ])
         
         K_interior = K_interior * DEGREE_I
