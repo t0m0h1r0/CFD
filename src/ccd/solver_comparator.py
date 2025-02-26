@@ -20,15 +20,14 @@ class SolverComparator:
     
     def __init__(
         self, 
-        solvers_list: List[Tuple[str, type, Dict[str, Any]]],
+        solvers_list: List[Tuple[str, CCDMethodTester]],
         grid_config: GridConfig,
         x_range: Tuple[float, float],
         test_functions: Optional[List[TestFunction]] = None
     ):
         """
         Args:
-            solvers_list: [("名前", ソルバークラス, {パラメータ辞書}), ...] の形式のリスト
-                          パラメータ辞書に 'solver' キーがある場合は直接そのインスタンスを使用
+            solvers_list: [("名前", テスターインスタンス), ...] の形式のリスト
             grid_config: グリッド設定
             x_range: x軸の範囲 (開始位置, 終了位置)
             test_functions: テスト関数のリスト (Noneの場合は標準関数セットを使用)
@@ -38,28 +37,14 @@ class SolverComparator:
         self.x_range = x_range
         self.test_functions = test_functions or TestFunctionFactory.create_standard_functions()
         
-        # 各ソルバーのテスターを作成
+        # 各テスターのテスト関数をこのクラスで指定したものに統一
+        for _, tester in solvers_list:
+            tester.test_functions = self.test_functions
+        
+        # テスターを名前をキーとして辞書に保存
         self.testers = {}
-        for name, solver_class, kwargs in solvers_list:
-            # ソルバーインスタンスが直接渡された場合はそれを使用
-            if 'solver' in kwargs:
-                tester = CCDMethodTester(
-                    solver_class, 
-                    grid_config, 
-                    x_range, 
-                    solver_kwargs=kwargs,
-                    test_functions=self.test_functions
-                )
-                tester.solver = kwargs['solver']  # 直接インスタンスをセット
-                self.testers[name] = tester
-            else:
-                self.testers[name] = CCDMethodTester(
-                    solver_class, 
-                    grid_config, 
-                    x_range, 
-                    solver_kwargs=kwargs,
-                    test_functions=self.test_functions
-                )
+        for name, tester in solvers_list:
+            self.testers[name] = tester
     
     def run_comparison(self, save_results: bool = True, visualize: bool = True):
         """
@@ -75,9 +60,8 @@ class SolverComparator:
         results = {}  # ソルバー名 -> {関数名 -> [1階誤差, 2階誤差, 3階誤差]} の辞書
         timings = {}  # ソルバー名 -> {関数名 -> 計算時間} の辞書
         
-        for name, _, _ in self.solvers_list:
+        for name, tester in self.solvers_list:
             print(f"\n===== Testing {name} solver =====")
-            tester = self.testers[name]
             
             # テストを実行
             test_results = tester.run_tests(prefix=f"{name.lower()}_", visualize=visualize)
@@ -107,7 +91,7 @@ class SolverComparator:
                 "grid_points": self.grid_config.n_points,
                 "grid_spacing": self.grid_config.h,
                 "x_range": self.x_range,
-                "solvers": [name for name, _, _ in self.solvers_list],
+                "solvers": [name for name, _ in self.solvers_list],
                 "results": results,
                 "timings": timings
             }
@@ -122,7 +106,7 @@ class SolverComparator:
         """比較表を出力"""
         # 各テスト関数ごとに比較表を出力
         print("\n===== Error Comparison =====")
-        for func_name in results[self.solvers_list[0][0]].keys():
+        for func_name in next(iter(results.values())).keys():
             print(f"\n{func_name} Function:")
             print(f"{'Solver':<15} {'1st Der.':<12} {'2nd Der.':<12} {'3rd Der.':<12} {'Time (s)':<12}")
             print("-" * 63)

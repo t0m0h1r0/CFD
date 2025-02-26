@@ -120,6 +120,9 @@ class CCDCompositeSolver(BaseCCDSolver):
         if silent:
             scaling_registry.enable_silent_mode()
             regularization_registry.enable_silent_mode()
+        else:
+            scaling_registry.disable_silent_mode()
+            regularization_registry.disable_silent_mode()
         
         # プラグインが既にロードされているかどうかを確認
         if not hasattr(CCDCompositeSolver, '_plugins_loaded'):
@@ -134,6 +137,11 @@ class CCDCompositeSolver(BaseCCDSolver):
             # 正則化戦略のディレクトリをスキャン
             regularization_dir = os.path.join(current_dir, 'regularization')
             if os.path.exists(regularization_dir) and os.path.isdir(regularization_dir):
+                # デバッグ出力
+                if not silent:
+                    print(f"正則化ディレクトリのスキャン: {regularization_dir}")
+                    print(f"ディレクトリ内のファイル: {os.listdir(regularization_dir)}")
+                
                 regularization_registry.scan_directory(regularization_dir)
             
             # フラグを設定してプラグインが読み込まれたことを記録
@@ -167,8 +175,27 @@ class CCDCompositeSolver(BaseCCDSolver):
         cls.load_plugins()
         
         # 利用可能な手法を表示
-        scaling_registry.display_available_methods(cls.get_scaling_param_info)
-        regularization_registry.display_available_methods(cls.get_regularization_param_info)
+        print("=== 使用可能なスケーリング手法 ===")
+        for method in sorted(cls.available_scaling_methods()):
+            param_info = cls.get_scaling_param_info(method)
+            if param_info:
+                params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+                print(f"- {method} - パラメータ: {params}")
+            else:
+                print(f"- {method}")
+        
+        print("\n=== 使用可能な正則化手法 ===")
+        for method in sorted(cls.available_regularization_methods()):
+            # 特定の冗長な名前はスキップ
+            if method in ['s_v_d', 't_s_v_d', 'l_s_q_r']:
+                continue
+                
+            param_info = cls.get_regularization_param_info(method)
+            if param_info:
+                params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+                print(f"- {method} - パラメータ: {params}")
+            else:
+                print(f"- {method}")
     
     @classmethod
     def get_scaling_param_info(cls, scaling_name: str) -> Dict[str, Dict[str, Any]]:
