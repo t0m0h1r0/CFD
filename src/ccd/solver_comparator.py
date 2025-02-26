@@ -60,6 +60,9 @@ class SolverComparator:
         results = {}  # ソルバー名 -> {関数名 -> [1階誤差, 2階誤差, 3階誤差]} の辞書
         timings = {}  # ソルバー名 -> {関数名 -> 計算時間} の辞書
         
+        # 出力ディレクトリを作成
+        os.makedirs("results", exist_ok=True)
+        
         for name, tester in self.solvers_list:
             print(f"\n===== Testing {name} solver =====")
             
@@ -83,7 +86,12 @@ class SolverComparator:
         # 可視化
         if visualize:
             for func in self.test_functions:
-                visualize_error_comparison(results, timings, func.name)
+                visualize_error_comparison(
+                    results, 
+                    timings, 
+                    func.name, 
+                    save_path=f"results/comparison_{func.name.lower()}.png"
+                )
         
         # 結果の保存
         if save_results:

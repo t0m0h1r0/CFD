@@ -6,6 +6,7 @@ CCDソルバーの結果を視覚化するためのユーティリティ関数�
 
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import os
 from typing import Tuple, List, Dict, Any
 
 from test_functions import TestFunction
@@ -88,6 +89,10 @@ def visualize_derivative_results(
 
     plt.tight_layout()
     if save_path:
+        # ディレクトリ部分を取得
+        save_dir = os.path.dirname(save_path)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
         plt.savefig(save_path)
     plt.close()
 
@@ -95,7 +100,8 @@ def visualize_derivative_results(
 def visualize_error_comparison(
     results: Dict[str, Dict[str, List[float]]],
     timings: Dict[str, Dict[str, float]],
-    test_func_name: str
+    test_func_name: str,
+    save_path: str = None
 ):
     """
     異なるソルバー間の誤差比較をプロット
@@ -104,6 +110,7 @@ def visualize_error_comparison(
         results: ソルバー名 -> {関数名 -> [1階誤差, 2階誤差, 3階誤差]} の辞書
         timings: ソルバー名 -> {関数名 -> 計算時間} の辞書
         test_func_name: テスト関数名
+        save_path: 保存先のパス（指定がなければ自動生成）
     """
     solver_names = list(results.keys())
     
@@ -144,7 +151,14 @@ def visualize_error_comparison(
     ax2.set_xticklabels(solver_names)
     
     plt.tight_layout()
-    plt.savefig(f"comparison_{test_func_name}.png")
+    
+    # 保存先が指定されていなければデフォルトパスを使用
+    if save_path is None:
+        # 'results' ディレクトリを作成
+        os.makedirs("results", exist_ok=True)
+        save_path = f"results/comparison_{test_func_name.lower()}.png"
+        
+    plt.savefig(save_path)
     plt.close()
 
 
@@ -176,5 +190,9 @@ def visualize_matrix_properties(L: jnp.ndarray, title: str, save_path: str = Non
     plt.tight_layout()
     
     if save_path:
+        # ディレクトリ部分を取得
+        save_dir = os.path.dirname(save_path)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
         plt.savefig(save_path)
     plt.close()
