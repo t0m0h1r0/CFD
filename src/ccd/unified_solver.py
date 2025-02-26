@@ -108,23 +108,48 @@ class CCDCompositeSolver(BaseCCDSolver):
     @staticmethod
     def load_plugins():
         """
-        スケーリングと正則化のプラグインを読み込む
+        スケーリングと正則化のプラグインを読み込む。
+        ロードフラグを使用して二重登録を防止。
         
         Returns:
             (利用可能なスケーリング戦略のリスト, 利用可能な正則化戦略のリスト)
         """
-        # プロジェクトのルートディレクトリを検出
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # スケーリング戦略のディレクトリをスキャン
-        scaling_dir = os.path.join(current_dir, 'scaling')
-        if os.path.exists(scaling_dir) and os.path.isdir(scaling_dir):
-            scaling_registry.scan_directory(scaling_dir)
-        
-        # 正則化戦略のディレクトリをスキャン
-        regularization_dir = os.path.join(current_dir, 'regularization')
-        if os.path.exists(regularization_dir) and os.path.isdir(regularization_dir):
-            regularization_registry.scan_directory(regularization_dir)
+        # プラグインが既にロードされているかどうかを確認
+        if not hasattr(CCDCompositeSolver, '_plugins_loaded'):
+            # プロジェクトのルートディレクトリを検出
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # スケーリング戦略のディレクトリをスキャン
+            scaling_dir = os.path.join(current_dir, 'scaling')
+            if os.path.exists(scaling_dir) and os.path.isdir(scaling_dir):
+                scaling_registry.scan_directory(scaling_dir)
+            
+            # 正則化戦略のディレクトリをスキャン
+            regularization_dir = os.path.join(current_dir, 'regularization')
+            if os.path.exists(regularization_dir) and os.path.isdir(regularization_dir):
+                regularization_registry.scan_directory(regularization_dir)
+            
+            # フラグを設定してプラグインが読み込まれたことを記録
+            CCDCompositeSolver._plugins_loaded = True
+            
+            # 利用可能な戦略を表示（初回のみ）
+            print("=== 使用可能なスケーリング手法 ===")
+            for method in scaling_registry.get_names():
+                param_info = CCDCompositeSolver.get_scaling_param_info(method)
+                if param_info:
+                    params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+                    print(f"- {method} - パラメータ: {params}")
+                else:
+                    print(f"- {method}")
+            
+            print("\n=== 使用可能な正則化手法 ===")
+            for method in regularization_registry.get_names():
+                param_info = CCDCompositeSolver.get_regularization_param_info(method)
+                if param_info:
+                    params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+                    print(f"- {method} - パラメータ: {params}")
+                else:
+                    print(f"- {method}")
         
         return scaling_registry.get_names(), regularization_registry.get_names()
     

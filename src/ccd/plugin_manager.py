@@ -28,14 +28,16 @@ class PluginRegistry(Generic[T]):
         self.base_class = base_class
         self.plugin_name = plugin_name
         self.plugins: Dict[str, Type[T]] = {}
+        self._registered_files = set()  # 既に登録したファイルを追跡
     
-    def register(self, name: str, plugin_class: Type[T]) -> None:
+    def register(self, name: str, plugin_class: Type[T], silent: bool = False) -> None:
         """
         プラグインを手動で登録
         
         Args:
             name: プラグイン名（小文字のみ）
             plugin_class: 登録するプラグインクラス
+            silent: Trueの場合、登録メッセージを表示しない
         """
         if not issubclass(plugin_class, self.base_class):
             raise TypeError(f"{plugin_class.__name__} は {self.base_class.__name__} のサブクラスではありません")
@@ -43,12 +45,17 @@ class PluginRegistry(Generic[T]):
         # 名前を小文字に統一
         name = name.lower()
         
-        # すでに同名のプラグインが登録されていれば警告
+        # すでに同名のプラグインが登録されている場合は上書きしない
         if name in self.plugins:
-            print(f"警告: {name} という名前の{self.plugin_name}は既に登録されています。上書きします。")
+            if self.plugins[name] is plugin_class:
+                # 全く同じクラスなら何もしない（無視）
+                return
+            elif not silent:
+                print(f"警告: {name} という名前の{self.plugin_name}は既に登録されています。上書きします。")
         
         self.plugins[name] = plugin_class
-        print(f"{self.plugin_name} '{name}' を登録しました")
+        if not silent:
+            print(f"{self.plugin_name} '{name}' を登録しました")
     
     def unregister(self, name: str) -> None:
         """
@@ -118,6 +125,10 @@ class PluginRegistry(Generic[T]):
                 module_name = os.path.splitext(filename)[0]
                 module_path = os.path.join(directory, filename)
                 
+                # 既に処理したファイルならスキップ
+                if module_path in self._registered_files:
+                    continue
+                
                 try:
                     # 絶対パスからモジュールをロード
                     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -149,6 +160,9 @@ class PluginRegistry(Generic[T]):
                                     plugin_name += char.lower()
                                 
                                 self.register(plugin_name, obj)
+                        
+                        # 処理完了後、ファイルを記録
+                        self._registered_files.add(module_path)
                 
                 except (ImportError, AttributeError) as e:
                     print(f"警告: モジュール {module_name} のロード中にエラーが発生しました: {e}")
