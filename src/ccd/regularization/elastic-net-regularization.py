@@ -3,9 +3,11 @@ Elastic Net 正則化戦略
 
 CCD法のElastic Net 正則化を提供します。
 L1正則化とL2正則化を組み合わせた手法です。
+JAX互換の実装です。
 """
 
 import jax.numpy as jnp
+import jax.lax as lax
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategies_base import RegularizationStrategy, regularization_registry
@@ -60,46 +62,68 @@ class ElasticNetRegularization(RegularizationStrategy):
         Returns:
             正則化された行列L、正則化された行列K、ソルバー関数
         """
-        # L1とL2の重みを計算
-        alpha_l1 = self.alpha * self.l1_ratio
-        alpha_l2 = self.alpha * (1 - self.l1_ratio)
+        # クラス変数をローカル変数に保存（ループ内での参照のため）
+        L = self.L
+        L_T = self.L_T
+        alpha = self.alpha
+        l1_ratio = self.l1_ratio
+        tol = self.tol
         
-        # ソルバー関数（近位勾配法）
+        # L1とL2の重みを計算
+        alpha_l1 = alpha * l1_ratio
+        alpha_l2 = alpha * (1 - l1_ratio)
+        
+        # ソルバー関数（近位勾配法） - JAX互換バージョン
         def solver_func(rhs):
             # 初期解を標準的な最小二乗解に設定
-            x = jnp.linalg.lstsq(self.L, rhs, rcond=None)[0]
+            x_init = jnp.linalg.lstsq(L, rhs, rcond=None)[0]
             
             # L2正則化を考慮した行列の事前計算
-            n = self.L.shape[1]
-            ATA_l2 = self.L_T @ self.L + alpha_l2 * jnp.eye(n)
-            ATb = self.L_T @ rhs
+            n = L.shape[1]
+            ATA_l2 = L_T @ L + alpha_l2 * jnp.eye(n)
+            ATb = L_T @ rhs
             
             # リプシッツ定数の推定
             lambda_max = jnp.linalg.norm(ATA_l2, ord=2)
             step_size = 1.0 / lambda_max
             
-            # 近位勾配法（ISTA）
-            for _ in range(self.iterations):
+            # 近位勾配法のボディ関数
+            def ista_body(i, loop_state):
+                x, _best_x, _best_residual = loop_state
+                
                 # 勾配ステップ（L2正則化項を含む）
                 grad = ATA_l2 @ x - ATb
                 x_grad = x - step_size * grad
                 
                 # 近位演算子ステップ（L1正則化のみ）
-                x_new = self._soft_threshold(x_grad, alpha_l1 * step_size)
+                x_new = _soft_threshold(x_grad, alpha_l1 * step_size)
                 
-                # 収束判定
-                if jnp.linalg.norm(x_new - x) < self.tol:
-                    break
+                # 残差計算
+                residual = jnp.linalg.norm(x_new - x)
                 
-                x = x_new
+                # 最良解の更新
+                cond = residual < _best_residual
+                best_x = jnp.where(cond, x_new, _best_x)
+                best_residual = jnp.where(cond, residual, _best_residual)
+                
+                # ループ状態を更新
+                return x_new, best_x, best_residual
             
-            return x
+            # 初期ループ状態
+            initial_state = (x_init, x_init, jnp.array(float('inf')))
+            
+            # ISTAアルゴリズムを実行
+            final_state = lax.fori_loop(0, self.iterations, ista_body, initial_state)
+            
+            # 最良解を返す
+            return final_state[1]  # best_x
+        
+        # 軟閾値処理（soft thresholding）JAX互換バージョン
+        def _soft_threshold(x, threshold):
+            """軟閾値処理（soft thresholding）"""
+            return jnp.sign(x) * jnp.maximum(jnp.abs(x) - threshold, 0)
         
         return self.L, self.K, solver_func
-    
-    def _soft_threshold(self, x, threshold):
-        """軟閾値処理（soft thresholding）"""
-        return jnp.sign(x) * jnp.maximum(jnp.abs(x) - threshold, 0)
 
 
 # 正則化戦略をレジストリに登録

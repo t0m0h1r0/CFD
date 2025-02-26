@@ -5,6 +5,7 @@ CCD法ソルバーの診断モジュール
 """
 
 import jax.numpy as jnp
+import os
 from typing import Type, Dict, Any, Optional
 
 from ccd_core import GridConfig, LeftHandBlockBuilder, RightHandBlockBuilder
@@ -96,10 +97,14 @@ class CCDSolverDiagnostics:
             print(f"スケーリング後の列ノルムの最大/最小比: {jnp.max(col_norms_scaled)/jnp.min(col_norms_scaled):.2e}")
             
             if visualize:
-                visualize_matrix_properties(L_scaled, f"Scaled Matrix Properties ({self.solver_name})", "scaled_matrix.png")
+                # resultsディレクトリを作成
+                os.makedirs("results", exist_ok=True)
+                visualize_matrix_properties(L_scaled, f"Scaled Matrix Properties ({self.solver_name})", "results/scaled_matrix.png")
             
         if visualize:
-            visualize_matrix_properties(self.L, f"Original Matrix Properties", "original_matrix.png")
+            # resultsディレクトリを作成
+            os.makedirs("results", exist_ok=True)
+            visualize_matrix_properties(self.L, f"Original Matrix Properties", "results/original_matrix.png")
         
         # 結果を辞書に格納して返す
         results = {

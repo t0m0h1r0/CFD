@@ -106,41 +106,96 @@ class CCDCompositeSolver(BaseCCDSolver):
         return X
     
     @staticmethod
-    def load_plugins():
+    def load_plugins(silent: bool = False):
         """
         スケーリングと正則化のプラグインを読み込む
         
+        Args:
+            silent: Trueの場合、出力を抑制
+            
         Returns:
             (利用可能なスケーリング戦略のリスト, 利用可能な正則化戦略のリスト)
         """
-        # プロジェクトのルートディレクトリを検出
-        current_dir = os.path.dirname(os.path.abspath(__file__))
+        # 静かモードを設定
+        if silent:
+            scaling_registry.enable_silent_mode()
+            regularization_registry.enable_silent_mode()
+        else:
+            scaling_registry.disable_silent_mode()
+            regularization_registry.disable_silent_mode()
         
-        # スケーリング戦略のディレクトリをスキャン
-        scaling_dir = os.path.join(current_dir, 'scaling')
-        if os.path.exists(scaling_dir) and os.path.isdir(scaling_dir):
-            scaling_registry.scan_directory(scaling_dir)
+        # プラグインが既にロードされているかどうかを確認
+        if not hasattr(CCDCompositeSolver, '_plugins_loaded'):
+            # プロジェクトのルートディレクトリを検出
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # スケーリング戦略のディレクトリをスキャン
+            scaling_dir = os.path.join(current_dir, 'scaling')
+            if os.path.exists(scaling_dir) and os.path.isdir(scaling_dir):
+                scaling_registry.scan_directory(scaling_dir)
+            
+            # 正則化戦略のディレクトリをスキャン
+            regularization_dir = os.path.join(current_dir, 'regularization')
+            if os.path.exists(regularization_dir) and os.path.isdir(regularization_dir):
+                # デバッグ出力
+                if not silent:
+                    print(f"正則化ディレクトリのスキャン: {regularization_dir}")
+                    print(f"ディレクトリ内のファイル: {os.listdir(regularization_dir)}")
+                
+                regularization_registry.scan_directory(regularization_dir)
+            
+            # フラグを設定してプラグインが読み込まれたことを記録
+            CCDCompositeSolver._plugins_loaded = True
         
-        # 正則化戦略のディレクトリをスキャン
-        regularization_dir = os.path.join(current_dir, 'regularization')
-        if os.path.exists(regularization_dir) and os.path.isdir(regularization_dir):
-            regularization_registry.scan_directory(regularization_dir)
+        # 通常モードに戻す
+        if silent:
+            scaling_registry.disable_silent_mode()
+            regularization_registry.disable_silent_mode()
         
         return scaling_registry.get_names(), regularization_registry.get_names()
-    
+
     @classmethod
     def available_scaling_methods(cls) -> List[str]:
         """利用可能なスケーリング手法のリストを返す"""
-        # プラグインをロード
-        cls.load_plugins()
+        # プラグインをロード（静かモード）
+        cls.load_plugins(silent=True)
         return scaling_registry.get_names()
     
     @classmethod
     def available_regularization_methods(cls) -> List[str]:
         """利用可能な正則化手法のリストを返す"""
+        # プラグインをロード（静かモード）
+        cls.load_plugins(silent=True)
+        return regularization_registry.get_names()
+    
+    @classmethod
+    def display_available_methods(cls):
+        """利用可能な手法を表示"""
         # プラグインをロード
         cls.load_plugins()
-        return regularization_registry.get_names()
+        
+        # 利用可能な手法を表示
+        print("=== 使用可能なスケーリング手法 ===")
+        for method in sorted(cls.available_scaling_methods()):
+            param_info = cls.get_scaling_param_info(method)
+            if param_info:
+                params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+                print(f"- {method} - パラメータ: {params}")
+            else:
+                print(f"- {method}")
+        
+        print("\n=== 使用可能な正則化手法 ===")
+        for method in sorted(cls.available_regularization_methods()):
+            # 特定の冗長な名前はスキップ
+            if method in ['s_v_d', 't_s_v_d', 'l_s_q_r']:
+                continue
+                
+            param_info = cls.get_regularization_param_info(method)
+            if param_info:
+                params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+                print(f"- {method} - パラメータ: {params}")
+            else:
+                print(f"- {method}")
     
     @classmethod
     def get_scaling_param_info(cls, scaling_name: str) -> Dict[str, Dict[str, Any]]:
@@ -196,8 +251,8 @@ class CCDCompositeSolver(BaseCCDSolver):
         Returns:
             設定されたCCDCompositeSolverインスタンス
         """
-        # プラグインをロード
-        cls.load_plugins()
+        # プラグインをロード（静かモード）
+        cls.load_plugins(silent=True)
         
         params = params or {}
         
@@ -224,5 +279,5 @@ class CCDCompositeSolver(BaseCCDSolver):
         )
 
 
-# 起動時にプラグインを自動的にロード
-CCDCompositeSolver.load_plugins()
+# 起動時にプラグインを自動的にロード（サイレントモード）
+CCDCompositeSolver.load_plugins(silent=True)

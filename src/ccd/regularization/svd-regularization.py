@@ -2,6 +2,7 @@
 SVD切断法による正則化戦略
 
 CCD法のSVD切断法による正則化戦略を提供します。
+JAX互換の実装です。
 """
 
 import jax.numpy as jnp
@@ -40,11 +41,15 @@ class SVDRegularization(RegularizationStrategy):
         Returns:
             正則化された行列L、正則化された行列K、ソルバー関数
         """
-        # 特異値分解を実行
-        U, s, Vh = jnp.linalg.svd(self.L, full_matrices=False)
+        # クラス変数をローカル変数に保存
+        L = self.L
+        threshold = self.threshold
         
-        # 特異値のフィルタリング
-        s_filtered = jnp.where(s > self.threshold, s, self.threshold)
+        # 特異値分解を実行
+        U, s, Vh = jnp.linalg.svd(L, full_matrices=False)
+        
+        # 特異値のフィルタリング（JAX互換）
+        s_filtered = jnp.maximum(s, threshold)
         
         # 擬似逆行列を計算
         pinv = Vh.T @ jnp.diag(1.0 / s_filtered) @ U.T

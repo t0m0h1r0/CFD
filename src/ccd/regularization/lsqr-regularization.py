@@ -2,9 +2,11 @@
 LSQR法による正則化戦略
 
 CCD法のLSQR法による正則化戦略を提供します。
+JAX互換の実装です。
 """
 
 import jax.numpy as jnp
+import jax.lax as lax
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategies_base import RegularizationStrategy, regularization_registry
@@ -47,67 +49,74 @@ class LSQRRegularization(RegularizationStrategy):
         Returns:
             正則化された行列L、正則化された行列K、ソルバー関数
         """
-        # ソルバー関数
+        L = self.L
+        L_T = self.L_T
+        damp = self.damp
+
+        # ソルバー関数をJAX互換にする
         def solver_func(rhs):
-            # 初期解を0に設定
+            # 初期値
             x = jnp.zeros_like(rhs)
-            
-            # 初期残差とその転置
-            r = rhs - self.L @ x
-            u = r
+            u = rhs - L @ x
             beta = jnp.sqrt(jnp.sum(u * u))
             
-            if beta > 0:
-                u = u / beta
+            # JAX互換の条件付き処理
+            u = jnp.where(beta > 0, u / beta, u)
             
-            v = self.L_T @ u
+            v = L_T @ u
             alpha = jnp.sqrt(jnp.sum(v * v))
             
-            if alpha > 0:
-                v = v / alpha
+            # JAX互換の条件付き処理
+            v = jnp.where(alpha > 0, v / alpha, v)
             
             # Lanczos双共役勾配法の初期ベクトル
             w = v
             phi_bar = beta
             rho_bar = alpha
             
-            # LSQR反復
-            for i in range(self.iterations):
+            # LSQR反復をJAX互換のループで実装
+            # すべての状態変数を引数としてもつループ関数
+            def lsqr_body(i, loop_state):
+                x, u, v, w, phi_bar, rho_bar, alpha_prev = loop_state
+                
                 # 双共役勾配法のステップ
-                u_next = self.L @ v - alpha * u
+                u_next = L @ v - alpha_prev * u
                 beta = jnp.sqrt(jnp.sum(u_next * u_next))
                 
-                if beta > 0:
-                    u = u_next / beta
-                else:
-                    u = u_next
+                # JAX互換の条件付き処理
+                u_new = jnp.where(beta > 0, u_next / beta, u_next)
                 
-                v_next = self.L_T @ u - beta * v
+                v_next = L_T @ u_new - beta * v
                 # 減衰パラメータを追加（Tikhonov正則化と同様の効果）
-                if self.damp > 0:
-                    v_next = v_next - self.damp * v
+                v_next = v_next - damp * v
                 
-                alpha = jnp.sqrt(jnp.sum(v_next * v_next))
+                alpha_new = jnp.sqrt(jnp.sum(v_next * v_next))
                 
-                if alpha > 0:
-                    v = v_next / alpha
-                else:
-                    v = v_next
+                # JAX互換の条件付き処理
+                v_new = jnp.where(alpha_new > 0, v_next / alpha_new, v_next)
                 
                 # ギブンス回転の適用
                 rho = jnp.sqrt(rho_bar**2 + beta**2)
                 c = rho_bar / rho
                 s = beta / rho
-                theta = s * alpha
-                rho_bar = -c * alpha
+                theta = s * alpha_new
+                rho_bar_new = -c * alpha_new
                 phi = c * phi_bar
-                phi_bar = s * phi_bar
+                phi_bar_new = s * phi_bar
                 
                 # 解の更新
-                x = x + (phi / rho) * w
-                w = v - (theta / rho) * w
+                x_new = x + (phi / rho) * w
+                w_new = v_new - (theta / rho) * w
+                
+                return (x_new, u_new, v_new, w_new, phi_bar_new, rho_bar_new, alpha_new)
             
-            return x
+            # 初期状態にalphaも含める
+            init_state = (x, u, v, w, phi_bar, rho_bar, alpha)
+            final_state = lax.fori_loop(0, self.iterations, lsqr_body, init_state)
+            
+            # 最終的な解を取得
+            final_x = final_state[0]
+            return final_x
         
         return self.L, self.K, solver_func
 

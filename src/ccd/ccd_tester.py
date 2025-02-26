@@ -6,6 +6,7 @@ CCD法のテスト実行モジュール
 
 import jax.numpy as jnp
 import time
+import os
 from typing import Tuple, List, Type, Dict, Any, Optional
 
 from ccd_core import GridConfig
@@ -117,6 +118,9 @@ class CCDMethodTester:
         total_errors = [0.0, 0.0, 0.0]
         total_time = 0.0
         
+        # 出力ディレクトリの作成
+        os.makedirs("results", exist_ok=True)
+        
         for test_func in self.test_functions:
             errors = self.compute_errors(test_func)
             results[test_func.name] = (errors[:3], errors[3])
@@ -146,7 +150,7 @@ class CCDMethodTester:
                     grid_config=self.grid_config,
                     x_range=self.x_range,
                     solver_name=self.solver_name,
-                    save_path=f"{prefix}{test_func.name.lower()}_results.png"
+                    save_path=f"results/{prefix}{test_func.name.lower()}_results.png"
                 )
         
         # 平均誤差と時間
