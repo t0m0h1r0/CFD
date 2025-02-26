@@ -106,14 +106,21 @@ class CCDCompositeSolver(BaseCCDSolver):
         return X
     
     @staticmethod
-    def load_plugins():
+    def load_plugins(silent: bool = False):
         """
-        スケーリングと正則化のプラグインを読み込む。
-        ロードフラグを使用して二重登録を防止。
+        スケーリングと正則化のプラグインを読み込む
         
+        Args:
+            silent: Trueの場合、出力を抑制
+            
         Returns:
             (利用可能なスケーリング戦略のリスト, 利用可能な正則化戦略のリスト)
         """
+        # 静かモードを設定
+        if silent:
+            scaling_registry.enable_silent_mode()
+            regularization_registry.enable_silent_mode()
+        
         # プラグインが既にロードされているかどうかを確認
         if not hasattr(CCDCompositeSolver, '_plugins_loaded'):
             # プロジェクトのルートディレクトリを検出
@@ -131,41 +138,37 @@ class CCDCompositeSolver(BaseCCDSolver):
             
             # フラグを設定してプラグインが読み込まれたことを記録
             CCDCompositeSolver._plugins_loaded = True
-            
-            # 利用可能な戦略を表示（初回のみ）
-            print("=== 使用可能なスケーリング手法 ===")
-            for method in scaling_registry.get_names():
-                param_info = CCDCompositeSolver.get_scaling_param_info(method)
-                if param_info:
-                    params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
-                    print(f"- {method} - パラメータ: {params}")
-                else:
-                    print(f"- {method}")
-            
-            print("\n=== 使用可能な正則化手法 ===")
-            for method in regularization_registry.get_names():
-                param_info = CCDCompositeSolver.get_regularization_param_info(method)
-                if param_info:
-                    params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
-                    print(f"- {method} - パラメータ: {params}")
-                else:
-                    print(f"- {method}")
+        
+        # 通常モードに戻す
+        if silent:
+            scaling_registry.disable_silent_mode()
+            regularization_registry.disable_silent_mode()
         
         return scaling_registry.get_names(), regularization_registry.get_names()
-    
+
     @classmethod
     def available_scaling_methods(cls) -> List[str]:
         """利用可能なスケーリング手法のリストを返す"""
-        # プラグインをロード
-        cls.load_plugins()
+        # プラグインをロード（静かモード）
+        cls.load_plugins(silent=True)
         return scaling_registry.get_names()
     
     @classmethod
     def available_regularization_methods(cls) -> List[str]:
         """利用可能な正則化手法のリストを返す"""
+        # プラグインをロード（静かモード）
+        cls.load_plugins(silent=True)
+        return regularization_registry.get_names()
+    
+    @classmethod
+    def display_available_methods(cls):
+        """利用可能な手法を表示"""
         # プラグインをロード
         cls.load_plugins()
-        return regularization_registry.get_names()
+        
+        # 利用可能な手法を表示
+        scaling_registry.display_available_methods(cls.get_scaling_param_info)
+        regularization_registry.display_available_methods(cls.get_regularization_param_info)
     
     @classmethod
     def get_scaling_param_info(cls, scaling_name: str) -> Dict[str, Dict[str, Any]]:
@@ -221,8 +224,8 @@ class CCDCompositeSolver(BaseCCDSolver):
         Returns:
             設定されたCCDCompositeSolverインスタンス
         """
-        # プラグインをロード
-        cls.load_plugins()
+        # プラグインをロード（静かモード）
+        cls.load_plugins(silent=True)
         
         params = params or {}
         
@@ -249,5 +252,5 @@ class CCDCompositeSolver(BaseCCDSolver):
         )
 
 
-# 起動時にプラグインを自動的にロード
-CCDCompositeSolver.load_plugins()
+# 起動時にプラグインを自動的にロード（サイレントモード）
+CCDCompositeSolver.load_plugins(silent=True)

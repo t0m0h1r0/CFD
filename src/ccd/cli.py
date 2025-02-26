@@ -139,36 +139,14 @@ def parse_custom_configs(config_str: str) -> List[Tuple[str, str, str, Dict[str,
 
 def print_available_methods():
     """使用可能な手法を表示"""
-    print("=== 使用可能なスケーリング手法 ===")
-    scaling_methods = CCDCompositeSolver.available_scaling_methods()
-    for method in scaling_methods:
-        param_info = CCDCompositeSolver.get_scaling_param_info(method)
-        if param_info:
-            params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
-            print(f"- {method} - パラメータ: {params}")
-        else:
-            print(f"- {method}")
-    
-    print("\n=== 使用可能な正則化手法 ===")
-    reg_methods = CCDCompositeSolver.available_regularization_methods()
-    for method in reg_methods:
-        param_info = CCDCompositeSolver.get_regularization_param_info(method)
-        if param_info:
-            params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
-            print(f"- {method} - パラメータ: {params}")
-        else:
-            print(f"- {method}")
-    
-    print("\n=== 使用可能なプリセット設定 ===")
-    for name, scaling, regularization, params in get_combined_presets():
-        param_str = ", ".join([f"{k}={v}" for k, v in params.items()]) if params else "なし"
-        print(f"- {name}: スケーリング={scaling}, 正則化={regularization}, パラメータ={param_str}")
+    # CCDCompositeSolverの新しい表示メソッドを使用
+    CCDCompositeSolver.display_available_methods()
 
 
 def run_cli():
     """プラグイン対応コマンドラインインターフェースの実行"""
-    # プラグインをロード
-    CCDCompositeSolver.load_plugins()
+    # プラグインを静かモードでロード
+    CCDCompositeSolver.load_plugins(silent=True)
     
     args = parse_args()
     

@@ -5,9 +5,11 @@ CCDソルバーのスケーリング戦略と正則化戦略をプラグイン�
 """
 
 import os
+import sys
 import importlib
+import importlib.util
 import inspect
-from typing import Dict, Type, List, TypeVar, Generic, Any
+from typing import Dict, Type, List, TypeVar, Generic, Any, Set
 
 # 型変数の定義
 T = TypeVar('T')
@@ -19,6 +21,10 @@ class PluginRegistry(Generic[T]):
     特定の基底クラスを継承する全てのプラグインクラスを検出・登録する
     """
     
+    # クラス変数として共有状態を管理
+    _loaded_modules: Set[str] = set()  # 既にロードしたモジュールのパス
+    _silent_mode: bool = False  # 静かモード（出力抑制）
+    
     def __init__(self, base_class: Type[T], plugin_name: str):
         """
         Args:
@@ -28,16 +34,33 @@ class PluginRegistry(Generic[T]):
         self.base_class = base_class
         self.plugin_name = plugin_name
         self.plugins: Dict[str, Type[T]] = {}
-        self._registered_files = set()  # 既に登録したファイルを追跡
+        self.displayed_methods = False  # メソッド一覧を表示したかどうか
     
-    def register(self, name: str, plugin_class: Type[T], silent: bool = False) -> None:
+    @classmethod
+    def enable_silent_mode(cls):
+        """出力を抑制する静かモードを有効化"""
+        cls._silent_mode = True
+    
+    @classmethod
+    def disable_silent_mode(cls):
+        """静かモードを無効化（通常の出力に戻す）"""
+        cls._silent_mode = False
+    
+    def _log(self, message: str):
+        """
+        条件付きでメッセージを出力
+        静かモードでなければ出力する
+        """
+        if not self._silent_mode:
+            print(message)
+    
+    def register(self, name: str, plugin_class: Type[T]) -> None:
         """
         プラグインを手動で登録
         
         Args:
             name: プラグイン名（小文字のみ）
             plugin_class: 登録するプラグインクラス
-            silent: Trueの場合、登録メッセージを表示しない
         """
         if not issubclass(plugin_class, self.base_class):
             raise TypeError(f"{plugin_class.__name__} は {self.base_class.__name__} のサブクラスではありません")
@@ -45,17 +68,21 @@ class PluginRegistry(Generic[T]):
         # 名前を小文字に統一
         name = name.lower()
         
-        # すでに同名のプラグインが登録されている場合は上書きしない
+        # すでに同名のプラグインが登録されていたら、同じクラスならスキップ
         if name in self.plugins:
-            if self.plugins[name] is plugin_class:
-                # 全く同じクラスなら何もしない（無視）
+            # クラスの完全修飾名を比較して同一性をチェック
+            existing_class_name = f"{self.plugins[name].__module__}.{self.plugins[name].__name__}"
+            new_class_name = f"{plugin_class.__module__}.{plugin_class.__name__}"
+            
+            if existing_class_name == new_class_name:
+                # 同じクラスなら何もしない
                 return
-            elif not silent:
-                print(f"警告: {name} という名前の{self.plugin_name}は既に登録されています。上書きします。")
+            else:
+                # 異なるクラスなら警告（ただし静かモードでは表示しない）
+                self._log(f"警告: {name} という名前の{self.plugin_name}は既に登録されています。上書きします。")
         
         self.plugins[name] = plugin_class
-        if not silent:
-            print(f"{self.plugin_name} '{name}' を登録しました")
+        self._log(f"{self.plugin_name} '{name}' を登録しました")
     
     def unregister(self, name: str) -> None:
         """
@@ -67,7 +94,7 @@ class PluginRegistry(Generic[T]):
         name = name.lower()
         if name in self.plugins:
             del self.plugins[name]
-            print(f"{self.plugin_name} '{name}' の登録を解除しました")
+            self._log(f"{self.plugin_name} '{name}' の登録を解除しました")
     
     def get(self, name: str) -> Type[T]:
         """
@@ -106,6 +133,28 @@ class PluginRegistry(Generic[T]):
         """
         return list(self.plugins.keys())
     
+    def display_available_methods(self, get_param_info_func=None):
+        """
+        利用可能な手法と各パラメータを表示
+        
+        Args:
+            get_param_info_func: パラメータ情報を取得する関数（オプション）
+        """
+        if self.displayed_methods:
+            return  # 既に表示済みならスキップ
+        
+        self._log(f"=== 使用可能な{self.plugin_name} ===")
+        for method in self.get_names():
+            if get_param_info_func:
+                param_info = get_param_info_func(method)
+                if param_info:
+                    params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+                    self._log(f"- {method} - パラメータ: {params}")
+                    continue
+            self._log(f"- {method}")
+        
+        self.displayed_methods = True
+    
     def scan_directory(self, directory: str) -> None:
         """
         指定ディレクトリ内のPythonファイルをスキャンし、
@@ -116,7 +165,7 @@ class PluginRegistry(Generic[T]):
         """
         # ディレクトリ内の全Pythonファイルを取得
         if not os.path.exists(directory):
-            print(f"警告: ディレクトリ {directory} が存在しません")
+            self._log(f"警告: ディレクトリ {directory} が存在しません")
             return
         
         for filename in os.listdir(directory):
@@ -126,15 +175,18 @@ class PluginRegistry(Generic[T]):
                 module_path = os.path.join(directory, filename)
                 
                 # 既に処理したファイルならスキップ
-                if module_path in self._registered_files:
+                if module_path in self._loaded_modules:
                     continue
                 
                 try:
                     # 絶対パスからモジュールをロード
                     spec = importlib.util.spec_from_file_location(module_name, module_path)
-                    if spec:
+                    if spec and spec.loader:
                         module = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(module)
+                        
+                        # 処理したファイルを記録
+                        self._loaded_modules.add(module_path)
                         
                         # モジュール内の全クラスを検査
                         for name, obj in inspect.getmembers(module, inspect.isclass):
@@ -145,27 +197,63 @@ class PluginRegistry(Generic[T]):
                                 
                                 # クラス名から登録名を生成
                                 # 例: FooBarStrategy -> foo_bar
-                                if name.endswith(('Strategy', 'Scaling', 'Regularization')):
-                                    # 末尾の "Strategy", "Scaling", "Regularization" を削除
-                                    for suffix in ('Strategy', 'Scaling', 'Regularization'):
-                                        if name.endswith(suffix):
-                                            name = name[:-len(suffix)]
-                                            break
+                                plugin_name = self._generate_plugin_name(name)
                                 
-                                # キャメルケースをスネークケースに変換
-                                plugin_name = ''
-                                for i, char in enumerate(name):
-                                    if char.isupper() and i > 0:
-                                        plugin_name += '_'
-                                    plugin_name += char.lower()
+                                # スキップすべき余分な変換名を検出
+                                if self._is_redundant_name(name, plugin_name):
+                                    continue
                                 
                                 self.register(plugin_name, obj)
-                        
-                        # 処理完了後、ファイルを記録
-                        self._registered_files.add(module_path)
                 
                 except (ImportError, AttributeError) as e:
-                    print(f"警告: モジュール {module_name} のロード中にエラーが発生しました: {e}")
+                    self._log(f"警告: モジュール {module_name} のロード中にエラーが発生しました: {e}")
+    
+    def _generate_plugin_name(self, class_name: str) -> str:
+        """
+        クラス名からプラグイン名を生成
+        
+        Args:
+            class_name: クラス名
+            
+        Returns:
+            生成されたプラグイン名
+        """
+        # 末尾の "Strategy", "Scaling", "Regularization" を削除
+        name = class_name
+        for suffix in ('Strategy', 'Scaling', 'Regularization'):
+            if name.endswith(suffix):
+                name = name[:-len(suffix)]
+                break
+        
+        # キャメルケースをスネークケースに変換
+        plugin_name = ''
+        for i, char in enumerate(name):
+            if char.isupper() and i > 0:
+                plugin_name += '_'
+            plugin_name += char.lower()
+        
+        return plugin_name
+    
+    def _is_redundant_name(self, class_name: str, plugin_name: str) -> bool:
+        """
+        冗長な名前変換かどうかを判定
+        
+        Args:
+            class_name: 元のクラス名
+            plugin_name: 生成されたプラグイン名
+            
+        Returns:
+            True: 冗長な名前変換（スキップすべき）
+            False: 正常な名前変換
+        """
+        # 冗長な変換の例: SVD -> s_v_d （svdが既に登録されている場合）
+        # 大文字のみの名前をアンダースコア区切りにした場合、元の小文字版が既に存在するかチェック
+        if class_name.isupper() and '_' in plugin_name:
+            simple_name = class_name.lower()
+            if simple_name in self.plugins:
+                return True
+        
+        return False
     
     def scan_package(self, package_name: str) -> None:
         """
@@ -180,4 +268,4 @@ class PluginRegistry(Generic[T]):
             package_path = os.path.dirname(package.__file__)
             self.scan_directory(package_path)
         except ImportError as e:
-            print(f"警告: パッケージ {package_name} のインポート中にエラーが発生しました: {e}")
+            self._log(f"警告: パッケージ {package_name} のインポート中にエラーが発生しました: {e}")
