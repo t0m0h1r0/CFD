@@ -2,9 +2,11 @@
 Landweber反復法による正則化戦略
 
 CCD法のLandweber反復法による正則化戦略を提供します。
+JAX互換の実装です。
 """
 
 import jax.numpy as jnp
+import jax.lax as lax
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategies_base import RegularizationStrategy, regularization_registry
@@ -46,25 +48,33 @@ class LandweberRegularization(RegularizationStrategy):
         Returns:
             正則化された行列L、正則化された行列K、ソルバー関数
         """
+        # クラス変数をローカル変数に保存（ループ内での参照のため）
+        L = self.L
+        L_T = self.L_T
+        
         # 行列のスペクトルノルムを概算
-        s_max = jnp.linalg.norm(self.L, ord=2)
+        s_max = jnp.linalg.norm(L, ord=2)
         
         # 緩和パラメータを安全な範囲に調整
-        omega = min(self.relaxation, 1.9 / (s_max ** 2))
+        omega = jnp.minimum(self.relaxation, 1.9 / (s_max ** 2))
         
-        # ソルバー関数
+        # JAX互換のソルバー関数
         def solver_func(rhs):
             # 初期解を0に設定
-            x = jnp.zeros_like(rhs)
+            x_init = jnp.zeros_like(rhs)
             
-            # Landweber反復
-            for _ in range(self.iterations):
+            # Landweber反復のボディ関数
+            def landweber_body(i, x):
                 # 残差: r = rhs - L @ x
-                residual = rhs - self.L @ x
+                residual = rhs - L @ x
                 # 反復更新: x = x + omega * L^T @ residual
-                x = x + omega * (self.L_T @ residual)
+                x_new = x + omega * (L_T @ residual)
+                return x_new
             
-            return x
+            # Landweber反復を実行
+            final_x = lax.fori_loop(0, self.iterations, landweber_body, x_init)
+            
+            return final_x
         
         return self.L, self.K, solver_func
 

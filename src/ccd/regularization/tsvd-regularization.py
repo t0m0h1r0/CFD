@@ -2,6 +2,7 @@
 切断特異値分解（TSVD）による正則化戦略
 
 CCD法の切断特異値分解（TSVD）による正則化戦略を提供します。
+JAX互換の実装です。
 """
 
 import jax.numpy as jnp
@@ -49,27 +50,28 @@ class TSVDRegularization(RegularizationStrategy):
         # 特異値分解を実行
         U, s, Vh = jnp.linalg.svd(self.L, full_matrices=False)
         
-        # 使用するランクを決定
+        # 使用するランクを決定（JAX互換）
         if self.rank is None:
             # 閾値比率に基づいてランクを決定
             threshold = jnp.max(s) * self.threshold_ratio
-            self.rank = jnp.sum(s > threshold)
+            # JAX互換の方法でカウント
+            mask = s > threshold
+            rank = jnp.sum(mask)
         else:
             # ランクが行列の最小次元を超えないようにする
-            self.rank = min(self.rank, min(self.L.shape))
+            rank = jnp.minimum(self.rank, jnp.minimum(self.L.shape[0], self.L.shape[1]))
         
-        # ランク外の特異値を0にする
-        s_truncated = jnp.concatenate([s[:self.rank], jnp.zeros(len(s) - self.rank)])
+        # JAX互換の方法で特異値をトランケート
+        # 不要な特異値にはゼロを設定
+        s_truncated = jnp.where(
+            jnp.arange(s.shape[0]) < rank,
+            s,
+            jnp.zeros_like(s)
+        )
         
         # 擬似逆行列を計算（0除算を避けるため、逆数を計算する前に特異値が0でないか確認）
         s_inv = jnp.where(s_truncated > 0, 1.0 / s_truncated, 0.0)
         pinv = Vh.T @ jnp.diag(s_inv) @ U.T
-        
-        # SVD成分を保存（診断用）
-        self.U = U
-        self.s = s
-        self.Vh = Vh
-        self.actual_rank = self.rank
         
         # ソルバー関数
         def solver_func(rhs):

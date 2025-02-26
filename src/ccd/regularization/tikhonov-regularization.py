@@ -2,6 +2,7 @@
 基本的な正則化戦略 - ティホノフ正則化
 
 CCD法の基本的な正則化戦略（Tikhonov正則化）を提供します。
+JAX互換の実装です。
 """
 
 import jax.numpy as jnp
