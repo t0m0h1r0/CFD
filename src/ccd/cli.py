@@ -1,5 +1,5 @@
 """
-コマンドラインインターフェースモジュール - 簡素化版
+コマンドラインインターフェースモジュール - プラグイン対応版
 
 CCD法のテスト・診断・比較のためのシンプルなコマンドラインツールを提供します。
 """
@@ -17,8 +17,8 @@ from solver_comparator import SolverComparator
 
 
 def parse_args():
-    """コマンドライン引数をシンプルにパース"""
-    parser = argparse.ArgumentParser(description='CCD法のテストと診断（簡素化版）')
+    """コマンドライン引数をパース"""
+    parser = argparse.ArgumentParser(description='CCD法のテストと診断（プラグイン対応版）')
     
     # 共通オプション
     parser.add_argument('--n', type=int, default=256, help='グリッド点の数')
@@ -110,17 +110,12 @@ def get_solver(args, grid_config: GridConfig):
         if hasattr(args, 'params') and args.params:
             preset_params = parse_params(args.params)
     
-    # スケーリングパラメータと正則化パラメータを分離
-    scaling_params = {k: v for k, v in preset_params.items() if k in ["max_iter", "tol"]}
-    reg_params = {k: v for k, v in preset_params.items() if k not in ["max_iter", "tol"]}
-    
-    # ソルバーを作成
-    solver = CCDCompositeSolver(
+    # 統合ソルバーを作成
+    solver = CCDCompositeSolver.create_solver(
         grid_config,
         scaling=scaling,
         regularization=regularization,
-        scaling_params=scaling_params,
-        regularization_params=reg_params
+        params=preset_params
     )
     
     return solver
@@ -145,12 +140,24 @@ def parse_custom_configs(config_str: str) -> List[Tuple[str, str, str, Dict[str,
 def print_available_methods():
     """使用可能な手法を表示"""
     print("=== 使用可能なスケーリング手法 ===")
-    for method in CCDCompositeSolver.available_scaling_methods():
-        print(f"- {method}")
+    scaling_methods = CCDCompositeSolver.available_scaling_methods()
+    for method in scaling_methods:
+        param_info = CCDCompositeSolver.get_scaling_param_info(method)
+        if param_info:
+            params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+            print(f"- {method} - パラメータ: {params}")
+        else:
+            print(f"- {method}")
     
     print("\n=== 使用可能な正則化手法 ===")
-    for method in CCDCompositeSolver.available_regularization_methods():
-        print(f"- {method}")
+    reg_methods = CCDCompositeSolver.available_regularization_methods()
+    for method in reg_methods:
+        param_info = CCDCompositeSolver.get_regularization_param_info(method)
+        if param_info:
+            params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+            print(f"- {method} - パラメータ: {params}")
+        else:
+            print(f"- {method}")
     
     print("\n=== 使用可能なプリセット設定 ===")
     for name, scaling, regularization, params in get_combined_presets():
@@ -159,7 +166,10 @@ def print_available_methods():
 
 
 def run_cli():
-    """シンプル化されたコマンドラインインターフェースの実行"""
+    """プラグイン対応コマンドラインインターフェースの実行"""
+    # プラグインをロード
+    CCDCompositeSolver.load_plugins()
+    
     args = parse_args()
     
     # グリッド設定
@@ -216,17 +226,12 @@ def run_cli():
         # ソルバーリストの生成
         solvers_list = []
         for name, scaling, regularization, params in configs:
-            # スケーリングと正則化のパラメータを分離
-            scaling_params = {k: v for k, v in params.items() if k in ["max_iter", "tol"]}
-            reg_params = {k: v for k, v in params.items() if k not in ["max_iter", "tol"]}
-            
             # ソルバーを作成
-            solver = CCDCompositeSolver(
+            solver = CCDCompositeSolver.create_solver(
                 grid_config,
                 scaling=scaling,
                 regularization=regularization,
-                scaling_params=scaling_params,
-                regularization_params=reg_params
+                params=params
             )
             
             solvers_list.append((name, CCDCompositeSolver, {"solver": solver}))
@@ -242,11 +247,21 @@ def run_cli():
         elif args.type == 'scaling':
             print("=== 使用可能なスケーリング手法 ===")
             for method in CCDCompositeSolver.available_scaling_methods():
-                print(f"- {method}")
+                param_info = CCDCompositeSolver.get_scaling_param_info(method)
+                if param_info:
+                    params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+                    print(f"- {method} - パラメータ: {params}")
+                else:
+                    print(f"- {method}")
         elif args.type == 'reg':
             print("=== 使用可能な正則化手法 ===")
             for method in CCDCompositeSolver.available_regularization_methods():
-                print(f"- {method}")
+                param_info = CCDCompositeSolver.get_regularization_param_info(method)
+                if param_info:
+                    params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
+                    print(f"- {method} - パラメータ: {params}")
+                else:
+                    print(f"- {method}")
         elif args.type == 'presets':
             print("=== 使用可能なプリセット設定 ===")
             for name, scaling, regularization, params in get_combined_presets():
