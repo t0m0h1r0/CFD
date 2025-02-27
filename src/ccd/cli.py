@@ -1,7 +1,8 @@
 """
-コマンドラインインターフェースモジュール - プラグイン対応版
+簡素化されたコマンドラインインターフェースモジュール
 
 CCD法のテスト・診断・比較のためのシンプルなコマンドラインツールを提供します。
+0-2階微分の組み合わせ指定をサポートしています。
 """
 
 import argparse
@@ -18,140 +19,131 @@ from solver_comparator import SolverComparator
 
 def parse_args():
     """コマンドライン引数をパース"""
-    parser = argparse.ArgumentParser(description='CCD法のテストと診断（プラグイン対応版）')
+    parser = argparse.ArgumentParser(description='CCD法のテストと診断')
     
     # 共通オプション
     parser.add_argument('--n', type=int, default=256, help='グリッド点の数')
     parser.add_argument('--xrange', type=float, nargs=2, default=[-1.0, 1.0], 
-                      help='x軸の範囲 (開始点 終了点)')
-    parser.add_argument('--coeffs', type=float, nargs='+', 
-                      help='[a, b, c, d] 係数リスト (f = a*psi + b*psi\' + c*psi\'\' + d*psi\'\'\')')
+                       help='x軸の範囲 (開始点 終了点)')
     
-    # サブコマンドの設定
+    # 微分係数の指定方法
+    coeff_group = parser.add_mutually_exclusive_group()
+    coeff_group.add_argument('--coeffs', type=float, nargs='+', 
+                           help='[a, b, c, d] 係数リスト (f = a*psi + b*psi\' + c*psi\'\' + d*psi\'\'\')')
+    coeff_group.add_argument('--diff-mode', choices=['psi', 'psi1', 'psi2', 'psi01', 'psi02', 'psi12', 'psi012'], 
+                           help='微分の組み合わせ (psi=0階のみ, psi1=1階のみ, psi2=2階のみ, psi01=0階+1階, ...)')
+    
+    # サブコマンド
     subparsers = parser.add_subparsers(dest='command', help='実行するコマンド', required=True)
     
     # テストコマンド
     test_parser = subparsers.add_parser('test', help='テストを実行')
-    test_parser.add_argument('--preset', type=str, help='プリセットソルバー設定')
+    test_parser.add_argument('--preset', type=str, help='プリセット設定')
     test_parser.add_argument('--scaling', type=str, default='none', help='スケーリング手法')
     test_parser.add_argument('--reg', type=str, default='none', help='正則化手法')
-    test_parser.add_argument('--params', type=str, help='パラメータ (key1=value1,key2=value2 形式)')
     test_parser.add_argument('--no-viz', action='store_true', help='可視化を無効化')
     
     # 診断コマンド
     diag_parser = subparsers.add_parser('diagnostics', help='診断を実行')
-    diag_parser.add_argument('--preset', type=str, help='プリセットソルバー設定')
+    diag_parser.add_argument('--preset', type=str, help='プリセット設定')
     diag_parser.add_argument('--scaling', type=str, default='none', help='スケーリング手法')
     diag_parser.add_argument('--reg', type=str, default='none', help='正則化手法')
-    diag_parser.add_argument('--params', type=str, help='パラメータ (key1=value1,key2=value2 形式)')
     diag_parser.add_argument('--viz', action='store_true', help='可視化を有効化')
     
     # 比較コマンド
     compare_parser = subparsers.add_parser('compare', help='ソルバー間の比較を実行')
-    compare_parser.add_argument('--mode', choices=['presets', 'scaling', 'reg', 'custom'], 
-                             default='presets', help='比較モード')
-    compare_parser.add_argument('--configs', type=str, help='カスタム設定 ("scaling1:reg1,scaling2:reg2" 形式)')
+    compare_parser.add_argument('--mode', choices=['presets', 'scaling', 'reg', 'diff-modes'], 
+                              default='presets', help='比較モード')
     compare_parser.add_argument('--no-viz', action='store_true', help='可視化を無効化')
-    compare_parser.add_argument('--no-save', action='store_true', help='結果の保存を無効化')
     
     # 一覧表示コマンド
     list_parser = subparsers.add_parser('list', help='使用可能な設定を一覧表示')
-    list_parser.add_argument('--type', choices=['all', 'scaling', 'reg', 'presets'], 
-                          default='all', help='表示する情報の種類')
+    list_parser.add_argument('--type', choices=['all', 'scaling', 'reg', 'presets', 'diff-modes'], 
+                           default='all', help='表示する情報の種類')
     
     return parser.parse_args()
 
 
-def parse_params(param_str: str) -> Dict[str, Any]:
-    """
-    パラメータ文字列をディクショナリに変換
+def get_coefficients_from_diff_mode(diff_mode, coeffs=None):
+    """微分モードから係数を取得"""
+    if coeffs:
+        # 直接指定された係数があればそれを使用（不足分は0で補完）
+        coeff_list = list(coeffs)
+        while len(coeff_list) < 4:
+            coeff_list.append(0.0)
+        return coeff_list[:4]
     
-    Args:
-        param_str: "key1=value1,key2=value2" 形式のパラメータ文字列
-        
-    Returns:
-        パラメータディクショナリ
-    """
-    if not param_str:
-        return {}
+    # 微分モードに基づいて係数を設定
+    if diff_mode == 'psi':
+        return [1.0, 0.0, 0.0, 0.0]
+    elif diff_mode == 'psi1':
+        return [0.0, 1.0, 0.0, 0.0]
+    elif diff_mode == 'psi2':
+        return [0.0, 0.0, 1.0, 0.0]
+    elif diff_mode == 'psi01':
+        return [1.0, 1.0, 0.0, 0.0]
+    elif diff_mode == 'psi02':
+        return [1.0, 0.0, 1.0, 0.0]
+    elif diff_mode == 'psi12':
+        return [0.0, 1.0, 1.0, 0.0]
+    elif diff_mode == 'psi012':
+        return [1.0, 1.0, 1.0, 0.0]
     
-    params = {}
-    for p in param_str.split(','):
-        if not p or '=' not in p:
-            continue
-        key, value = p.split('=', 1)
-        # 数値変換を試みる
-        try:
-            value = float(value)
-            # 整数かどうかをチェック
-            if value.is_integer():
-                value = int(value)
-        except ValueError:
-            # 数値変換できない場合はそのまま文字列として使用
-            pass
-        
-        params[key] = value
-    
-    return params
+    # デフォルトは関数値のみ
+    return [1.0, 0.0, 0.0, 0.0]
 
 
 def get_solver(args, grid_config: GridConfig):
     """コマンドライン引数からソルバーを取得"""
+    # プリセットまたはカスタム設定
     if args.preset:
-        # プリセット設定を使用
-        scaling, regularization, preset_params = get_preset_by_name(args.preset)
-        # パラメータがあれば上書き
-        if hasattr(args, 'params') and args.params:
-            user_params = parse_params(args.params)
-            preset_params.update(user_params)
+        scaling, regularization, params = get_preset_by_name(args.preset)
     else:
-        # カスタム設定を使用
         scaling = args.scaling
         regularization = args.reg
-        preset_params = {}
-        if hasattr(args, 'params') and args.params:
-            preset_params = parse_params(args.params)
+        params = {}
     
-    # 係数が指定されていれば追加
-    coeffs = args.coeffs if hasattr(args, 'coeffs') else None
+    # 係数の設定
+    coeffs = get_coefficients_from_diff_mode(args.diff_mode, args.coeffs)
     
-    # 統合ソルバーを作成
-    solver = CCDCompositeSolver.create_solver(
+    # ソルバーの作成
+    return CCDCompositeSolver.create_solver(
         grid_config,
         scaling=scaling,
         regularization=regularization,
-        params=preset_params,
+        params=params,
         coeffs=coeffs
     )
-    
-    return solver
 
 
-def parse_custom_configs(config_str: str) -> List[Tuple[str, str, str, Dict[str, Any]]]:
-    """カスタム設定文字列から設定リストを生成"""
-    configs = []
-    if not config_str:
-        return configs
-    
-    for config_item in config_str.split(','):
-        if not config_item or ':' not in config_item:
-            continue
-        scaling, reg = config_item.split(':', 1)
-        name = f"{scaling.capitalize()}_{reg.capitalize()}"
-        configs.append((name, scaling, reg, {}))
-    
-    return configs
+def get_diff_mode_configs():
+    """微分モードの設定リストを生成"""
+    return [
+        ("PSI", "none", "none", {"coeffs": [1.0, 0.0, 0.0, 0.0]}),
+        ("PSI1", "none", "none", {"coeffs": [0.0, 1.0, 0.0, 0.0]}),
+        ("PSI2", "none", "none", {"coeffs": [0.0, 0.0, 1.0, 0.0]}),
+        ("PSI01", "none", "none", {"coeffs": [1.0, 1.0, 0.0, 0.0]}),
+        ("PSI02", "none", "none", {"coeffs": [1.0, 0.0, 1.0, 0.0]}),
+        ("PSI12", "none", "none", {"coeffs": [0.0, 1.0, 1.0, 0.0]}),
+        ("PSI012", "none", "none", {"coeffs": [1.0, 1.0, 1.0, 0.0]})
+    ]
 
 
-def print_available_methods():
-    """使用可能な手法を表示"""
-    # CCDCompositeSolverの新しい表示メソッドを使用
-    CCDCompositeSolver.display_available_methods()
+def print_diff_modes():
+    """微分モードの説明を表示"""
+    print("=== 利用可能な微分モード ===")
+    print("- psi:    関数値（0階微分）のみ使用")
+    print("- psi1:   1階微分のみ使用")
+    print("- psi2:   2階微分のみ使用")
+    print("- psi01:  関数値と1階微分の組み合わせ")
+    print("- psi02:  関数値と2階微分の組み合わせ")
+    print("- psi12:  1階微分と2階微分の組み合わせ")
+    print("- psi012: 関数値、1階微分、2階微分の組み合わせ")
 
 
 def run_cli():
-    """プラグイン対応コマンドラインインターフェースの実行"""
-    # プラグインを静かモードでロード
+    """コマンドラインインターフェースの実行"""
+    # プラグインを読み込み
     CCDCompositeSolver.load_plugins(silent=True)
     
     args = parse_args()
@@ -162,63 +154,56 @@ def run_cli():
     L = x_range[1] - x_range[0]
     grid_config = GridConfig(n_points=n, h=L / (n - 1))
     
-    # コマンドに応じた処理
+    # 微分係数の準備
+    coeffs = get_coefficients_from_diff_mode(args.diff_mode, args.coeffs)
+    
+    # コマンドの実行
     if args.command == 'test':
-        # ソルバーの生成
+        # ソルバー作成とテスト実行
         solver = get_solver(args, grid_config)
-        # テスターの実行
-        tester = CCDMethodTester(
-            CCDCompositeSolver, 
-            grid_config, 
-            x_range, 
-            {},
-            coeffs=args.coeffs
-        )
-        tester.solver = solver  # 直接インスタンスを設定
+        tester = CCDMethodTester(CCDCompositeSolver, grid_config, x_range, {}, coeffs=coeffs)
+        tester.solver = solver
         
-        solver_name = args.preset.capitalize() if args.preset else f"{args.scaling.capitalize()}_{args.reg.capitalize()}"
-        coeff_str = "" if args.coeffs is None else f" (coeffs={args.coeffs})"
-        print(f"テスト実行中: {solver_name}{coeff_str}")
-        tester.run_tests(prefix=f"{solver_name.lower()}_", visualize=not args.no_viz)
-        
+        name = args.preset or f"{args.scaling}_{args.reg}"
+        print(f"テスト実行中: {name.capitalize()} (coeffs={coeffs})")
+        prefix = f"{name.lower()}_{'diff_' + args.diff_mode + '_' if args.diff_mode else ''}"
+        tester.run_tests(prefix=prefix, visualize=not args.no_viz)
+    
     elif args.command == 'diagnostics':
-        # ソルバーの生成
+        # ソルバー作成と診断実行
         solver = get_solver(args, grid_config)
-        # 診断の実行
         diagnostics = CCDSolverDiagnostics(CCDCompositeSolver, grid_config, {})
-        diagnostics.solver = solver  # 直接インスタンスを設定
+        diagnostics.solver = solver
         
-        solver_name = args.preset.capitalize() if args.preset else f"{args.scaling.capitalize()}_{args.reg.capitalize()}"
-        coeff_str = "" if args.coeffs is None else f" (coeffs={args.coeffs})"
-        print(f"診断実行中: {solver_name}{coeff_str}")
+        name = args.preset or f"{args.scaling}_{args.reg}"
+        print(f"診断実行中: {name.capitalize()} (coeffs={coeffs})")
         diagnostics.perform_full_diagnosis(visualize=args.viz)
-        
+    
     elif args.command == 'compare':
-        configs = []
-        
+        # 比較モードの設定
         if args.mode == 'presets':
-            # プリセット設定を比較
             configs = get_combined_presets()
         elif args.mode == 'scaling':
-            # 代表的なスケーリング手法を比較
             scaling_methods = CCDCompositeSolver.available_scaling_methods()
             configs = [(s.capitalize(), s, "none", {}) for s in scaling_methods]
         elif args.mode == 'reg':
-            # 代表的な正則化手法を比較
             reg_methods = CCDCompositeSolver.available_regularization_methods()
             configs = [(r.capitalize(), "none", r, {}) for r in reg_methods]
-        elif args.mode == 'custom' and args.configs:
-            # カスタム設定を比較
-            configs = parse_custom_configs(args.configs)
-        
-        if not configs:
-            print("エラー: 比較する設定が指定されていません")
+        elif args.mode == 'diff-modes':
+            configs = get_diff_mode_configs()
+        else:
+            print("エラー: 無効な比較モードです")
             return
         
-        # ソルバーリストの生成
+        # ソルバーリストの作成
         solvers_list = []
         for name, scaling, regularization, params in configs:
-            # CCDMethodTesterを作成し、その中でソルバーを初期化
+            params_copy = params.copy()
+            
+            # diff-modesモード以外では指定された係数を使用
+            if args.mode != 'diff-modes' and 'coeffs' not in params_copy:
+                params_copy['coeffs'] = coeffs
+            
             tester = CCDMethodTester(
                 CCDCompositeSolver, 
                 grid_config, 
@@ -226,45 +211,25 @@ def run_cli():
                 solver_kwargs={
                     'scaling': scaling,
                     'regularization': regularization,
-                    'coeffs': args.coeffs,
-                    **params
-                },
-                test_functions=None  # デフォルトの関数セットを使用
+                    **params_copy
+                }
             )
             solvers_list.append((name, tester))
         
-        # 比較を実行
-        coeff_str = "" if args.coeffs is None else f" (coeffs={args.coeffs})"
-        print(f"比較実行中: {len(configs)}個の設定を比較します{coeff_str}")
+        # 比較実行
+        print(f"比較実行中: {len(configs)}個の設定を比較します")
+        prefix = "diff_mode_" if args.mode == 'diff-modes' else ""
         comparator = SolverComparator(solvers_list, grid_config, x_range)
-        comparator.run_comparison(save_results=not args.no_save, visualize=not args.no_viz)
+        comparator.run_comparison(save_results=True, visualize=not args.no_viz, prefix=prefix)
     
     elif args.command == 'list':
-        if args.type == 'all':
-            print_available_methods()
-        elif args.type == 'scaling':
-            print("=== 使用可能なスケーリング手法 ===")
-            for method in sorted(CCDCompositeSolver.available_scaling_methods()):
-                param_info = CCDCompositeSolver.get_scaling_param_info(method)
-                if param_info:
-                    params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
-                    print(f"- {method} - パラメータ: {params}")
-                else:
-                    print(f"- {method}")
-        elif args.type == 'reg':
-            print("=== 使用可能な正則化手法 ===")
-            for method in sorted(CCDCompositeSolver.available_regularization_methods()):
-                param_info = CCDCompositeSolver.get_regularization_param_info(method)
-                if param_info:
-                    params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
-                    print(f"- {method} - パラメータ: {params}")
-                else:
-                    print(f"- {method}")
-        elif args.type == 'presets':
-            print("=== 使用可能なプリセット設定 ===")
-            for name, scaling, regularization, params in get_combined_presets():
-                param_str = ", ".join([f"{k}={v}" for k, v in params.items()]) if params else "なし"
-                print(f"- {name}: スケーリング={scaling}, 正則化={regularization}, パラメータ={param_str}")
+        if args.type in ['all', 'scaling', 'reg', 'presets']:
+            # プラグイン情報の表示
+            CCDCompositeSolver.display_available_methods()
+        if args.type in ['all', 'diff-modes']:
+            # 微分モードの表示
+            print("\n")
+            print_diff_modes()
 
 
 if __name__ == "__main__":

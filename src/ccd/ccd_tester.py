@@ -1,3 +1,9 @@
+"""
+簡素化されたCCD法テスターモジュール
+
+CCD法の異なる微分組み合わせに対応したテスト機能を提供します。
+"""
+
 import jax.numpy as jnp
 import time
 import os
@@ -35,9 +41,9 @@ class CCDMethodTester:
         solver_kwargs = solver_kwargs or {}
         
         # 係数の設定
-        self.coeffs = coeffs
+        self.coeffs = coeffs if coeffs is not None else [1.0, 0.0, 0.0, 0.0]
         
-        # solver_kwargsに係数を追加（存在する場合）
+        # solver_kwargsに係数を追加
         if self.coeffs is not None:
             solver_kwargs['coeffs'] = self.coeffs
         
@@ -63,35 +69,30 @@ class CCDMethodTester:
         h = self.grid_config.h
         x_start = self.x_range[0]
 
-        # グリッド点での関数値を計算
+        # グリッド点でのx座標を計算
         x_points = jnp.array([x_start + i * h for i in range(n)])
-        f_values = jnp.array([test_func.f(x) for x in x_points])
+        
+        # テスト関数の値と導関数を計算
+        analytical_psi = jnp.array([test_func.f(x) for x in x_points])
+        analytical_df = jnp.array([test_func.df(x) for x in x_points])
+        analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
+        analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
+        
+        # 係数に基づいて入力関数値を計算 (f = a*psi + b*psi' + c*psi'' + d*psi''')
+        a, b, c, d = self.coeffs
+        f_values = (a * analytical_psi + 
+                    b * analytical_df + 
+                    c * analytical_d2f + 
+                    d * analytical_d3f)
 
         # 計測開始
         start_time = time.time()
         
-        # 数値解の計算（新しいAPIに対応）
+        # 数値解の計算
         psi, psi_prime, psi_second, psi_third = self.solver.solve(f_values)
         
         # 計測終了
         elapsed_time = time.time() - start_time
-
-        # 解析解の計算 (係数を考慮)
-        if self.coeffs is not None:
-            a, b, c, d = self.coeffs
-            # f = a*psi + b*psi' + c*psi'' + d*psi''' の関係なので、
-            # 解析解からpsiを求める必要がある
-            # ここではシンプルなケースとして、解析解のpsiをそのまま使用
-            analytical_psi = jnp.array([test_func.f(x) for x in x_points])
-            analytical_df = jnp.array([test_func.df(x) for x in x_points])
-            analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
-            analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
-        else:
-            # デフォルトケース: f = psi
-            analytical_psi = jnp.array([test_func.f(x) for x in x_points])
-            analytical_df = jnp.array([test_func.df(x) for x in x_points])
-            analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
-            analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
 
         # 誤差の計算 (L2ノルム)
         error_psi = jnp.sqrt(jnp.mean((psi - analytical_psi) ** 2))
@@ -146,19 +147,45 @@ class CCDMethodTester:
                 h = self.grid_config.h
                 x_start = self.x_range[0]
                 x_points = jnp.array([x_start + i * h for i in range(n)])
-                f_values = jnp.array([test_func.f(x) for x in x_points])
                 
-                # 新しいAPIに対応
+                # テスト関数の値と導関数を計算
+                analytical_psi = jnp.array([test_func.f(x) for x in x_points])
+                analytical_df = jnp.array([test_func.df(x) for x in x_points])
+                analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
+                analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
+                
+                # 係数に基づいて入力関数値を計算
+                a, b, c, d = self.coeffs
+                f_values = (a * analytical_psi + 
+                            b * analytical_df + 
+                            c * analytical_d2f + 
+                            d * analytical_d3f)
+                
+                # 数値解の計算
                 psi, psi_prime, psi_second, psi_third = self.solver.solve(f_values)
                 
-                # visualize_derivative_results関数への入力も変更する必要があります
+                # 微分モード名を取得
+                mode_names = {
+                    (1, 0, 0, 0): "PSI",
+                    (0, 1, 0, 0): "PSI'",
+                    (0, 0, 1, 0): "PSI''",
+                    (1, 1, 0, 0): "PSI+PSI'",
+                    (1, 0, 1, 0): "PSI+PSI''",
+                    (0, 1, 1, 0): "PSI'+PSI''",
+                    (1, 1, 1, 0): "PSI+PSI'+PSI''"
+                }
+                
+                coeffs_tuple = tuple(self.coeffs)
+                mode_name = mode_names.get(coeffs_tuple, f"coeffs={self.coeffs}")
+                
+                # 可視化
                 visualize_derivative_results(
                     test_func=test_func,
-                    f_values=f_values,  # 元の関数値
-                    numerical_derivatives=(psi, psi_prime, psi_second, psi_third),  # タプルで渡す
+                    f_values=f_values,
+                    numerical_derivatives=(psi, psi_prime, psi_second, psi_third),
                     grid_config=self.grid_config,
                     x_range=self.x_range,
-                    solver_name=f"{self.solver_name}{coeff_str}",
+                    solver_name=f"{self.solver_name} ({mode_name})",
                     save_path=f"results/{prefix}{test_func.name.lower()}_results.png"
                 )
         

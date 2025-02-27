@@ -1,7 +1,8 @@
 """
-可視化モジュール
+可視化モジュール - 色の一貫性を修正
 
 CCDソルバーの結果を視覚化するためのユーティリティ関数を提供します。
+同じタイプのデータ（解析解/数値解）には同じ色を使用します。
 """
 
 import jax.numpy as jnp
@@ -27,7 +28,7 @@ def visualize_derivative_results(
     
     Args:
         test_func: テスト関数
-        f_values: グリッド点での元の関数値
+        f_values: グリッド点での関数値
         numerical_derivatives: 数値計算された導関数のタプル (psi, psi_prime, psi_second, psi_third)
         grid_config: グリッド設定
         x_range: x軸の範囲 (開始位置, 終了位置)
@@ -51,44 +52,40 @@ def visualize_derivative_results(
     analytical_d2f = jnp.array([test_func.d2f(x) for x in x_fine])
     analytical_d3f = jnp.array([test_func.d3f(x) for x in x_fine])
 
+    # 色の定義 - 一貫性を保つ
+    analytical_color = 'blue'  # 解析解は常に青
+    numerical_color = 'red'    # 数値解は常に赤
+    input_color = 'green'      # 入力値は常に緑
+
     # プロット
     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
     fig.suptitle(f"Test Results for {test_func.name} Function using {solver_name}")
 
     # 元関数
-    axes[0, 0].plot(x_fine, analytical_f, "b-", label="f(x)")
-    axes[0, 0].plot(x_points, f_values, "r-", label="Input f Values")
-    axes[0, 0].plot(x_points, psi, "g-", label="Computed ψ")
+    axes[0, 0].plot(x_fine, analytical_f, color=analytical_color, label="f(x)")
+    axes[0, 0].plot(x_points, f_values, color=input_color, label="Input f Values")
+    axes[0, 0].plot(x_points, psi, color=numerical_color, label="Computed ψ")
     axes[0, 0].set_title("Function Values")
     axes[0, 0].legend()
     axes[0, 0].grid(True)
 
     # 1階導関数
-    axes[0, 1].plot(x_fine, analytical_df, "b-", label="Analytical f'")
-    # 線で表示するように変更
-    axes[0, 1].plot(
-        x_points, psi_prime, "r-", label="Computed ψ'"
-    )
+    axes[0, 1].plot(x_fine, analytical_df, color=analytical_color, label="Analytical f'")
+    axes[0, 1].plot(x_points, psi_prime, color=numerical_color, label="Computed ψ'")
     axes[0, 1].set_title("First Derivative")
     axes[0, 1].legend()
     axes[0, 1].grid(True)
 
     # 2階導関数
-    axes[1, 0].plot(x_fine, analytical_d2f, "b-", label="Analytical f''")
-    # 線で表示するように変更
-    axes[1, 0].plot(
-        x_points, psi_second, "r-", label="Computed ψ''"
-    )
+    axes[1, 0].plot(x_fine, analytical_d2f, color=analytical_color, label="Analytical f''")
+    axes[1, 0].plot(x_points, psi_second, color=numerical_color, label="Computed ψ''")
     axes[1, 0].set_title("Second Derivative")
     axes[1, 0].legend()
     axes[1, 0].grid(True)
 
     # 3階導関数
-    axes[1, 1].plot(x_fine, analytical_d3f, "b-", label="Analytical f'''")
-    # 線で表示するように変更
-    axes[1, 1].plot(
-        x_points, psi_third, "r-", label="Computed ψ'''"
-    )
+    axes[1, 1].plot(x_fine, analytical_d3f, color=analytical_color, label="Analytical f'''")
+    axes[1, 1].plot(x_points, psi_third, color=numerical_color, label="Computed ψ'''")
     axes[1, 1].set_title("Third Derivative")
     axes[1, 1].legend()
     axes[1, 1].grid(True)
@@ -132,29 +129,32 @@ def visualize_error_comparison(
     # 計算時間
     times = [timings[name][test_func_name] for name in solver_names]
     
+    # 色の定義
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']  # 青、オレンジ、緑
+    
     # プロット
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     
     # 誤差のプロット
-    ax1.bar(indexes - bar_width, errors_1st, bar_width, label='1st Derivative')
-    ax1.bar(indexes, errors_2nd, bar_width, label='2nd Derivative')
-    ax1.bar(indexes + bar_width, errors_3rd, bar_width, label='3rd Derivative')
+    ax1.bar(indexes - bar_width, errors_1st, bar_width, label='1st Derivative', color=colors[0])
+    ax1.bar(indexes, errors_2nd, bar_width, label='2nd Derivative', color=colors[1])
+    ax1.bar(indexes + bar_width, errors_3rd, bar_width, label='3rd Derivative', color=colors[2])
     
-    ax1.set_xlabel('Solver')
+    ax1.set_xlabel('Solver / Diff Mode')
     ax1.set_ylabel('Error (L2 norm)')
     ax1.set_title(f'Error Comparison for {test_func_name} Function')
     ax1.set_xticks(indexes)
-    ax1.set_xticklabels(solver_names)
+    ax1.set_xticklabels(solver_names, rotation=45, ha='right')
     ax1.legend()
     ax1.set_yscale('log')  # 対数スケールで表示
     
     # 計算時間のプロット
     ax2.bar(indexes, times, color='green')
-    ax2.set_xlabel('Solver')
+    ax2.set_xlabel('Solver / Diff Mode')
     ax2.set_ylabel('Time (seconds)')
     ax2.set_title('Computation Time')
     ax2.set_xticks(indexes)
-    ax2.set_xticklabels(solver_names)
+    ax2.set_xticklabels(solver_names, rotation=45, ha='right')
     
     plt.tight_layout()
     

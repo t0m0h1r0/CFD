@@ -1,5 +1,5 @@
 """
-テスト関数の定義モジュール
+テスト関数の定義モジュール - 修正版
 
 このモジュールでは、CCD法の評価に使用するテスト関数とその導関数を定義します。
 """
@@ -79,9 +79,9 @@ class TestFunctionFactory:
             TestFunction(
                 name="CompoundPoly",
                 f=lambda x: x**2 * (1 - x**2),  # 両端でゼロの4次関数
-                df=lambda x: 2*x*(1 - x**2) - 2*x**3,
-                d2f=lambda x: 2*(1 - x**2) - 8*x**2,
-                d3f=lambda x: -12*x
+                df=lambda x: 2*x*(1 - x**2) - 2*x**3,  # = 2x - 4x^3
+                d2f=lambda x: 2 - 12*x**2,  # 修正: 正しい2階導関数
+                d3f=lambda x: -24*x  # 修正: 正しい3階導関数
             )
         ]
 
