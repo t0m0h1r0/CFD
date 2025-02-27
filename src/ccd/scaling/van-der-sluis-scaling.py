@@ -21,7 +21,7 @@ class VanDerSluisScaling(ScalingStrategy):
         """
         return {}
     
-    def apply_scaling(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
         """
         Van der Sluis スケーリングを適用
         
@@ -29,7 +29,7 @@ class VanDerSluisScaling(ScalingStrategy):
         行列の列間でスケールが大きく異なる場合に特に効果的です。
         
         Returns:
-            スケーリングされた行列L、スケーリングされた行列K、逆変換関数
+            スケーリングされた行列L、逆変換関数
         """
         # 各列の2-ノルムを計算
         col_norms = jnp.sqrt(jnp.sum(self.L * self.L, axis=0))
@@ -42,13 +42,12 @@ class VanDerSluisScaling(ScalingStrategy):
         
         # スケーリングを適用
         L_scaled = self.L @ D_col
-        K_scaled = self.K
         
         # 逆変換関数
         def inverse_scaling(X_scaled):
             return D_col @ X_scaled
         
-        return L_scaled, K_scaled, inverse_scaling
+        return L_scaled, inverse_scaling
 
 
 # スケーリング戦略をレジストリに登録

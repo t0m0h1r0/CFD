@@ -36,14 +36,14 @@ class IterativeScaling(ScalingStrategy):
             }
         }
     
-    def apply_scaling(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
         """
         Sinkhorn-Knopp法による反復的スケーリングを適用
         
         行と列の和を反復的に均等化する手法で、数値的に安定したスケーリングを実現します。
         
         Returns:
-            スケーリングされた行列L、スケーリングされた行列K、逆変換関数
+            スケーリングされた行列L、逆変換関数
         """
         # 行列の絶対値を取得
         A = jnp.abs(self.L)
@@ -81,13 +81,12 @@ class IterativeScaling(ScalingStrategy):
         
         # スケーリングを適用
         L_scaled = self.D_row @ self.L @ self.D_col
-        K_scaled = self.D_row @ self.K
         
         # 逆変換関数
         def inverse_scaling(X_scaled):
             return self.D_col @ X_scaled
         
-        return L_scaled, K_scaled, inverse_scaling
+        return L_scaled, inverse_scaling
 
 
 # スケーリング戦略をレジストリに登録

@@ -21,7 +21,7 @@ class SquareSumScaling(ScalingStrategy):
         """
         return {}
     
-    def apply_scaling(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
         """
         二乗和スケーリングを適用
         
@@ -29,7 +29,7 @@ class SquareSumScaling(ScalingStrategy):
         特異値分解の前処理として効果的です。
         
         Returns:
-            スケーリングされた行列L、スケーリングされた行列K、逆変換関数
+            スケーリングされた行列L、逆変換関数
         """
         # 1. 行の二乗和を計算
         row_sqr_sums = jnp.sqrt(jnp.sum(self.L * self.L, axis=1))
@@ -50,13 +50,12 @@ class SquareSumScaling(ScalingStrategy):
         
         # 3. スケーリングを適用
         L_scaled = L_row_scaled @ D_col
-        K_scaled = D_row @ self.K
         
         # 逆変換関数
         def inverse_scaling(X_scaled):
             return D_col @ X_scaled
         
-        return L_scaled, K_scaled, inverse_scaling
+        return L_scaled, inverse_scaling
 
 
 # スケーリング戦略をレジストリに登録

@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from functools import partial
 from typing import Dict, Any, Optional, List, Tuple, Type
 
-from ccd_core import GridConfig
+from ccd_core import GridConfig, LeftHandBlockBuilder
 from ccd_solver import CCDSolver as BaseCCDSolver
 
 # スケーリングと正則化の戦略とレジストリをインポート
@@ -46,45 +46,49 @@ class CCDCompositeSolver(BaseCCDSolver):
         self.scaling_params = scaling_params or {}
         self.regularization_params = regularization_params or {}
         
+        # デフォルトのソルバー機能を設定
+        self.inverse_scaling = lambda x: x
+        self.solver_func = None  # 親クラス初期化後に設定
+        
         # 親クラスの初期化（行列構築など）
         super().__init__(grid_config)
+        
+        # スケーリングと正則化の初期化（左辺行列Lが構築された後で実行）
+        self._initialize_scaling_and_regularization()
     
-    def _initialize_solver(self):
-        """ソルバーの初期化 - スケーリングと正則化を適用"""
-        # 行列の構築
-        L = self.left_builder.build_block(self.grid_config)
-        K = self.right_builder.build_block(self.grid_config)
+    def _initialize_scaling_and_regularization(self):
+        """スケーリングと正則化を初期化"""
+        L = self.L  # 親クラスで構築済みの左辺行列
         
         # スケーリングの適用
         try:
             scaling_class = scaling_registry.get(self.scaling)
-            scaling_strategy = scaling_class(L, K, **self.scaling_params)
-            L_scaled, K_scaled, self.inverse_scaling = scaling_strategy.apply_scaling()
+            scaling_strategy = scaling_class(L, **self.scaling_params)
+            L_scaled, self.inverse_scaling = scaling_strategy.apply_scaling()
         except KeyError:
             print(f"警告: '{self.scaling}' スケーリング戦略が見つかりません。スケーリングなしで続行します。")
-            L_scaled, K_scaled = L, K
+            L_scaled = L
             self.inverse_scaling = lambda x: x
         
         # 正則化の適用
         try:
             regularization_class = regularization_registry.get(self.regularization)
-            regularization_strategy = regularization_class(L_scaled, K_scaled, **self.regularization_params)
-            self.L_reg, self.K_reg, self.solver_func = regularization_strategy.apply_regularization()
+            regularization_strategy = regularization_class(L_scaled, None, **self.regularization_params)
+            self.L_reg, _, self.solver_func = regularization_strategy.apply_regularization()
         except KeyError:
             print(f"警告: '{self.regularization}' 正則化戦略が見つかりません。正則化なしで続行します。")
-            self.L_reg, self.K_reg = L_scaled, K_scaled
+            self.L_reg = L_scaled
             self.solver_func = lambda rhs: jnp.linalg.solve(self.L_reg, rhs)
         
         # 処理後の行列を保存（診断用）
         self.L_scaled = L_scaled
-        self.K_scaled = K_scaled
         
         # スケーリングと正則化の戦略名を保存
         self.scaling_name = self.scaling
         self.regularization_name = self.regularization
 
     @partial(jit, static_argnums=(0,))
-    def solve(self, f: jnp.ndarray) -> jnp.ndarray:
+    def solve(self, f: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """
         導関数を計算
         
@@ -92,18 +96,19 @@ class CCDCompositeSolver(BaseCCDSolver):
             f: 関数値ベクトル (n,)
             
         Returns:
-            X: 導関数ベクトル (3n,) - [f'_0, f''_0, f'''_0, f'_1, f''_1, f'''_1, ...]
+            関数値と導関数のタプル (f, f', f'', f''')
         """
-        # 右辺ベクトルを計算
-        rhs = self.K_reg @ f
+        # 右辺ベクトルを計算（親クラスのメソッドを使用）
+        rhs = self._build_right_hand_vector(f)
         
         # 正則化されたソルバー関数を使用して解を計算
-        X_scaled = self.solver_func(rhs)
+        solution_scaled = self.solver_func(rhs)
         
         # スケーリングの逆変換を適用
-        X = self.inverse_scaling(X_scaled)
+        solution = self.inverse_scaling(solution_scaled)
         
-        return X
+        # 解ベクトルから各成分を抽出
+        return self._extract_derivatives(solution)
     
     @staticmethod
     def load_plugins(silent: bool = False):

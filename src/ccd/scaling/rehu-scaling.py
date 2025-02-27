@@ -20,14 +20,14 @@ class RehuScaling(ScalingStrategy):
         """
         return {}
     
-    def apply_scaling(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
         """
         Rehu法（行と列の最大絶対値）によるスケーリングを適用
         
         各行と列の最大絶対値の平方根でスケーリングする効果的な方法
         
         Returns:
-            スケーリングされた行列L、スケーリングされた行列K、逆変換関数
+            スケーリングされた行列L、逆変換関数
         """
         # 行列の各行と列の最大絶対値を計算
         max_values_row = jnp.max(jnp.abs(self.L), axis=1)
@@ -39,13 +39,12 @@ class RehuScaling(ScalingStrategy):
         
         # スケーリングを適用
         L_scaled = D_row @ self.L @ D_col
-        K_scaled = D_row @ self.K
         
         # 逆変換関数
         def inverse_scaling(X_scaled):
             return D_col @ X_scaled
         
-        return L_scaled, K_scaled, inverse_scaling
+        return L_scaled, inverse_scaling
 
 
 # スケーリング戦略をレジストリに登録

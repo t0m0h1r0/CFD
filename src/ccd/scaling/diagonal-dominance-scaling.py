@@ -21,7 +21,7 @@ class DiagonalDominanceScaling(ScalingStrategy):
         """
         return {}
     
-    def apply_scaling(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
         """
         対角優位スケーリングを適用
         
@@ -29,7 +29,7 @@ class DiagonalDominanceScaling(ScalingStrategy):
         数値解法の収束特性の改善に役立ちます。
         
         Returns:
-            スケーリングされた行列L、スケーリングされた行列K、逆変換関数
+            スケーリングされた行列L、逆変換関数
         """
         n = self.L.shape[0]
         diag_elements = jnp.diag(self.L)
@@ -42,13 +42,12 @@ class DiagonalDominanceScaling(ScalingStrategy):
         
         # スケーリングを適用
         L_scaled = D @ self.L @ D
-        K_scaled = D @ self.K
         
         # 逆変換関数
         def inverse_scaling(X_scaled):
             return D @ X_scaled
         
-        return L_scaled, K_scaled, inverse_scaling
+        return L_scaled, inverse_scaling
 
 
 # スケーリング戦略をレジストリに登録
