@@ -7,18 +7,17 @@
 from jax import jit
 import jax.numpy as jnp
 from functools import partial
-from typing import Dict, Any, Optional, List, Tuple, Type
+from typing import Dict, Any, Optional, List, Tuple
 
-from ccd_core import GridConfig, LeftHandBlockBuilder
+from ccd_core import GridConfig
 from ccd_solver import CCDSolver as BaseCCDSolver
 
 # スケーリングと正則化の戦略とレジストリをインポート
-from scaling_strategies_base import ScalingStrategy, scaling_registry
-from regularization_strategies_base import RegularizationStrategy, regularization_registry
+from scaling_strategies_base import scaling_registry
+from regularization_strategies_base import regularization_registry
 
 # プラグイン管理モジュールをインポート
 import os
-import importlib.util
 
 
 class CCDCompositeSolver(BaseCCDSolver):

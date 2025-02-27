@@ -4,8 +4,7 @@
 異なるCCDソルバー間での性能比較を行う機能を提供します。
 """
 
-import jax.numpy as jnp
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Optional
 import json
 import os
 

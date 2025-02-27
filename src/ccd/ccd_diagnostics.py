@@ -103,7 +103,7 @@ class CCDSolverDiagnostics:
         if visualize:
             # resultsディレクトリを作成
             os.makedirs("results", exist_ok=True)
-            visualize_matrix_properties(self.L, f"Original Matrix Properties", "results/original_matrix.png")
+            visualize_matrix_properties(self.L, "Original Matrix Properties", "results/original_matrix.png")
         
         # 結果を辞書に格納して返す
         results = {

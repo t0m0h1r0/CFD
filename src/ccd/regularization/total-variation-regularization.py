@@ -7,7 +7,6 @@ JAX互換の実装です。
 """
 
 import jax.numpy as jnp
-import jax.lax as lax
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategies_base import RegularizationStrategy, regularization_registry
