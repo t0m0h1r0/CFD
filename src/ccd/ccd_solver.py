@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from typing import Tuple
+from typing import Tuple, List, Optional
 from functools import partial
 import jax
 
@@ -9,18 +9,22 @@ from ccd_core import GridConfig, LeftHandBlockBuilder
 class CCDSolver:
     """結合コンパクト差分ソルバー"""
     
-    def __init__(self, grid_config: GridConfig):
+    def __init__(self, grid_config: GridConfig, coeffs: Optional[List[float]] = None):
         """
         CCDソルバーの初期化
         
         Args:
             grid_config: グリッド設定
+            coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用 (f = psi)
         """
         self.grid_config = grid_config
         self.left_hand_builder = LeftHandBlockBuilder()
         
-        # 左辺行列を事前に構築（不変）
-        self.L = self.left_hand_builder.build_block(grid_config)
+        # 係数を設定
+        self.coeffs = coeffs if coeffs is not None else [1.0, 0.0, 0.0, 0.0]
+        
+        # 左辺行列を係数を含めて構築
+        self.L = self.left_hand_builder.build_block(grid_config, self.coeffs)
         
     def _build_right_hand_vector(self, f: jnp.ndarray) -> jnp.ndarray:
         """
@@ -68,13 +72,13 @@ class CCDSolver:
     @partial(jax.jit, static_argnums=(0,))
     def solve(self, f: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """
-        関数値fに対するCCD方程式系を解き、関数値と各階微分を返す
+        関数値fに対するCCD方程式系を解き、ψとその各階微分を返す
         
         Args:
             f: グリッド点での関数値
             
         Returns:
-            (関数値, 1階微分, 2階微分, 3階微分)のタプル
+            (ψ, ψ', ψ'', ψ''')のタプル
         """
         # 右辺ベクトルを構築（パターン[f[0],0,0,0,f[1],0,0,0,...]）
         K = self._build_right_hand_vector(f)

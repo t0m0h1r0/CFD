@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, List, Optional
 
 
 @dataclass
@@ -16,7 +16,7 @@ class BlockMatrixBuilder(ABC):
     """ブロック行列生成の抽象基底クラス"""
 
     @abstractmethod
-    def build_block(self, grid_config: GridConfig) -> jnp.ndarray:
+    def build_block(self, grid_config: GridConfig, coeffs: Optional[List[float]] = None) -> jnp.ndarray:
         """ブロック行列を生成する抽象メソッド"""
         pass
 
@@ -24,14 +24,23 @@ class BlockMatrixBuilder(ABC):
 class LeftHandBlockBuilder(BlockMatrixBuilder):
     """左辺のブロック行列を生成するクラス"""
 
-    def _build_interior_blocks(self) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    def _build_interior_blocks(self, coeffs: Optional[List[float]] = None) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """内部点のブロック行列A, B, Cを生成
         
+        Args:
+            coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用
+
         Returns:
             A: 左側のブロック行列
             B: 中央のブロック行列
             C: 右側のブロック行列
         """
+        # デフォルト係数: f = psi
+        if coeffs is None:
+            coeffs = [1.0, 0.0, 0.0, 0.0]
+        
+        a, b, c, d = coeffs
+
         # 左ブロック行列 A
         A = jnp.array([
             #      f,      f',     f'',    f'''
@@ -41,10 +50,10 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
             [-105/16, -105/16,   -15/8,   -3/16],  # 左側ブロックの3行目
         ])
 
-        # 中央ブロック行列 B - 単位行列
+        # 中央ブロック行列 B - 第1行を係数で置き換え
         B = jnp.array([
             #      f,      f',     f'',    f'''
-            [      1,       0,       0,       0],
+            [      a,       b,       c,       d],  # 係数[a,b,c,d]を設定
             [      0,       1,       0,       0],  # 中央ブロックの1行目
             [   14/9,       0,       1,       0],  # 中央ブロックの2行目
             [      0,       0,       0,       1],  # 中央ブロックの3行目
@@ -61,11 +70,14 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
 
         return A, B, C
 
-    def _build_boundary_blocks(self) -> Tuple[
+    def _build_boundary_blocks(self, coeffs: Optional[List[float]] = None) -> Tuple[
         jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
     ]:
         """境界点のブロック行列を生成
         
+        Args:
+            coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用
+            
         Returns:
             B0: 左境界の主ブロック
             C0: 左境界の第2ブロック
@@ -74,9 +86,16 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
             AR: 右境界の第2ブロック
             BR: 右境界の主ブロック
         """
+        # デフォルト係数: f = psi
+        if coeffs is None:
+            coeffs = [1.0, 0.0, 0.0, 0.0]
+        
+        a, b, c, d = coeffs
+
+        # 左境界ブロック - 第1行を係数で置き換え
         B0 = jnp.array([
             #    f,     f',    f'',   f'''
-            [    1,      0,      0,      0],
+            [    a,      b,      c,      d],  # 係数[a,b,c,d]を設定
             [ -9/2,      1,      0,      0],
             [-33/2,      0,      1,      0],
             [-189/4,     0,      0,      1],
@@ -98,9 +117,10 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
             [-2739/4, -579/2,  -75/2,      0],
         ])
 
+        # 右境界ブロック - 第1行を係数で置き換え
         BR = jnp.array([
             #    f,     f',    f'',   f'''
-            [    1,      0,      0,      0],
+            [    a,      b,      c,      d],  # 係数[a,b,c,d]を設定
             [  9/2,      1,      0,      0],
             [-33/2,      0,      1,      0],
             [189/4,      0,      0,      1],
@@ -124,11 +144,21 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
 
         return B0, C0, D0, ZR, AR, BR
 
-    def build_block(self, grid_config: GridConfig) -> jnp.ndarray:
-        """左辺のブロック行列全体を生成"""
+    def build_block(self, grid_config: GridConfig, coeffs: Optional[List[float]] = None) -> jnp.ndarray:
+        """左辺のブロック行列全体を生成
+        
+        Args:
+            grid_config: グリッド設定
+            coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用
+            
+        Returns:
+            生成されたブロック行列
+        """
         n, h = grid_config.n_points, grid_config.h
-        A, B, C = self._build_interior_blocks()
-        B0, C0, D0, ZR, AR, BR = self._build_boundary_blocks()
+        
+        # 係数を使用してブロック行列を生成
+        A, B, C = self._build_interior_blocks(coeffs)
+        B0, C0, D0, ZR, AR, BR = self._build_boundary_blocks(coeffs)
 
         # 次数行列の定義
         DEGREE = jnp.array([
@@ -136,9 +166,6 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
             [1/h**1,     1,   h**1,   h**2],
             [1/h**2,1/h**1,      1,   h**1],
             [1/h**3,1/h**2, 1/h**1,      1],
-#            [     1,      h,   h**2,   h**3],
-#            [     1,      h,   h**2,   h**3],
-#            [     1,      h,   h**2,   h**3],
         ])
 
         # 次数を適用

@@ -30,7 +30,8 @@ class CCDCompositeSolver(BaseCCDSolver):
         scaling: str = "none",
         regularization: str = "none",
         scaling_params: Optional[Dict[str, Any]] = None,
-        regularization_params: Optional[Dict[str, Any]] = None
+        regularization_params: Optional[Dict[str, Any]] = None,
+        coeffs: Optional[List[float]] = None
     ):
         """
         Args:
@@ -39,6 +40,7 @@ class CCDCompositeSolver(BaseCCDSolver):
             regularization: 正則化戦略名
             scaling_params: スケーリングパラメータ
             regularization_params: 正則化パラメータ
+            coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用 (f = psi)
         """
         # インスタンス変数を先に保存
         self.scaling = scaling.lower()
@@ -51,7 +53,7 @@ class CCDCompositeSolver(BaseCCDSolver):
         self.solver_func = None  # 親クラス初期化後に設定
         
         # 親クラスの初期化（行列構築など）
-        super().__init__(grid_config)
+        super().__init__(grid_config, coeffs)
         
         # スケーリングと正則化の初期化（左辺行列Lが構築された後で実行）
         self._initialize_scaling_and_regularization()
@@ -97,7 +99,7 @@ class CCDCompositeSolver(BaseCCDSolver):
             f: 関数値ベクトル (n,)
             
         Returns:
-            関数値と導関数のタプル (f, f', f'', f''')
+            関数値と導関数のタプル (psi, psi', psi'', psi''')
         """
         # 右辺ベクトルを計算（親クラスのメソッドを使用）
         rhs = self._build_right_hand_vector(f)
@@ -243,7 +245,8 @@ class CCDCompositeSolver(BaseCCDSolver):
         grid_config: GridConfig, 
         scaling: str = "none", 
         regularization: str = "none", 
-        params: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None,
+        coeffs: Optional[List[float]] = None
     ) -> 'CCDCompositeSolver':
         """
         パラメータを指定してソルバーを作成するファクトリーメソッド
@@ -253,6 +256,7 @@ class CCDCompositeSolver(BaseCCDSolver):
             scaling: スケーリング戦略名
             regularization: 正則化戦略名
             params: パラメータ辞書 {パラメータ名: 値, ...}
+            coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用
             
         Returns:
             設定されたCCDCompositeSolverインスタンス
@@ -281,9 +285,6 @@ class CCDCompositeSolver(BaseCCDSolver):
             scaling=scaling,
             regularization=regularization,
             scaling_params=scaling_params,
-            regularization_params=regularization_params
+            regularization_params=regularization_params,
+            coeffs=coeffs
         )
-
-
-# 起動時にプラグインを自動的にロード（サイレントモード）
-CCDCompositeSolver.load_plugins(silent=True)

@@ -16,7 +16,7 @@ from ccd_core import GridConfig
 def visualize_derivative_results(
     test_func: TestFunction,
     f_values: jnp.ndarray,
-    numerical_derivatives: Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray],
+    numerical_derivatives: Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
     grid_config: GridConfig,
     x_range: Tuple[float, float],
     solver_name: str,
@@ -28,7 +28,7 @@ def visualize_derivative_results(
     Args:
         test_func: テスト関数
         f_values: グリッド点での元の関数値
-        numerical_derivatives: 数値計算された導関数のタプル (f_prime, f_second, f_third)
+        numerical_derivatives: 数値計算された導関数のタプル (psi, psi_prime, psi_second, psi_third)
         grid_config: グリッド設定
         x_range: x軸の範囲 (開始位置, 終了位置)
         solver_name: ソルバーの名前 (プロットタイトルに使用)
@@ -39,13 +39,14 @@ def visualize_derivative_results(
     x_start = x_range[0]
 
     # 導関数のアンパック
-    f_prime, f_second, f_third = numerical_derivatives
+    psi, psi_prime, psi_second, psi_third = numerical_derivatives
 
     # グリッド点の計算
     x_points = jnp.array([x_start + i * h for i in range(n)])
 
     # 高解像度の点での解析解
     x_fine = jnp.linspace(x_range[0], x_range[1], 200)
+    analytical_f = jnp.array([test_func.f(x) for x in x_fine])
     analytical_df = jnp.array([test_func.df(x) for x in x_fine])
     analytical_d2f = jnp.array([test_func.d2f(x) for x in x_fine])
     analytical_d3f = jnp.array([test_func.d3f(x) for x in x_fine])
@@ -55,37 +56,38 @@ def visualize_derivative_results(
     fig.suptitle(f"Test Results for {test_func.name} Function using {solver_name}")
 
     # 元関数
-    axes[0, 0].plot(x_fine, [test_func.f(x) for x in x_fine], "b-", label="f(x)")
-    axes[0, 0].plot(x_points, f_values, "ro", label="Grid Points")
-    axes[0, 0].set_title("Original Function")
+    axes[0, 0].plot(x_fine, analytical_f, "b-", label="f(x)")
+    axes[0, 0].plot(x_points, f_values, "r-", label="Input f Values")
+    axes[0, 0].plot(x_points, psi, "g-", label="Computed ψ")
+    axes[0, 0].set_title("Function Values")
     axes[0, 0].legend()
     axes[0, 0].grid(True)
 
     # 1階導関数
-    axes[0, 1].plot(x_fine, analytical_df, "b-", label="Analytical")
+    axes[0, 1].plot(x_fine, analytical_df, "b-", label="Analytical f'")
     # 線で表示するように変更
     axes[0, 1].plot(
-        x_points, f_prime, "r-", label="Numerical"
+        x_points, psi_prime, "r-", label="Computed ψ'"
     )
     axes[0, 1].set_title("First Derivative")
     axes[0, 1].legend()
     axes[0, 1].grid(True)
 
     # 2階導関数
-    axes[1, 0].plot(x_fine, analytical_d2f, "b-", label="Analytical")
+    axes[1, 0].plot(x_fine, analytical_d2f, "b-", label="Analytical f''")
     # 線で表示するように変更
     axes[1, 0].plot(
-        x_points, f_second, "r-", label="Numerical"
+        x_points, psi_second, "r-", label="Computed ψ''"
     )
     axes[1, 0].set_title("Second Derivative")
     axes[1, 0].legend()
     axes[1, 0].grid(True)
 
     # 3階導関数
-    axes[1, 1].plot(x_fine, analytical_d3f, "b-", label="Analytical")
+    axes[1, 1].plot(x_fine, analytical_d3f, "b-", label="Analytical f'''")
     # 線で表示するように変更
     axes[1, 1].plot(
-        x_points, f_third, "r-", label="Numerical"
+        x_points, psi_third, "r-", label="Computed ψ'''"
     )
     axes[1, 1].set_title("Third Derivative")
     axes[1, 1].legend()

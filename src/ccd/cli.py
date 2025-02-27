@@ -24,6 +24,8 @@ def parse_args():
     parser.add_argument('--n', type=int, default=256, help='グリッド点の数')
     parser.add_argument('--xrange', type=float, nargs=2, default=[-1.0, 1.0], 
                       help='x軸の範囲 (開始点 終了点)')
+    parser.add_argument('--coeffs', type=float, nargs='+', 
+                      help='[a, b, c, d] 係数リスト (f = a*psi + b*psi\' + c*psi\'\' + d*psi\'\'\')')
     
     # サブコマンドの設定
     subparsers = parser.add_subparsers(dest='command', help='実行するコマンド', required=True)
@@ -110,12 +112,16 @@ def get_solver(args, grid_config: GridConfig):
         if hasattr(args, 'params') and args.params:
             preset_params = parse_params(args.params)
     
+    # 係数が指定されていれば追加
+    coeffs = args.coeffs if hasattr(args, 'coeffs') else None
+    
     # 統合ソルバーを作成
     solver = CCDCompositeSolver.create_solver(
         grid_config,
         scaling=scaling,
         regularization=regularization,
-        params=preset_params
+        params=preset_params,
+        coeffs=coeffs
     )
     
     return solver
@@ -161,11 +167,18 @@ def run_cli():
         # ソルバーの生成
         solver = get_solver(args, grid_config)
         # テスターの実行
-        tester = CCDMethodTester(CCDCompositeSolver, grid_config, x_range, {})
+        tester = CCDMethodTester(
+            CCDCompositeSolver, 
+            grid_config, 
+            x_range, 
+            {},
+            coeffs=args.coeffs
+        )
         tester.solver = solver  # 直接インスタンスを設定
         
         solver_name = args.preset.capitalize() if args.preset else f"{args.scaling.capitalize()}_{args.reg.capitalize()}"
-        print(f"テスト実行中: {solver_name}")
+        coeff_str = "" if args.coeffs is None else f" (coeffs={args.coeffs})"
+        print(f"テスト実行中: {solver_name}{coeff_str}")
         tester.run_tests(prefix=f"{solver_name.lower()}_", visualize=not args.no_viz)
         
     elif args.command == 'diagnostics':
@@ -176,7 +189,8 @@ def run_cli():
         diagnostics.solver = solver  # 直接インスタンスを設定
         
         solver_name = args.preset.capitalize() if args.preset else f"{args.scaling.capitalize()}_{args.reg.capitalize()}"
-        print(f"診断実行中: {solver_name}")
+        coeff_str = "" if args.coeffs is None else f" (coeffs={args.coeffs})"
+        print(f"診断実行中: {solver_name}{coeff_str}")
         diagnostics.perform_full_diagnosis(visualize=args.viz)
         
     elif args.command == 'compare':
@@ -212,6 +226,7 @@ def run_cli():
                 solver_kwargs={
                     'scaling': scaling,
                     'regularization': regularization,
+                    'coeffs': args.coeffs,
                     **params
                 },
                 test_functions=None  # デフォルトの関数セットを使用
@@ -219,7 +234,8 @@ def run_cli():
             solvers_list.append((name, tester))
         
         # 比較を実行
-        print(f"比較実行中: {len(configs)}個の設定を比較します")
+        coeff_str = "" if args.coeffs is None else f" (coeffs={args.coeffs})"
+        print(f"比較実行中: {len(configs)}個の設定を比較します{coeff_str}")
         comparator = SolverComparator(solvers_list, grid_config, x_range)
         comparator.run_comparison(save_results=not args.no_save, visualize=not args.no_viz)
     
@@ -238,10 +254,6 @@ def run_cli():
         elif args.type == 'reg':
             print("=== 使用可能な正則化手法 ===")
             for method in sorted(CCDCompositeSolver.available_regularization_methods()):
-                # 特定の冗長な名前はスキップ
-                if method in ['s_v_d', 't_s_v_d', 'l_s_q_r']:
-                    continue
-                    
                 param_info = CCDCompositeSolver.get_regularization_param_info(method)
                 if param_info:
                     params = ", ".join([f"{k} ({v['help']}, デフォルト: {v['default']})" for k, v in param_info.items()])
