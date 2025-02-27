@@ -73,12 +73,13 @@ class CCDCompositeSolver(BaseCCDSolver):
         # 正則化の適用
         try:
             regularization_class = regularization_registry.get(self.regularization)
-            regularization_strategy = regularization_class(L_scaled, None, **self.regularization_params)
-            self.L_reg, _, self.solver_func = regularization_strategy.apply_regularization()
+            # 不要な引数を削除
+            regularization_strategy = regularization_class(L_scaled, **self.regularization_params)
+            self.L_reg, self.inverse_regularization = regularization_strategy.apply_regularization()
         except KeyError:
             print(f"警告: '{self.regularization}' 正則化戦略が見つかりません。正則化なしで続行します。")
             self.L_reg = L_scaled
-            self.solver_func = lambda rhs: jnp.linalg.solve(self.L_reg, rhs)
+            self.inverse_regularization = lambda x: x
         
         # 処理後の行列を保存（診断用）
         self.L_scaled = L_scaled
@@ -102,7 +103,7 @@ class CCDCompositeSolver(BaseCCDSolver):
         rhs = self._build_right_hand_vector(f)
         
         # 正則化されたソルバー関数を使用して解を計算
-        solution_scaled = self.solver_func(rhs)
+        solution_scaled = jnp.linalg.solve(self.L_reg, rhs)
         
         # スケーリングの逆変換を適用
         solution = self.inverse_scaling(solution_scaled)

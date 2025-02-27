@@ -15,15 +15,13 @@ from plugin_manager import PluginRegistry
 class RegularizationStrategy(ABC):
     """正則化戦略の基底クラス"""
     
-    def __init__(self, L: jnp.ndarray, K: jnp.ndarray, **kwargs):
+    def __init__(self, L: jnp.ndarray, **kwargs):
         """
         Args:
             L: 正則化する行列
-            K: 正則化する右辺行列
             **kwargs: その他のパラメータ
         """
         self.L = L
-        self.K = K
         self._init_params(**kwargs)
     
     def _init_params(self, **kwargs):
@@ -47,12 +45,12 @@ class RegularizationStrategy(ABC):
         return {}
     
     @abstractmethod
-    def apply_regularization(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_regularization(self) -> Tuple[jnp.ndarray, Callable]:
         """
-        正則化を適用し、正則化された行列とソルバー関数を返す
+        正則化を適用し、正則化された行列と逆変換関数を返す
         
         Returns:
-            正則化された行列L、正則化された行列K、ソルバー関数
+            正則化された行列L、逆変換関数
         """
         pass
 
@@ -60,17 +58,17 @@ class RegularizationStrategy(ABC):
 class NoneRegularization(RegularizationStrategy):
     """正則化なし"""
     
-    def apply_regularization(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_regularization(self) -> Tuple[jnp.ndarray, Callable]:
         """
-        正則化なし - 標準的な行列の解法
+        正則化なし - 元の行列をそのまま返す
         
         Returns:
-            元の行列L、K、標準ソルバー関数
+            元の行列L、恒等関数
         """
-        def solver_func(rhs):
-            return jnp.linalg.solve(self.L, rhs)
+        def inverse_scaling(x_scaled):
+            return x_scaled
         
-        return self.L, self.K, solver_func
+        return self.L, inverse_scaling
 
 
 # 正則化戦略のレジストリを作成

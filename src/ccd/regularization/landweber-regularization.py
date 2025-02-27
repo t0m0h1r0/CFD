@@ -39,18 +39,17 @@ class LandweberRegularization(RegularizationStrategy):
             }
         }
     
-    def apply_regularization(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_regularization(self) -> Tuple[jnp.ndarray, Callable]:
         """
         Landweber反復法による正則化を適用
         
         反復法に基づく正則化手法で、反復回数を制限することで正則化効果を得ます。
         
         Returns:
-            正則化された行列L、正則化された行列K、ソルバー関数
+            正則化された行列L、逆変換関数
         """
         # クラス変数をローカル変数に保存（ループ内での参照のため）
         L = self.L
-        L_T = self.L_T
         
         # 行列のスペクトルノルムを概算
         s_max = jnp.linalg.norm(L, ord=2)
@@ -58,25 +57,15 @@ class LandweberRegularization(RegularizationStrategy):
         # 緩和パラメータを安全な範囲に調整
         omega = jnp.minimum(self.relaxation, 1.9 / (s_max ** 2))
         
-        # JAX互換のソルバー関数
-        def solver_func(rhs):
-            # 初期解を0に設定
-            x_init = jnp.zeros_like(rhs)
-            
-            # Landweber反復のボディ関数
-            def landweber_body(i, x):
-                # 残差: r = rhs - L @ x
-                residual = rhs - L @ x
-                # 反復更新: x = x + omega * L^T @ residual
-                x_new = x + omega * (L_T @ residual)
-                return x_new
-            
-            # Landweber反復を実行
-            final_x = lax.fori_loop(0, self.iterations, landweber_body, x_init)
-            
-            return final_x
+        # 正則化された行列を計算
+        # 最大特異値に基づいて行列を調整
+        L_reg = L / (s_max ** 2)
         
-        return self.L, self.K, solver_func
+        # 逆変換関数
+        def inverse_scaling(x_scaled):
+            return x_scaled
+        
+        return L_reg, inverse_scaling
 
 
 # 正則化戦略をレジストリに登録

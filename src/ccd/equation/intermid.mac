@@ -10,14 +10,15 @@ fl[2]: f[2,1] - f[3,1]*h + f[4,1]*h^2/2! - f[5,1]*h^3/3! + f[6,1]*h^4/4! - f[7,1
 fr[3]: f[3,1] + f[4,1]*h + f[5,1]*h^2/2! + f[6,1]*h^3/3! + f[7,1]*h^4/4! + f[8,1]*h^5/5!;
 fl[3]: f[3,1] - f[4,1]*h + f[5,1]*h^2/2! - f[6,1]*h^3/3! + f[7,1]*h^4/4! - f[8,1]*h^5/5!;
 
-fp[0]: fr[0] + fl[0] - f[0,2] - f[0,0];
-fm[0]: fr[0] - fl[0] - f[0,2] + f[0,0];
-fp[1]: fr[1] + fl[1] - f[1,2] - f[1,0];
-fm[1]: fr[1] - fl[1] - f[1,2] + f[1,0];
-fp[2]: fr[2] + fl[2] - f[2,2] - f[2,0];
-fm[2]: fr[2] - fl[2] - f[2,2] + f[2,0];
-fp[3]: fr[3] + fl[3] - f[3,2] - f[3,0];
-fm[3]: fr[3] - fl[3] - f[3,2] + f[3,0];
+fp[0]: fr[0] - f[0,2];
+fm[0]: fl[0] - f[0,0];
+fp[1]: fr[1] - f[1,2];
+fm[1]: fl[1] - f[1,0];
+fp[2]: fr[2] - f[2,2];
+fm[2]: fl[2] - f[2,0];
+fp[3]: fr[3] - f[3,2];
+fm[3]: fl[3] - f[3,0];
+
 
 base: (a*fp[0] + b*fm[0] + c*fp[1]*h + d*fm[1]*h + r*fp[2]*h^2 + s*fm[2]*h^2 + t*fp[3]*h^3 + u*fm[3]*h^3);
 expanded: expand(base);
@@ -32,12 +33,10 @@ eq6: coeff(coeff(expanded,h,6),f[6,1]);
 eq7: coeff(coeff(expanded,h,7),f[7,1]);
 eq8: coeff(coeff(expanded,h,8),f[8,1]);
 
-solution0: solve([eq1=0, eq2=0, eq3=0, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a,b,c,d,r,s,t,u]);
 solution1: solve([eq1=1, eq2=0, eq3=0, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a,b,c,d,r,s,t,u]);
 solution2: solve([eq1=0, eq2=1, eq3=0, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a,b,c,d,r,s,t,u]);
 solution3: solve([eq1=0, eq2=0, eq3=1, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a,b,c,d,r,s,t,u]);
 
-ccd_0: expand(subst(solution0[1],expanded));
 ccd_1: expand(subst(solution1[1],expanded));
 ccd_2: expand(subst(solution2[1],expanded));
 ccd_3: expand(subst(solution3[1],expanded));

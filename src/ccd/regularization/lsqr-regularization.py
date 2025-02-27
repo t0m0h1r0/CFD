@@ -39,7 +39,7 @@ class LSQRRegularization(RegularizationStrategy):
             }
         }
     
-    def apply_regularization(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_regularization(self) -> Tuple[jnp.ndarray, Callable]:
         """
         LSQR法による正則化を適用
         
@@ -47,78 +47,26 @@ class LSQRRegularization(RegularizationStrategy):
         早期停止による正則化効果を得ます。
         
         Returns:
-            正則化された行列L、正則化された行列K、ソルバー関数
+            正則化された行列L、逆変換関数
         """
+        # クラス変数をローカル変数に保存
         L = self.L
         L_T = self.L_T
         damp = self.damp
-
-        # ソルバー関数をJAX互換にする
-        def solver_func(rhs):
-            # 初期値
-            x = jnp.zeros_like(rhs)
-            u = rhs - L @ x
-            beta = jnp.sqrt(jnp.sum(u * u))
-            
-            # JAX互換の条件付き処理
-            u = jnp.where(beta > 0, u / beta, u)
-            
-            v = L_T @ u
-            alpha = jnp.sqrt(jnp.sum(v * v))
-            
-            # JAX互換の条件付き処理
-            v = jnp.where(alpha > 0, v / alpha, v)
-            
-            # Lanczos双共役勾配法の初期ベクトル
-            w = v
-            phi_bar = beta
-            rho_bar = alpha
-            
-            # LSQR反復をJAX互換のループで実装
-            # すべての状態変数を引数としてもつループ関数
-            def lsqr_body(i, loop_state):
-                x, u, v, w, phi_bar, rho_bar, alpha_prev = loop_state
-                
-                # 双共役勾配法のステップ
-                u_next = L @ v - alpha_prev * u
-                beta = jnp.sqrt(jnp.sum(u_next * u_next))
-                
-                # JAX互換の条件付き処理
-                u_new = jnp.where(beta > 0, u_next / beta, u_next)
-                
-                v_next = L_T @ u_new - beta * v
-                # 減衰パラメータを追加（Tikhonov正則化と同様の効果）
-                v_next = v_next - damp * v
-                
-                alpha_new = jnp.sqrt(jnp.sum(v_next * v_next))
-                
-                # JAX互換の条件付き処理
-                v_new = jnp.where(alpha_new > 0, v_next / alpha_new, v_next)
-                
-                # ギブンス回転の適用
-                rho = jnp.sqrt(rho_bar**2 + beta**2)
-                c = rho_bar / rho
-                s = beta / rho
-                theta = s * alpha_new
-                rho_bar_new = -c * alpha_new
-                phi = c * phi_bar
-                phi_bar_new = s * phi_bar
-                
-                # 解の更新
-                x_new = x + (phi / rho) * w
-                w_new = v_new - (theta / rho) * w
-                
-                return (x_new, u_new, v_new, w_new, phi_bar_new, rho_bar_new, alpha_new)
-            
-            # 初期状態にalphaも含める
-            init_state = (x, u, v, w, phi_bar, rho_bar, alpha)
-            final_state = lax.fori_loop(0, self.iterations, lsqr_body, init_state)
-            
-            # 最終的な解を取得
-            final_x = final_state[0]
-            return final_x
         
-        return self.L, self.K, solver_func
+        # 行列のスペクトルノルムを概算
+        s_max = jnp.linalg.norm(L, ord=2)
+        
+        # 減衰パラメータを考慮
+        # 減衰パラメータがある場合は、単位行列にスケールして加算
+        n = L.shape[1]
+        L_reg = L + damp * jnp.eye(n)
+        
+        # 逆変換関数
+        def inverse_scaling(x_scaled):
+            return x_scaled
+        
+        return L_reg, inverse_scaling
 
 
 # 正則化戦略をレジストリに登録

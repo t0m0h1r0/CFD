@@ -2,4 +2,5 @@
 **/.venv/**
 **/__pycache__/**
 src/test_results/
+src/ccd/results/
 *.png

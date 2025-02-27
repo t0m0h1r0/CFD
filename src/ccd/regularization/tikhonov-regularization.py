@@ -31,7 +31,7 @@ class TikhonovRegularization(RegularizationStrategy):
             }
         }
     
-    def apply_regularization(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_regularization(self) -> Tuple[jnp.ndarray, Callable]:
         """
         Tikhonov正則化を適用
         
@@ -39,7 +39,7 @@ class TikhonovRegularization(RegularizationStrategy):
         正則化手法です。α値が大きいほど正則化の効果が強くなります。
         
         Returns:
-            正則化された行列L、正則化された行列K、ソルバー関数
+            正則化された行列L、逆変換関数
         """
         n = self.L.shape[0]
         # 単位行列を生成
@@ -47,11 +47,11 @@ class TikhonovRegularization(RegularizationStrategy):
         # 行列を正則化
         L_reg = self.L + self.alpha * I
         
-        # ソルバー関数
-        def solver_func(rhs):
-            return jnp.linalg.solve(L_reg, rhs)
+        # 逆変換関数（この場合は恒等関数）
+        def inverse_scaling(x_scaled):
+            return x_scaled
         
-        return L_reg, self.K, solver_func
+        return L_reg, inverse_scaling
 
 
 # 正則化戦略をレジストリに登録
