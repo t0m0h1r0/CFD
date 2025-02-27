@@ -31,7 +31,7 @@ class SVDRegularization(RegularizationStrategy):
             }
         }
     
-    def apply_regularization(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_regularization(self) -> Tuple[jnp.ndarray, Callable]:
         """
         SVD切断法による正則化を適用
         
@@ -39,7 +39,7 @@ class SVDRegularization(RegularizationStrategy):
         数値的な安定性を向上させる正則化手法です。
         
         Returns:
-            正則化された行列L、正則化された行列K、ソルバー関数
+            正則化された行列L、逆変換関数
         """
         # クラス変数をローカル変数に保存
         L = self.L
@@ -51,14 +51,14 @@ class SVDRegularization(RegularizationStrategy):
         # 特異値のフィルタリング（JAX互換）
         s_filtered = jnp.maximum(s, threshold)
         
-        # 擬似逆行列を計算
-        pinv = Vh.T @ jnp.diag(1.0 / s_filtered) @ U.T
+        # 正則化された行列を計算
+        L_reg = Vh.T @ jnp.diag(s_filtered) @ U.T
         
-        # ソルバー関数
-        def solver_func(rhs):
-            return pinv @ rhs
+        # 逆変換関数
+        def inverse_scaling(x_scaled):
+            return x_scaled
         
-        return self.L, self.K, solver_func
+        return L_reg, inverse_scaling
 
 
 # 正則化戦略をレジストリに登録

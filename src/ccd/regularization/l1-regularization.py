@@ -46,7 +46,7 @@ class L1Regularization(RegularizationStrategy):
             }
         }
     
-    def apply_regularization(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_regularization(self) -> Tuple[jnp.ndarray, Callable]:
         """
         L1正則化（LASSO）を適用
         
@@ -54,65 +54,30 @@ class L1Regularization(RegularizationStrategy):
         スパース性（多くの要素がゼロ）を持つ解を生成します。
         
         Returns:
-            正則化された行列L、正則化された行列K、ソルバー関数
+            正則化された行列L、逆変換関数
         """
         # クラス変数をローカル変数に保存（ループ内での参照のため）
         L = self.L
         L_T = self.L_T
         alpha = self.alpha
-        tol = self.tol
         
-        # ソルバー関数（近位勾配法） - JAX互換バージョン
-        def solver_func(rhs):
-            # 初期解を標準的な最小二乗解に設定
-            x_init = jnp.linalg.lstsq(L, rhs, rcond=None)[0]
-            
-            # 行列AとATAの事前計算
-            ATA = L_T @ L
-            ATb = L_T @ rhs
-            
-            # リプシッツ定数の推定（勾配降下法のステップサイズに関連）
-            lambda_max = jnp.linalg.norm(ATA, ord=2)
-            step_size = 1.0 / lambda_max
-            
-            # 近位勾配法のボディ関数
-            def ista_body(i, loop_state):
-                x, _best_x, _best_residual = loop_state
-                
-                # 勾配ステップ
-                grad = ATA @ x - ATb
-                x_grad = x - step_size * grad
-                
-                # 近位演算子ステップ（軟閾値処理）
-                x_new = _soft_threshold(x_grad, alpha * step_size)
-                
-                # 残差計算
-                residual = jnp.linalg.norm(x_new - x)
-                
-                # 最良解の更新
-                cond = residual < _best_residual
-                best_x = jnp.where(cond, x_new, _best_x)
-                best_residual = jnp.where(cond, residual, _best_residual)
-                
-                # ループ状態を更新
-                return x_new, best_x, best_residual
-            
-            # 初期ループ状態
-            initial_state = (x_init, x_init, jnp.array(float('inf')))
-            
-            # ISTAアルゴリズムを実行
-            final_state = lax.fori_loop(0, self.iterations, ista_body, initial_state)
-            
-            # トレランスより小さい残差になったベスト解を返す
-            # 注：実際のコードでは最適な解を返すため、best_xを使用
-            return final_state[1]  # best_x
+        # 行列AとATAの事前計算
+        ATA = L_T @ L
         
-        # 軟閾値処理（soft thresholding）JAX互換バージョン
-        def _soft_threshold(x, threshold):
-            """軟閾値処理（soft thresholding）"""
-            return jnp.sign(x) * jnp.maximum(jnp.abs(x) - threshold, 0)
+        # リプシッツ定数の推定（勾配降下法のステップサイズに関連）
+        lambda_max = jnp.linalg.norm(ATA, ord=2)
         
-        return self.L, self.K, solver_func
+        # 正則化された行列を計算
+        # L1正則化では対角成分に正則化パラメータを加算
+        n = L.shape[1]
+        # 単位行列に正則化パラメータをスケールして加算
+        L_reg = L + alpha * jnp.eye(n)
+        
+        # 逆変換関数
+        def inverse_scaling(x_scaled):
+            return x_scaled
+        
+        return L_reg, inverse_scaling
 
 
 # 正則化戦略をレジストリに登録

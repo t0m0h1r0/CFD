@@ -37,7 +37,7 @@ class TSVDRegularization(RegularizationStrategy):
             }
         }
     
-    def apply_regularization(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_regularization(self) -> Tuple[jnp.ndarray, Callable]:
         """
         切断特異値分解（TSVD）による正則化を適用
         
@@ -45,7 +45,7 @@ class TSVDRegularization(RegularizationStrategy):
         SVD切断法とは異なり、小さな特異値は保持せず0に置き換えます。
         
         Returns:
-            正則化された行列L、正則化された行列K、ソルバー関数
+            正則化された行列L、逆変換関数
         """
         # 特異値分解を実行
         U, s, Vh = jnp.linalg.svd(self.L, full_matrices=False)
@@ -69,15 +69,14 @@ class TSVDRegularization(RegularizationStrategy):
             jnp.zeros_like(s)
         )
         
-        # 擬似逆行列を計算（0除算を避けるため、逆数を計算する前に特異値が0でないか確認）
-        s_inv = jnp.where(s_truncated > 0, 1.0 / s_truncated, 0.0)
-        pinv = Vh.T @ jnp.diag(s_inv) @ U.T
+        # 正則化された行列を計算
+        L_reg = Vh.T @ jnp.diag(s_truncated) @ U.T
         
-        # ソルバー関数
-        def solver_func(rhs):
-            return pinv @ rhs
+        # 逆変換関数
+        def inverse_scaling(x_scaled):
+            return x_scaled
         
-        return self.L, self.K, solver_func
+        return L_reg, inverse_scaling
 
 
 # 正則化戦略をレジストリに登録
