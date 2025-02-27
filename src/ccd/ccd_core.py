@@ -21,8 +21,8 @@ class BlockMatrixBuilder(ABC):
         pass
 
 
-class LeftHandBlockBuilder(BlockMatrixBuilder):
-    """左辺のブロック行列を生成するクラス"""
+class LeftHandBlockBuilder:
+    """左辺のブロック行列を生成するクラス（JAX最適化版）"""
 
     def _build_interior_blocks(self, coeffs: Optional[List[float]] = None) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """内部点のブロック行列A, B, Cを生成
@@ -145,14 +145,14 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         return B0, C0, D0, ZR, AR, BR
 
     def build_block(self, grid_config: GridConfig, coeffs: Optional[List[float]] = None) -> jnp.ndarray:
-        """左辺のブロック行列全体を生成
+        """左辺のブロック行列全体を生成（バンド行列の最適化を念頭に置いた実装）
         
         Args:
             grid_config: グリッド設定
             coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用
             
         Returns:
-            生成されたブロック行列
+            生成されたブロック行列（JAX配列）
         """
         n, h = grid_config.n_points, grid_config.h
         
@@ -162,10 +162,10 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
 
         # 次数行列の定義
         DEGREE = jnp.array([
-            [     1,     1,      1,      1],
-            [1/h**1,     1,   h**1,   h**2],
-            [1/h**2,1/h**1,      1,   h**1],
-            [1/h**3,1/h**2, 1/h**1,      1],
+            [     1,      1,      1,      1],
+            [1/h**1,      1,   h**1,   h**2],
+            [1/h**2, 1/h**1,      1,   h**1],
+            [1/h**3, 1/h**2, 1/h**1,      1],
         ])
 
         # 次数を適用
@@ -201,3 +201,4 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
         L = L.at[row_start : row_start + 4, row_start : row_start + 4].set(BR)
 
         return L
+
