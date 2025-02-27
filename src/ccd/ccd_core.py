@@ -162,7 +162,7 @@ class LeftHandBlockBuilder(BlockMatrixBuilder):
 
         # 次数行列の定義
         DEGREE = jnp.array([
-            [     1,  h**1,   h**2,   h**3],
+            [     1,     1,      1,      1],
             [1/h**1,     1,   h**1,   h**2],
             [1/h**2,1/h**1,      1,   h**1],
             [1/h**3,1/h**2, 1/h**1,      1],
