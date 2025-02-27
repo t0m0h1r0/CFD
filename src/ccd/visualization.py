@@ -1,5 +1,5 @@
 """
-可視化モジュール
+可視化モジュール - 微分組み合わせ対応版
 
 CCDソルバーの結果を視覚化するためのユーティリティ関数を提供します。
 """
@@ -140,21 +140,21 @@ def visualize_error_comparison(
     ax1.bar(indexes, errors_2nd, bar_width, label='2nd Derivative')
     ax1.bar(indexes + bar_width, errors_3rd, bar_width, label='3rd Derivative')
     
-    ax1.set_xlabel('Solver')
+    ax1.set_xlabel('Solver / Diff Mode')
     ax1.set_ylabel('Error (L2 norm)')
     ax1.set_title(f'Error Comparison for {test_func_name} Function')
     ax1.set_xticks(indexes)
-    ax1.set_xticklabels(solver_names)
+    ax1.set_xticklabels(solver_names, rotation=45, ha='right')
     ax1.legend()
     ax1.set_yscale('log')  # 対数スケールで表示
     
     # 計算時間のプロット
     ax2.bar(indexes, times, color='green')
-    ax2.set_xlabel('Solver')
+    ax2.set_xlabel('Solver / Diff Mode')
     ax2.set_ylabel('Time (seconds)')
     ax2.set_title('Computation Time')
     ax2.set_xticks(indexes)
-    ax2.set_xticklabels(solver_names)
+    ax2.set_xticklabels(solver_names, rotation=45, ha='right')
     
     plt.tight_layout()
     

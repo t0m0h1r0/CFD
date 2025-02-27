@@ -1,5 +1,5 @@
 """
-ソルバー比較モジュール
+簡素化されたソルバー比較モジュール
 
 異なるCCDソルバー間での性能比較を行う機能を提供します。
 """
@@ -43,20 +43,11 @@ class SolverComparator:
         # 各テスターのテスト関数をこのクラスで指定したものに統一
         for _, tester in solvers_list:
             tester.test_functions = self.test_functions
-            tester.coeffs = self.coeffs  # 係数を設定
-        
-        # テスターを名前をキーとして辞書に保存
-        self.testers = {}
-        for name, tester in solvers_list:
-            self.testers[name] = tester
+            if self.coeffs is not None:
+                tester.coeffs = self.coeffs
     
     def _print_comparison_tables(self, results: Dict, timings: Dict):
-        """比較表を出力
-        
-        Args:
-            results: ソルバー名 -> {関数名 -> [1階誤差, 2階誤差, 3階誤差]} の辞書
-            timings: ソルバー名 -> {関数名 -> 計算時間} の辞書
-        """
+        """比較表を出力"""
         # 係数情報の文字列
         coeff_str = "" if self.coeffs is None else f" (coeffs={self.coeffs})"
         
@@ -93,16 +84,14 @@ class SolverComparator:
             
             print(f"{name:<15} {avg_errors[0]:<12.2e} {avg_errors[1]:<12.2e} {avg_errors[2]:<12.2e} {avg_time:<12.4f}")
     
-    def run_comparison(self, save_results: bool = True, visualize: bool = True):
+    def run_comparison(self, save_results: bool = True, visualize: bool = True, prefix: str = ""):
         """
         全てのソルバーに対して比較テストを実行
         
         Args:
             save_results: 結果をJSONファイルに保存するかどうか
             visualize: 比較結果を可視化するかどうか
-            
-        Returns:
-            比較結果の辞書
+            prefix: 出力ファイル名の接頭辞
         """
         results = {}  # ソルバー名 -> {関数名 -> [1階誤差, 2階誤差, 3階誤差]} の辞書
         timings = {}  # ソルバー名 -> {関数名 -> 計算時間} の辞書
@@ -113,11 +102,13 @@ class SolverComparator:
         # 係数情報の文字列
         coeff_str = "" if self.coeffs is None else f" (coeffs={self.coeffs})"
         
+        # 各ソルバーに対してテストを実行
         for name, tester in self.solvers_list:
             print(f"\n===== Testing {name} solver{coeff_str} =====")
             
             # テストを実行
-            test_results = tester.run_tests(prefix=f"{name.lower()}_", visualize=visualize)
+            test_prefix = f"{name.lower()}_{prefix}" if prefix else f"{name.lower()}_"
+            test_results = tester.run_tests(prefix=test_prefix, visualize=visualize)
             
             # 結果を格納
             solver_results = {}
@@ -140,7 +131,7 @@ class SolverComparator:
                     results, 
                     timings, 
                     func.name, 
-                    save_path=f"results/comparison_{func.name.lower()}.png"
+                    save_path=f"results/{prefix}comparison_{func.name.lower()}.png"
                 )
         
         # 結果の保存
@@ -156,9 +147,9 @@ class SolverComparator:
             }
             
             os.makedirs("results", exist_ok=True)
-            # ファイル名に係数情報を含める
+            # ファイル名に接頭辞と係数情報を含める
             coeff_suffix = "" if self.coeffs is None else f"_coeffs_{'-'.join(map(str, self.coeffs))}"
-            with open(f"results/comparison_results{coeff_suffix}.json", "w") as f:
+            with open(f"results/{prefix}comparison_results{coeff_suffix}.json", "w") as f:
                 json.dump(comparison_data, f, indent=2)
         
         return results, timings
