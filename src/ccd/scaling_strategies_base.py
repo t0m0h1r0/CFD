@@ -15,15 +15,13 @@ from plugin_manager import PluginRegistry
 class ScalingStrategy(ABC):
     """スケーリング戦略の基底クラス"""
     
-    def __init__(self, L: jnp.ndarray, K: jnp.ndarray, **kwargs):
+    def __init__(self, L: jnp.ndarray, **kwargs):
         """
         Args:
             L: スケーリングする行列
-            K: スケーリングする右辺行列
             **kwargs: その他のパラメータ
         """
         self.L = L
-        self.K = K
         self._init_params(**kwargs)
     
     def _init_params(self, **kwargs):
@@ -47,12 +45,12 @@ class ScalingStrategy(ABC):
         return {}
     
     @abstractmethod
-    def apply_scaling(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
         """
         スケーリングを適用し、スケーリングされた行列と逆変換関数を返す
         
         Returns:
-            スケーリングされた行列L、スケーリングされた行列K、逆変換関数
+            スケーリングされた行列L、逆変換関数
         """
         pass
 
@@ -60,14 +58,14 @@ class ScalingStrategy(ABC):
 class NoneScaling(ScalingStrategy):
     """スケーリングなし"""
     
-    def apply_scaling(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
         """
         スケーリングなし - 元の行列をそのまま返す
         
         Returns:
-            元の行列L、K、恒等関数
+            元の行列L、恒等関数
         """
-        return self.L, self.K, lambda x: x
+        return self.L, lambda x: x
 
 
 # スケーリング戦略のレジストリを作成

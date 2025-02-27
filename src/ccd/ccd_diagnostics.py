@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import os
 from typing import Type, Dict, Any, Optional
 
-from ccd_core import GridConfig, LeftHandBlockBuilder, RightHandBlockBuilder
+from ccd_core import GridConfig, LeftHandBlockBuilder
 from ccd_solver import CCDSolver
 from visualization import visualize_matrix_properties
 
@@ -34,11 +34,11 @@ class CCDSolverDiagnostics:
         self.solver_name = solver_class.__name__
         self.solver = solver_class(grid_config, **solver_kwargs)
         self.left_builder = LeftHandBlockBuilder()
-        self.right_builder = RightHandBlockBuilder()
         
-        # 元の行列を計算
+        # 行列を計算
         self.L = self.left_builder.build_block(self.grid_config)
-        self.K = self.right_builder.build_block(self.grid_config)
+        
+        # 右辺ベクトルを含む行列を生成せず、必要に応じてソルバーから直接情報を取得
     
     def analyze_matrix_properties(self, visualize: bool = False) -> Dict[str, float]:
         """
@@ -52,7 +52,6 @@ class CCDSolverDiagnostics:
         """
         print("=== 行列の基本特性 ===")
         print(f"左辺行列Lのサイズ: {self.L.shape}")
-        print(f"右辺行列Kのサイズ: {self.K.shape}")
         
         # 条件数
         cond_L = jnp.linalg.cond(self.L)
@@ -162,13 +161,13 @@ class CCDSolverDiagnostics:
         
         # ブロック構造の確認
         n = self.grid_config.n_points
-        block_size = 3
+        block_size = 4  # 新しいブロックサイズは4
         
         # 左端と右端のブロックを表示
-        print("\n左端の3×9ブロック:")
+        print("\n左端の4×12ブロック:")
         print(self.L[:block_size, :3*block_size])
         
-        print("\n右端の3×9ブロック:")
+        print("\n右端の4×12ブロック:")
         print(self.L[-block_size:, -3*block_size:])
         
         # スパース性の確認

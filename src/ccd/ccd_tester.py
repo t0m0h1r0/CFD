@@ -1,9 +1,3 @@
-"""
-CCD法のテスト実行モジュール
-
-数値導関数計算の精度と性能をテストする機能を提供します。
-"""
-
 import jax.numpy as jnp
 import time
 import os
@@ -67,35 +61,23 @@ class CCDMethodTester:
         # 計測開始
         start_time = time.time()
         
-        # 数値解の計算
-        numerical_derivatives = self.solver.solve(f_values)
+        # 数値解の計算（新しいAPIに対応）
+        _, f_prime, f_second, f_third = self.solver.solve(f_values)
         
         # 計測終了
         elapsed_time = time.time() - start_time
 
         # 解析解の計算
-        analytical_derivatives = jnp.zeros(3 * n)
-        for i in range(n):
-            x = x_points[i]
-            analytical_derivatives = analytical_derivatives.at[3 * i].set(
-                test_func.df(x)
-            )
-            analytical_derivatives = analytical_derivatives.at[3 * i + 1].set(
-                test_func.d2f(x)
-            )
-            analytical_derivatives = analytical_derivatives.at[3 * i + 2].set(
-                test_func.d3f(x)
-            )
+        analytical_df = jnp.array([test_func.df(x) for x in x_points])
+        analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
+        analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
 
         # 誤差の計算 (L2ノルム)
-        errors = []
-        for i in range(3):
-            numerical = numerical_derivatives[i::3]
-            analytical = analytical_derivatives[i::3]
-            error = jnp.sqrt(jnp.mean((numerical - analytical) ** 2))
-            errors.append(float(error))
+        error_df = jnp.sqrt(jnp.mean((f_prime - analytical_df) ** 2))
+        error_d2f = jnp.sqrt(jnp.mean((f_second - analytical_d2f) ** 2))
+        error_d3f = jnp.sqrt(jnp.mean((f_third - analytical_d3f) ** 2))
 
-        return (*errors, elapsed_time)
+        return float(error_df), float(error_d2f), float(error_d3f), elapsed_time
 
     def run_tests(self, prefix: str = "", visualize: bool = True) -> Dict[str, Tuple[List[float], float]]:
         """
@@ -142,11 +124,15 @@ class CCDMethodTester:
                 x_start = self.x_range[0]
                 x_points = jnp.array([x_start + i * h for i in range(n)])
                 f_values = jnp.array([test_func.f(x) for x in x_points])
-                numerical_derivatives = self.solver.solve(f_values)
                 
+                # 新しいAPIに対応
+                _, f_prime, f_second, f_third = self.solver.solve(f_values)
+                
+                # visualize_derivative_results関数への入力も変更する必要があります
                 visualize_derivative_results(
                     test_func=test_func,
-                    numerical_derivatives=numerical_derivatives,
+                    f_values=f_values,  # 元の関数値
+                    numerical_derivatives=(f_prime, f_second, f_third),  # タプルで渡す
                     grid_config=self.grid_config,
                     x_range=self.x_range,
                     solver_name=self.solver_name,

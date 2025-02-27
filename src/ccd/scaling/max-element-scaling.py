@@ -21,7 +21,7 @@ class MaxElementScaling(ScalingStrategy):
         """
         return {}
     
-    def apply_scaling(self) -> Tuple[jnp.ndarray, jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
         """
         最大成分スケーリングを適用
         
@@ -29,7 +29,7 @@ class MaxElementScaling(ScalingStrategy):
         非常にシンプルなスケーリング手法です。
         
         Returns:
-            スケーリングされた行列L、スケーリングされた行列K、逆変換関数
+            スケーリングされた行列L、逆変換関数
         """
         # 行列全体の最大絶対値を取得
         max_abs_value = jnp.max(jnp.abs(self.L))
@@ -39,13 +39,12 @@ class MaxElementScaling(ScalingStrategy):
         
         # スケーリングを適用
         L_scaled = self.L / max_abs_value
-        K_scaled = self.K / max_abs_value
         
         # 逆変換関数
         def inverse_scaling(X_scaled):
             return X_scaled  # この方式では逆変換の必要なし
         
-        return L_scaled, K_scaled, inverse_scaling
+        return L_scaled, inverse_scaling
 
 
 # スケーリング戦略をレジストリに登録

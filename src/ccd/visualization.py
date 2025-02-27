@@ -15,7 +15,8 @@ from ccd_core import GridConfig
 
 def visualize_derivative_results(
     test_func: TestFunction,
-    numerical_derivatives: jnp.ndarray,
+    f_values: jnp.ndarray,
+    numerical_derivatives: Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray],
     grid_config: GridConfig,
     x_range: Tuple[float, float],
     solver_name: str,
@@ -26,7 +27,8 @@ def visualize_derivative_results(
     
     Args:
         test_func: テスト関数
-        numerical_derivatives: 数値計算された導関数
+        f_values: グリッド点での元の関数値
+        numerical_derivatives: 数値計算された導関数のタプル (f_prime, f_second, f_third)
         grid_config: グリッド設定
         x_range: x軸の範囲 (開始位置, 終了位置)
         solver_name: ソルバーの名前 (プロットタイトルに使用)
@@ -36,9 +38,11 @@ def visualize_derivative_results(
     h = grid_config.h
     x_start = x_range[0]
 
+    # 導関数のアンパック
+    f_prime, f_second, f_third = numerical_derivatives
+
     # グリッド点の計算
     x_points = jnp.array([x_start + i * h for i in range(n)])
-    f_values = jnp.array([test_func.f(x) for x in x_points])
 
     # 高解像度の点での解析解
     x_fine = jnp.linspace(x_range[0], x_range[1], 200)
@@ -61,7 +65,7 @@ def visualize_derivative_results(
     axes[0, 1].plot(x_fine, analytical_df, "b-", label="Analytical")
     # 線で表示するように変更
     axes[0, 1].plot(
-        x_points, numerical_derivatives[::3], "r-", label="Numerical"
+        x_points, f_prime, "r-", label="Numerical"
     )
     axes[0, 1].set_title("First Derivative")
     axes[0, 1].legend()
@@ -71,7 +75,7 @@ def visualize_derivative_results(
     axes[1, 0].plot(x_fine, analytical_d2f, "b-", label="Analytical")
     # 線で表示するように変更
     axes[1, 0].plot(
-        x_points, numerical_derivatives[1::3], "r-", label="Numerical"
+        x_points, f_second, "r-", label="Numerical"
     )
     axes[1, 0].set_title("Second Derivative")
     axes[1, 0].legend()
@@ -81,7 +85,7 @@ def visualize_derivative_results(
     axes[1, 1].plot(x_fine, analytical_d3f, "b-", label="Analytical")
     # 線で表示するように変更
     axes[1, 1].plot(
-        x_points, numerical_derivatives[2::3], "r-", label="Numerical"
+        x_points, f_third, "r-", label="Numerical"
     )
     axes[1, 1].set_title("Third Derivative")
     axes[1, 1].legend()
