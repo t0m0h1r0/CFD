@@ -1,11 +1,10 @@
 """
 改良版統合CCDソルバーモジュール
 
-プラグイン形式のスケーリングと正則化を組み合わせた合成ソルバー実装を提供します。
-リファクタリングにより、SOLID原則に準拠した責任の分離を実現しています。
+プラグイン機能を維持しつつ整理された合成ソルバー実装を提供します。
 """
 
-from jax import jit
+import jax
 import jax.numpy as jnp
 from functools import partial
 from typing import Dict, Any, Optional, List, Tuple, Protocol
@@ -18,39 +17,20 @@ from ccd_core import (
     CCDResultExtractor, 
     CCDSystemBuilder
 )
-from ccd_solver import CCDSolver, DirectSolver, IterativeSolver
+from ccd_solver import CCDSolver, DirectSolver
 from scaling_strategies_base import scaling_registry
 from regularization_strategies_base import regularization_registry
-from strategy_adapters import (
-    ScalingStrategyFactory,
-    RegularizationStrategyFactory
-)
+
 
 class MatrixTransformer(Protocol):
     """行列変換のプロトコル定義"""
     
     def transform_matrix(self, matrix: jnp.ndarray) -> Tuple[jnp.ndarray, callable]:
-        """
-        行列を変換し、逆変換関数を返す
-        
-        Args:
-            matrix: 変換する行列
-            
-        Returns:
-            変換後の行列、逆変換関数
-        """
+        """行列を変換し、逆変換関数を返す"""
         ...
     
     def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
-        """
-        右辺ベクトルを変換する
-        
-        Args:
-            rhs: 変換する右辺ベクトル
-            
-        Returns:
-            変換後の右辺ベクトル
-        """
+        """右辺ベクトルを変換する"""
         ...
 
 
@@ -62,11 +42,7 @@ class CompositeMatrixTransformer:
         scaling_strategy: Optional[MatrixTransformer] = None, 
         regularization_strategy: Optional[MatrixTransformer] = None
     ):
-        """
-        Args:
-            scaling_strategy: スケーリング戦略
-            regularization_strategy: 正則化戦略
-        """
+        """初期化"""
         self.scaling_strategy = scaling_strategy
         self.regularization_strategy = regularization_strategy
         self.L_orig = None
@@ -74,15 +50,7 @@ class CompositeMatrixTransformer:
         self.L_reg = None
     
     def transform_matrix(self, matrix: jnp.ndarray) -> Tuple[jnp.ndarray, callable]:
-        """
-        スケーリングと正則化を順に適用し、逆変換関数を返す
-        
-        Args:
-            matrix: 元の行列
-            
-        Returns:
-            変換後の行列、逆変換関数
-        """
+        """スケーリングと正則化を順に適用し、逆変換関数を返す"""
         self.L_orig = matrix
         transformed_matrix = matrix
         inverse_funcs = []
@@ -105,7 +73,7 @@ class CompositeMatrixTransformer:
         
         self.L_reg = transformed_matrix
         
-        # 逆変換関数の合成（正則化の逆変換を先に適用し、次にスケーリングの逆変換）
+        # 逆変換関数の合成
         def composite_inverse(x):
             for inverse_func in reversed(inverse_funcs):
                 x = inverse_func(x)
@@ -114,15 +82,7 @@ class CompositeMatrixTransformer:
         return transformed_matrix, composite_inverse
     
     def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
-        """
-        右辺ベクトルに変換を適用
-        
-        Args:
-            rhs: 右辺ベクトル
-            
-        Returns:
-            変換後の右辺ベクトル
-        """
+        """右辺ベクトルに変換を適用"""
         transformed_rhs = rhs
         
         # スケーリングの適用
@@ -149,21 +109,9 @@ class CCDCompositeSolver(CCDSolver):
         regularization: str = "none",
         scaling_params: Optional[Dict[str, Any]] = None,
         regularization_params: Optional[Dict[str, Any]] = None,
-        coeffs: Optional[List[float]] = None,
-        use_iterative: bool = False,
-        solver_kwargs: Optional[dict] = None
+        coeffs: Optional[List[float]] = None
     ):
-        """
-        Args:
-            grid_config: グリッド設定
-            scaling: スケーリング戦略名
-            regularization: 正則化戦略名
-            scaling_params: スケーリングパラメータ
-            regularization_params: 正則化パラメータ
-            coeffs: [a, b, c, d] 係数リスト
-            use_iterative: 反復法を使用するかどうか
-            solver_kwargs: 線形ソルバーのパラメータ
-        """
+        """初期化"""
         # プラグインを一度だけロード
         if not CCDCompositeSolver._plugins_loaded:
             self._load_plugins()
@@ -193,11 +141,8 @@ class CCDCompositeSolver(CCDSolver):
         # 行列を変換
         self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(self.L)
         
-        # ソルバーの選択
-        if use_iterative:
-            self.solver = IterativeSolver(**(solver_kwargs or {}))
-        else:
-            self.solver = DirectSolver()
+        # 直接ソルバーを使用
+        self.solver = DirectSolver()
         
         # グリッド設定を保存
         self.grid_config = grid_config
@@ -210,36 +155,45 @@ class CCDCompositeSolver(CCDSolver):
         # スケーリングの初期化
         try:
             if self.scaling != "none":
-                # アダプターファクトリーを使用して適切なアダプターを生成
-                scaling_strategy = ScalingStrategyFactory.create_adapter(
-                    self.scaling, self.L, **self.scaling_params
-                )
+                scaling_class = scaling_registry.get(self.scaling)
+                scaling_strategy = self._create_strategy_adapter(scaling_class, self.scaling_params)
         except KeyError:
             print(f"警告: '{self.scaling}' スケーリング戦略が見つかりません。スケーリングなしで続行します。")
         
         # 正則化の初期化
         try:
             if self.regularization != "none":
-                # アダプターファクトリーを使用して適切なアダプターを生成
-                regularization_strategy = RegularizationStrategyFactory.create_adapter(
-                    self.regularization, self.L, **self.regularization_params
-                )
+                regularization_class = regularization_registry.get(self.regularization)
+                regularization_strategy = self._create_strategy_adapter(regularization_class, self.regularization_params)
         except KeyError:
             print(f"警告: '{self.regularization}' 正則化戦略が見つかりません。正則化なしで続行します。")
         
         return CompositeMatrixTransformer(scaling_strategy, regularization_strategy)
     
-    @partial(jit, static_argnums=(0,))
-    def solve(self, f: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        """
-        導関数を計算
+    def _create_strategy_adapter(self, strategy_class, params):
+        """戦略クラスからアダプターを作成"""
+        strategy = strategy_class(self.L, **params)
         
-        Args:
-            f: 関数値ベクトル (n,)
-            
-        Returns:
-            関数値と導関数のタプル (psi, psi', psi'', psi''')
-        """
+        # アダプターを作成（シンプルな実装のためインラインで）
+        class StrategyAdapter:
+            def __init__(self, strategy):
+                self.strategy = strategy
+                
+            def transform_matrix(self, matrix):
+                return self.strategy.apply_scaling() if hasattr(self.strategy, 'apply_scaling') else self.strategy.apply_regularization()
+                
+            def transform_rhs(self, rhs):
+                if hasattr(self.strategy, 'scale_rhs'):
+                    return self.strategy.scale_rhs(rhs)
+                elif hasattr(self.strategy, 'transform_rhs'):
+                    return self.strategy.transform_rhs(rhs)
+                return rhs
+                
+        return StrategyAdapter(strategy)
+    
+    @partial(jax.jit, static_argnums=(0,))
+    def solve(self, f: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        """導関数を計算"""
         # 右辺ベクトルを計算
         _, rhs = self.system_builder.build_system(self.grid_config, f, self.coeffs)
         
@@ -257,7 +211,7 @@ class CCDCompositeSolver(CCDSolver):
     
     @staticmethod
     def _load_plugins():
-        """スケーリングと正則化のプラグインを読み込む（内部メソッド）"""
+        """スケーリングと正則化のプラグインを読み込む"""
         # プロジェクトのルートディレクトリを検出
         current_dir = os.path.dirname(os.path.abspath(__file__))
         
@@ -276,15 +230,7 @@ class CCDCompositeSolver(CCDSolver):
     
     @classmethod
     def load_plugins(cls, silent: bool = False):
-        """
-        スケーリングと正則化のプラグインを読み込む
-        
-        Args:
-            silent: 出力抑制フラグ
-        
-        Returns:
-            (利用可能なスケーリング戦略のリスト, 利用可能な正則化戦略のリスト)
-        """
+        """スケーリングと正則化のプラグインを読み込む"""
         if silent:
             scaling_registry.enable_silent_mode()
             regularization_registry.enable_silent_mode()
@@ -319,25 +265,9 @@ class CCDCompositeSolver(CCDSolver):
         scaling: str = "none", 
         regularization: str = "none", 
         params: Optional[Dict[str, Any]] = None,
-        coeffs: Optional[List[float]] = None,
-        use_iterative: bool = False,
-        solver_kwargs: Optional[dict] = None
+        coeffs: Optional[List[float]] = None
     ) -> 'CCDCompositeSolver':
-        """
-        パラメータを指定してソルバーを作成するファクトリーメソッド
-        
-        Args:
-            grid_config: グリッド設定
-            scaling: スケーリング戦略名
-            regularization: 正則化戦略名
-            params: パラメータ辞書
-            coeffs: [a, b, c, d] 係数リスト
-            use_iterative: 反復法を使用するかどうか
-            solver_kwargs: 線形ソルバーのパラメータ
-            
-        Returns:
-            設定されたCCDCompositeSolverインスタンス
-        """
+        """パラメータを指定してソルバーを作成するファクトリーメソッド"""
         if not cls._plugins_loaded:
             cls._load_plugins()
         
@@ -361,7 +291,5 @@ class CCDCompositeSolver(CCDSolver):
             regularization=regularization,
             scaling_params=scaling_params,
             regularization_params=regularization_params,
-            coeffs=coeffs,
-            use_iterative=use_iterative,
-            solver_kwargs=solver_kwargs
+            coeffs=coeffs
         )
