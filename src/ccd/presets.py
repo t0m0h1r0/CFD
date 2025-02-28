@@ -7,7 +7,7 @@ CCDソルバーのプリセット設定を定義し、プリセット設定を�
 from typing import List, Tuple, Dict, Any
 
 # 統合ソルバーから利用可能な戦略を取得
-from unified_solver import CCDCompositeSolver
+from composite_solver import CCDCompositeSolver
 
 
 def get_scaling_presets() -> List[Tuple[str, str, Dict[str, Any]]]:

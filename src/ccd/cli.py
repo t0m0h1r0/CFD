@@ -1,14 +1,14 @@
 """
-簡素化されたコマンドラインインターフェースモジュール
+更新された簡素化されたコマンドラインインターフェースモジュール
 
-CCD法のテスト・診断・比較のためのシンプルなコマンドラインツールを提供します。
+リファクタリングされたCCD法実装に対応したコマンドラインツールを提供します。
 0-2階微分の組み合わせ指定をサポートしています。
 """
 
 import argparse
 
 from ccd_core import GridConfig
-from unified_solver import CCDCompositeSolver
+from composite_solver import CCDCompositeSolver
 from presets import get_combined_presets, get_preset_by_name
 from ccd_tester import CCDMethodTester
 from ccd_diagnostics import CCDSolverDiagnostics
@@ -40,6 +40,7 @@ def parse_args():
     test_parser.add_argument('--scaling', type=str, default='none', help='スケーリング手法')
     test_parser.add_argument('--reg', type=str, default='none', help='正則化手法')
     test_parser.add_argument('--no-viz', action='store_true', help='可視化を無効化')
+    test_parser.add_argument('--use-iterative', action='store_true', help='反復解法を使用')
     
     # 診断コマンド
     diag_parser = subparsers.add_parser('diagnostics', help='診断を実行')
@@ -110,7 +111,8 @@ def get_solver(args, grid_config: GridConfig):
         scaling=scaling,
         regularization=regularization,
         params=params,
-        coeffs=coeffs
+        coeffs=coeffs,
+        use_iterative=getattr(args, 'use_iterative', False)
     )
 
 
@@ -223,10 +225,36 @@ def run_cli():
     elif args.command == 'list':
         if args.type in ['all', 'scaling', 'reg', 'presets']:
             # プラグイン情報の表示
-            CCDCompositeSolver.display_available_methods()
+            if args.type == 'scaling':
+                print("=== 利用可能なスケーリング戦略 ===")
+                for method in CCDCompositeSolver.available_scaling_methods():
+                    print(f"- {method}")
+            elif args.type == 'reg':
+                print("=== 利用可能な正則化戦略 ===")
+                for method in CCDCompositeSolver.available_regularization_methods():
+                    print(f"- {method}")
+            elif args.type == 'presets':
+                print("=== 利用可能なプリセット ===")
+                for name, _, _, _ in get_combined_presets():
+                    print(f"- {name}")
+            else:  # 'all'
+                print("=== 利用可能なスケーリング戦略 ===")
+                for method in CCDCompositeSolver.available_scaling_methods():
+                    print(f"- {method}")
+                
+                print("\n=== 利用可能な正則化戦略 ===")
+                for method in CCDCompositeSolver.available_regularization_methods():
+                    print(f"- {method}")
+                
+                print("\n=== 利用可能なプリセット ===")
+                for name, _, _, _ in get_combined_presets():
+                    print(f"- {name}")
+                
+                print("\n")
+                print_diff_modes()
+        
         if args.type in ['all', 'diff-modes']:
             # 微分モードの表示
-            print("\n")
             print_diff_modes()
 
 
