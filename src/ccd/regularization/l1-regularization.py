@@ -3,10 +3,11 @@ L1正則化戦略（LASSO）
 
 CCD法のL1正則化（LASSO）を提供します。
 解のL1ノルムに対するペナルティを課します。
-JAX互換の実装です。
+右辺ベクトルの変換と解の逆変換をサポートするように修正しました。
 """
 
 import jax.numpy as jnp
+import jax.lax as lax
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategies_base import RegularizationStrategy, regularization_registry
@@ -55,28 +56,34 @@ class L1Regularization(RegularizationStrategy):
         Returns:
             正則化された行列L、逆変換関数
         """
-        # クラス変数をローカル変数に保存（ループ内での参照のため）
-        L = self.L
-        L_T = self.L_T
-        alpha = self.alpha
+        # 行列のスケールを確認
+        matrix_norm = jnp.linalg.norm(self.L, ord=2)
         
-        # 行列AとATAの事前計算
-        ATA = L_T @ L
+        # 行列のスケールが大きい場合はスケーリング
+        if matrix_norm > 1.0:
+            self.reg_factor = 1.0 / matrix_norm
+            L_scaled = self.L * self.reg_factor
+            alpha_scaled = self.alpha * self.reg_factor
+        else:
+            self.reg_factor = 1.0
+            L_scaled = self.L
+            alpha_scaled = self.alpha
         
-        # リプシッツ定数の推定（勾配降下法のステップサイズに関連）
-        lambda_max = jnp.linalg.norm(ATA, ord=2)
-        
-        # 正則化された行列を計算
         # L1正則化では対角成分に正則化パラメータを加算
-        n = L.shape[1]
+        n = L_scaled.shape[1]
         # 単位行列に正則化パラメータをスケールして加算
-        L_reg = L + alpha * jnp.eye(n)
+        L_reg = L_scaled + alpha_scaled * jnp.eye(n)
         
         # 逆変換関数
-        def inverse_scaling(x_scaled):
-            return x_scaled
+        def inverse_transform(x_reg):
+            return x_reg / self.reg_factor
         
-        return L_reg, inverse_scaling
+        return L_reg, inverse_transform
+    
+    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+        """右辺ベクトルに正則化の変換を適用"""
+        # 行列と同じスケーリングを右辺ベクトルにも適用
+        return rhs * self.reg_factor
 
 
 # 正則化戦略をレジストリに登録

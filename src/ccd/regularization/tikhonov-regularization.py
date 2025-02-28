@@ -2,7 +2,7 @@
 基本的な正則化戦略 - ティホノフ正則化
 
 CCD法の基本的な正則化戦略（Tikhonov正則化）を提供します。
-正則化パラメータが大きくても結果が安定するように修正しました。
+右辺ベクトルの変換と解の逆変換をサポートするように修正しました。
 """
 
 import jax.numpy as jnp
@@ -44,10 +44,7 @@ class TikhonovRegularization(RegularizationStrategy):
         # 行列のスケールを確認
         matrix_norm = jnp.linalg.norm(self.L, ord=2)
         
-        # 行列スケールに対する正則化パラメータの比率
-        alpha_scaled = self.alpha
-        
-        # 行列のスケールが大きい場合は、正則化パラメータもスケーリング
+        # 行列のスケールに対する正則化パラメータの比率
         if matrix_norm > 1.0:
             self.reg_factor = 1.0 / matrix_norm
             L_scaled = self.L * self.reg_factor
@@ -55,6 +52,7 @@ class TikhonovRegularization(RegularizationStrategy):
         else:
             self.reg_factor = 1.0
             L_scaled = self.L
+            alpha_scaled = self.alpha
         
         n = L_scaled.shape[0]
         # 単位行列を生成
