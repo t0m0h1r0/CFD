@@ -2,10 +2,11 @@
 Landweber反復法による正則化戦略
 
 CCD法のLandweber反復法による正則化戦略を提供します。
-JAX互換の実装です。
+右辺ベクトルの変換と解の逆変換をサポートするように修正しました。
 """
 
 import jax.numpy as jnp
+import jax.lax as lax
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategies_base import RegularizationStrategy, regularization_registry
@@ -47,24 +48,30 @@ class LandweberRegularization(RegularizationStrategy):
         Returns:
             正則化された行列L、逆変換関数
         """
-        # クラス変数をローカル変数に保存（ループ内での参照のため）
-        L = self.L
-        
         # 行列のスペクトルノルムを概算
-        s_max = jnp.linalg.norm(L, ord=2)
+        s_max = jnp.linalg.norm(self.L, ord=2)
         
         # 緩和パラメータを安全な範囲に調整
         omega = jnp.minimum(self.relaxation, 1.9 / (s_max ** 2))
         
-        # 正則化された行列を計算
-        # 最大特異値に基づいて行列を調整
-        L_reg = L / (s_max ** 2)
+        # このケースでは行列を大きく変更せず、解法アルゴリズムを調整するのが本質
+        # 行列自体は正規化した形に調整（数値的な問題を避けるため）
+        self.reg_factor = 1.0
+        if s_max > 1.0:
+            self.reg_factor = 1.0 / s_max
         
-        # 逆変換関数
-        def inverse_scaling(x_scaled):
-            return x_scaled
+        L_reg = self.L * self.reg_factor
         
-        return L_reg, inverse_scaling
+        # 逆変換関数 - 解のスケールを元に戻す
+        def inverse_transform(x_reg):
+            return x_reg / self.reg_factor
+        
+        return L_reg, inverse_transform
+    
+    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+        """右辺ベクトルに正則化の変換を適用"""
+        # 行列と同じスケーリングを右辺ベクトルにも適用
+        return rhs * self.reg_factor
 
 
 # 正則化戦略をレジストリに登録

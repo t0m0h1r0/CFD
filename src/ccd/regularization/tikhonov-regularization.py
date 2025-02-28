@@ -2,7 +2,7 @@
 基本的な正則化戦略 - ティホノフ正則化
 
 CCD法の基本的な正則化戦略（Tikhonov正則化）を提供します。
-JAX互換の実装です。
+正則化パラメータが大きくても結果が安定するように修正しました。
 """
 
 import jax.numpy as jnp
@@ -41,17 +41,37 @@ class TikhonovRegularization(RegularizationStrategy):
         Returns:
             正則化された行列L、逆変換関数
         """
-        n = self.L.shape[0]
+        # 行列のスケールを確認
+        matrix_norm = jnp.linalg.norm(self.L, ord=2)
+        
+        # 行列スケールに対する正則化パラメータの比率
+        alpha_scaled = self.alpha
+        
+        # 行列のスケールが大きい場合は、正則化パラメータもスケーリング
+        if matrix_norm > 1.0:
+            self.reg_factor = 1.0 / matrix_norm
+            L_scaled = self.L * self.reg_factor
+            alpha_scaled = self.alpha * self.reg_factor
+        else:
+            self.reg_factor = 1.0
+            L_scaled = self.L
+        
+        n = L_scaled.shape[0]
         # 単位行列を生成
         I = jnp.eye(n)
         # 行列を正則化
-        L_reg = self.L + self.alpha * I
+        L_reg = L_scaled + alpha_scaled * I
         
-        # 逆変換関数（この場合は恒等関数）
-        def inverse_scaling(x_scaled):
-            return x_scaled
+        # 逆変換関数
+        def inverse_transform(x_reg):
+            return x_reg / self.reg_factor
         
-        return L_reg, inverse_scaling
+        return L_reg, inverse_transform
+    
+    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+        """右辺ベクトルに正則化の変換を適用"""
+        # 行列と同じスケーリングを右辺ベクトルにも適用
+        return rhs * self.reg_factor
 
 
 # 正則化戦略をレジストリに登録

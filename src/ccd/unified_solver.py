@@ -2,7 +2,7 @@
 統合されたCCDソルバーモジュール
 
 プラグイン形式のスケーリングと正則化を組み合わせた合成ソルバー実装を提供します。
-不必要な機能を削除し、コードを簡素化しています。
+スケーリングと正則化の適用順序と変換処理を改善しました。
 """
 
 from jax import jit
@@ -50,6 +50,8 @@ class CCDCompositeSolver(BaseCCDSolver):
         # デフォルトの変換関数を設定
         self.inverse_scaling = lambda x: x
         self.scale_rhs = lambda x: x
+        self.transform_rhs = lambda x: x
+        self.inverse_regularization = lambda x: x
         
         # プラグインを一度だけロード
         if not CCDCompositeSolver._plugins_loaded:
@@ -82,7 +84,11 @@ class CCDCompositeSolver(BaseCCDSolver):
         try:
             regularization_class = regularization_registry.get(self.regularization)
             regularization_strategy = regularization_class(L_scaled, **self.regularization_params)
-            self.L_reg, _ = regularization_strategy.apply_regularization()
+            self.L_reg, self.inverse_regularization = regularization_strategy.apply_regularization()
+            
+            # 右辺ベクトルの変換関数があれば取得
+            if hasattr(regularization_strategy, 'transform_rhs'):
+                self.transform_rhs = regularization_strategy.transform_rhs
         except KeyError:
             print(f"警告: '{self.regularization}' 正則化戦略が見つかりません。正則化なしで続行します。")
             self.L_reg = L_scaled
@@ -104,13 +110,21 @@ class CCDCompositeSolver(BaseCCDSolver):
         # 右辺ベクトルを計算
         rhs = self._build_right_hand_vector(f)
         
-        # 右辺ベクトルをスケーリング
+        # 順番に変換を適用:
+        # 1. スケーリング
         rhs_scaled = self.scale_rhs(rhs)
         
-        # 線形方程式を解く
-        solution_scaled = jnp.linalg.solve(self.L_reg, rhs_scaled)
+        # 2. 正則化
+        rhs_reg = self.transform_rhs(rhs_scaled)
         
-        # スケーリングの逆変換を適用
+        # 線形方程式を解く
+        solution_reg = jnp.linalg.solve(self.L_reg, rhs_reg)
+        
+        # 逆の順で逆変換を適用:
+        # 1. 正則化の逆変換
+        solution_scaled = self.inverse_regularization(solution_reg)
+        
+        # 2. スケーリングの逆変換
         solution = self.inverse_scaling(solution_scaled)
         
         # 解ベクトルから各成分を抽出
@@ -134,7 +148,7 @@ class CCDCompositeSolver(BaseCCDSolver):
         
         # プラグイン読み込み完了フラグを設定
         CCDCompositeSolver._plugins_loaded = True
-        
+    
     @classmethod
     def load_plugins(cls, silent: bool = False):
         """
@@ -196,7 +210,7 @@ class CCDCompositeSolver(BaseCCDSolver):
         scaling_params = {}
         regularization_params = {}
         
-        # 簡易パラメータ振り分け（詳細な型チェックなし）
+        # 簡易パラメータ振り分け
         for param_name, param_value in params.items():
             if param_name in ['alpha', 'iterations', 'threshold', 'threshold_ratio', 
                              'rank', 'damp', 'relaxation', 'l1_ratio', 'tol']:
