@@ -183,6 +183,7 @@ class CCDMethodTester:
                     test_func=test_func,
                     f_values=f_values,
                     numerical_derivatives=(psi, psi_prime, psi_second, psi_third),
+                    analytical_derivatives=(analytical_psi, analytical_df, analytical_d2f, analytical_d3f),
                     grid_config=self.grid_config,
                     x_range=self.x_range,
                     solver_name=f"{self.solver_name} ({mode_name})",
