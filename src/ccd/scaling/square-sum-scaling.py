@@ -3,6 +3,7 @@
 
 CCD法の二乗和スケーリング戦略を提供します。
 各行と列の要素の二乗和が等しくなるようスケーリングします。
+右辺ベクトルのスケーリングをサポートするように修正しました。
 """
 
 import jax.numpy as jnp
@@ -50,6 +51,10 @@ class SquareSumScaling(ScalingStrategy):
         
         # 3. スケーリングを適用
         L_scaled = L_row_scaled @ D_col
+        
+        # スケーリング行列を保存
+        self.scaling_matrix_row = D_row
+        self.scaling_matrix_col = D_col
         
         # 逆変換関数
         def inverse_scaling(X_scaled):

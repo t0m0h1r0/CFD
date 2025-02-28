@@ -3,6 +3,7 @@
 
 CCD法の対角優位スケーリング戦略を提供します。
 対角要素が1になるようスケーリングします。
+右辺ベクトルのスケーリングをサポートするように修正しました。
 """
 
 import jax.numpy as jnp
@@ -39,6 +40,10 @@ class DiagonalDominanceScaling(ScalingStrategy):
         
         # スケーリング行列を作成
         D = jnp.diag(1.0 / diag_elements)
+        
+        # 行と列のスケーリング行列として同じ行列を使用
+        self.scaling_matrix_row = D
+        self.scaling_matrix_col = D
         
         # スケーリングを適用
         L_scaled = D @ self.L @ D
