@@ -7,17 +7,18 @@
 from jax import jit
 import jax.numpy as jnp
 from functools import partial
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Type
 
-from ccd_core import GridConfig
+from ccd_core import GridConfig, LeftHandBlockBuilder
 from ccd_solver import CCDSolver as BaseCCDSolver
 
 # スケーリングと正則化の戦略とレジストリをインポート
-from scaling_strategies_base import scaling_registry
-from regularization_strategies_base import regularization_registry
+from scaling_strategies_base import ScalingStrategy, scaling_registry
+from regularization_strategies_base import RegularizationStrategy, regularization_registry
 
 # プラグイン管理モジュールをインポート
 import os
+import importlib.util
 
 
 class CCDCompositeSolver(BaseCCDSolver):
@@ -49,6 +50,7 @@ class CCDCompositeSolver(BaseCCDSolver):
         
         # デフォルトのソルバー機能を設定
         self.inverse_scaling = lambda x: x
+        self.scale_rhs = lambda x: x  # 追加：右辺ベクトルのスケーリング関数
         self.solver_func = None  # 親クラス初期化後に設定
         
         # 親クラスの初期化（行列構築など）
@@ -66,10 +68,15 @@ class CCDCompositeSolver(BaseCCDSolver):
             scaling_class = scaling_registry.get(self.scaling)
             scaling_strategy = scaling_class(L, **self.scaling_params)
             L_scaled, self.inverse_scaling = scaling_strategy.apply_scaling()
+            
+            # 追加：右辺ベクトルのスケーリング関数があれば取得
+            if hasattr(scaling_strategy, 'scale_rhs'):
+                self.scale_rhs = scaling_strategy.scale_rhs
         except KeyError:
             print(f"警告: '{self.scaling}' スケーリング戦略が見つかりません。スケーリングなしで続行します。")
             L_scaled = L
             self.inverse_scaling = lambda x: x
+            self.scale_rhs = lambda x: x
         
         # 正則化の適用
         try:
@@ -103,8 +110,11 @@ class CCDCompositeSolver(BaseCCDSolver):
         # 右辺ベクトルを計算（親クラスのメソッドを使用）
         rhs = self._build_right_hand_vector(f)
         
+        # 修正：右辺ベクトルもスケーリング
+        rhs_scaled = self.scale_rhs(rhs)
+        
         # 正則化されたソルバー関数を使用して解を計算
-        solution_scaled = jnp.linalg.solve(self.L_reg, rhs)
+        solution_scaled = jnp.linalg.solve(self.L_reg, rhs_scaled)
         
         # スケーリングの逆変換を適用
         solution = self.inverse_scaling(solution_scaled)

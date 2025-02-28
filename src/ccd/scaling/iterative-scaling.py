@@ -82,9 +82,18 @@ class IterativeScaling(ScalingStrategy):
         # スケーリングを適用
         L_scaled = self.D_row @ self.L @ self.D_col
         
-        # 逆変換関数
+        # 修正：右辺ベクトル変換用の関数を内部関数として定義
+        def scale_rhs(rhs):
+            # 右辺ベクトルをスケーリング
+            return self.D_row @ rhs
+        
+        # 修正：スケーリングに対応した逆変換関数
         def inverse_scaling(X_scaled):
             return self.D_col @ X_scaled
+        
+        # スケーリング情報を保存
+        self.scale_rhs = scale_rhs
+        self.inverse_transform = inverse_scaling
         
         return L_scaled, inverse_scaling
 
