@@ -1,7 +1,8 @@
 """
-簡素化されたソルバー比較モジュール
+更新された簡素化されたソルバー比較モジュール
 
 異なるCCDソルバー間での性能比較を行う機能を提供します。
+リファクタリングされたCCDソルバー実装に対応しています。
 """
 
 from typing import List, Tuple, Dict, Optional
@@ -95,7 +96,7 @@ class SolverComparator:
         results = {}  # ソルバー名 -> {関数名 -> [1階誤差, 2階誤差, 3階誤差]} の辞書
         timings = {}  # ソルバー名 -> {関数名 -> 計算時間} の辞書
         
-        # 出力ディレクトリを作成
+        # 出力ディレクトリの作成
         os.makedirs("results", exist_ok=True)
         
         # 係数情報の文字列

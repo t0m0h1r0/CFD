@@ -1,14 +1,15 @@
 """
-CCD法ソルバーの診断モジュール
+更新されたCCD法ソルバーの診断モジュール
 
 行列の特性や数値安定性などを診断する機能を提供します。
+リファクタリングされたCCDソルバー実装に対応しています。
 """
 
 import jax.numpy as jnp
 import os
 from typing import Type, Dict, Any, Optional
 
-from ccd_core import GridConfig, LeftHandBlockBuilder
+from ccd_core import GridConfig, CCDLeftHandBuilder
 from ccd_solver import CCDSolver
 from visualization import visualize_matrix_properties
 
@@ -33,10 +34,10 @@ class CCDSolverDiagnostics:
         self.solver_class = solver_class
         self.solver_name = solver_class.__name__
         self.solver = solver_class(grid_config, **solver_kwargs)
-        self.left_builder = LeftHandBlockBuilder()
+        self.left_builder = CCDLeftHandBuilder()
         
         # 行列を計算
-        self.L = self.left_builder.build_block(self.grid_config)
+        self.L = self.left_builder.build_matrix(self.grid_config)
         
         # 右辺ベクトルを含む行列を生成せず、必要に応じてソルバーから直接情報を取得
     
@@ -80,10 +81,10 @@ class CCDSolverDiagnostics:
         print(f"列ノルムの最小値: {jnp.min(col_norms):.2e}")
         print(f"列ノルムの最大/最小比: {jnp.max(col_norms)/jnp.min(col_norms):.2e}")
         
-        # ソルバーに固有の行列がある場合は表示
-        if hasattr(self.solver, 'L_scaled'):
+        # CompositesolverにはL_scaledとtransformerが存在する
+        if hasattr(self.solver, 'transformer') and hasattr(self.solver.transformer, 'L_scaled'):
             print("\n=== スケーリング後の行列特性 ===")
-            L_scaled = self.solver.L_scaled
+            L_scaled = self.solver.transformer.L_scaled
             cond_L_scaled = jnp.linalg.cond(L_scaled)
             print(f"スケーリング後の条件数: {cond_L_scaled:.2e}")
             print(f"条件数の改善率: {cond_L/cond_L_scaled:.2f}倍")
@@ -116,7 +117,7 @@ class CCDSolverDiagnostics:
             "col_norm_ratio": float(jnp.max(col_norms)/jnp.min(col_norms))
         }
         
-        if hasattr(self.solver, 'L_scaled'):
+        if hasattr(self.solver, 'transformer') and hasattr(self.solver.transformer, 'L_scaled'):
             results.update({
                 "scaled_condition_number": float(cond_L_scaled),
                 "condition_improvement": float(cond_L/cond_L_scaled),
@@ -128,7 +129,26 @@ class CCDSolverDiagnostics:
 
     def analyze_boundary_blocks(self):
         """境界ブロック行列の確認"""
-        B0, C0, D0, ZR, AR, BR = self.left_builder._build_boundary_blocks()
+        # リファクタリング後の各コンポーネントの境界ブロックメソッドを使用
+        B0 = None
+        C0 = None
+        D0 = None
+        ZR = None
+        AR = None
+        BR = None
+        
+        # 非公開メソッドを呼び出すための代替処理
+        # CCDLeftHandBuilderの内部構造に依存しない方法で境界ブロックを取得
+        try:
+            if hasattr(self.left_builder, '_build_boundary_blocks'):
+                B0, C0, D0, ZR, AR, BR = self.left_builder._build_boundary_blocks()
+            else:
+                # 代替策: 未実装の場合はスキップ
+                print("警告: 境界ブロックの取得方法が利用できません。このセクションはスキップされます。")
+                return {}
+        except Exception as e:
+            print(f"境界ブロックの分析中にエラーが発生しました: {e}")
+            return {}
         
         print("=== 境界ブロック行列の確認 ===")
         print("\n左境界:")

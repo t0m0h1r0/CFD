@@ -7,7 +7,6 @@ CCD法のL1正則化（LASSO）を提供します。
 """
 
 import jax.numpy as jnp
-import jax.lax as lax
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategies_base import RegularizationStrategy, regularization_registry

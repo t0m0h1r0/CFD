@@ -1,114 +1,122 @@
 import jax.numpy as jnp
 import jax
 from functools import partial
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Protocol
 import jax.scipy.sparse.linalg as jspl
 
-from ccd_core import GridConfig, LeftHandBlockBuilder
+from ccd_core import (
+    GridConfig, 
+    CCDLeftHandBuilder, 
+    CCDRightHandBuilder, 
+    CCDResultExtractor, 
+    CCDSystemBuilder
+)
 
+
+class LinearSolver(Protocol):
+    """線形方程式系を解くためのプロトコル"""
+    
+    def solve(self, L: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+        """
+        線形方程式 L*x = b を解く
+        
+        Args:
+            L: 左辺行列
+            b: 右辺ベクトル
+            
+        Returns:
+            解ベクトル x
+        """
+        ...
+
+
+class DirectSolver:
+    """直接法による線形ソルバー"""
+    
+    def solve(self, L: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+        """直接法で線形方程式を解く"""
+        return jnp.linalg.solve(L, b)
+
+
+class IterativeSolver:
+    """反復法による線形ソルバー"""
+    
+    def __init__(self, tol: float = 1e-10, atol: float = 1e-10, restart: int = 50, maxiter: int = 1000):
+        """
+        Args:
+            tol: 相対許容誤差
+            atol: 絶対許容誤差
+            restart: GMRESの再起動パラメータ
+            maxiter: 最大反復回数
+        """
+        self.tol = tol
+        self.atol = atol
+        self.restart = restart
+        self.maxiter = maxiter
+    
+    def solve(self, L: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+        """GMRES法で線形方程式を解く"""
+        solution, info = jspl.gmres(
+            L, b, 
+            tol=self.tol, 
+            atol=self.atol,
+            restart=self.restart,
+            maxiter=self.maxiter
+        )
+        return solution
 
 
 class CCDSolver:
-    """結合コンパクト差分ソルバー（JAX最適化版）"""
+    """結合コンパクト差分法による微分計算クラス"""
     
-    def __init__(self, grid_config: GridConfig, coeffs: Optional[List[float]] = None):
+    def __init__(
+        self, 
+        grid_config: GridConfig, 
+        coeffs: Optional[List[float]] = None,
+        use_iterative: bool = False,
+        solver_kwargs: Optional[dict] = None
+    ):
         """
         CCDソルバーの初期化
         
         Args:
             grid_config: グリッド設定
             coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用 (f = psi)
+            use_iterative: 反復法を使用するかどうか
+            solver_kwargs: 線形ソルバーのパラメータ
         """
         self.grid_config = grid_config
-        self.left_hand_builder = LeftHandBlockBuilder()
         
         # 係数を設定
         self.coeffs = coeffs if coeffs is not None else [1.0, 0.0, 0.0, 0.0]
         
-        # 左辺行列を係数を含めて構築
-        self.L = self.left_hand_builder.build_block(grid_config, self.coeffs)
+        # システムビルダーの初期化
+        self.system_builder = CCDSystemBuilder(
+            CCDLeftHandBuilder(),
+            CCDRightHandBuilder(),
+            CCDResultExtractor()
+        )
+        
+        # 左辺行列の構築
+        self.L, _ = self.system_builder.build_system(grid_config, jnp.zeros(grid_config.n_points), self.coeffs)
         
         # 行列の特性を分析して最適なソルバーを選択
-        self._analyze_matrix()
-        
-    def _analyze_matrix(self):
-        """行列の特性を分析し、最適なソルバーを選択"""
-        # この行列は非常に特殊な構造を持っているため、
-        # 直接解法と反復解法の両方をテストして最適化
-        
-        # 行列のサイズを取得
-        self.matrix_size = self.L.shape[0]
-        
-        # 現時点では直接法を使用
-        # (将来的にはサイズや条件数に応じて最適な手法を選択する)
-        self.use_iterative = False
-        
-        # バンド行列としての特性を活かした最適化は将来実装
-        self.band_optimized = False
+        self._select_solver(use_iterative, solver_kwargs or {})
     
-    def _build_right_hand_vector(self, f: jnp.ndarray) -> jnp.ndarray:
-        """
-        関数値fを組み込んだ右辺ベクトルを生成
+    def _select_solver(self, use_iterative: bool, solver_kwargs: dict):
+        """ソルバーの選択
         
         Args:
-            f: グリッド点での関数値
-            
-        Returns:
-            パターン[f[0],0,0,0,f[1],0,0,0,...]の右辺ベクトル
+            use_iterative: 反復法を使用するかどうか
+            solver_kwargs: ソルバーのパラメータ
         """
-        n = self.grid_config.n_points
-        depth = 4
+        self.use_iterative = use_iterative
         
-        # 右辺ベクトルを効率的に生成
-        K = jnp.zeros(n * depth)
-        
-        # 全てのインデックスを一度に更新
-        indices = jnp.arange(0, n * depth, depth)
-        K = K.at[indices].set(f)
-        
-        return K
-        
-    def _extract_derivatives(self, solution: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        """
-        解から関数値と各階微分を抽出
-        
-        Args:
-            solution: 方程式系の解
-            
-        Returns:
-            (関数値, 1階微分, 2階微分, 3階微分)のタプル
-        """
-        n = self.grid_config.n_points
-        
-        # 効率的な抽出方法
-        indices0 = jnp.arange(0, n * 4, 4)
-        indices1 = indices0 + 1
-        indices2 = indices0 + 2
-        indices3 = indices0 + 3
-        
-        f = solution[indices0]
-        f_prime = solution[indices1]
-        f_second = solution[indices2]
-        f_third = solution[indices3]
-        
-        return f, f_prime, f_second, f_third
+        if use_iterative:
+            self.solver = IterativeSolver(**solver_kwargs)
+        else:
+            self.solver = DirectSolver()
     
-    def _solve_direct(self, K: jnp.ndarray) -> jnp.ndarray:
-        """直接法によるソルバー"""
-        return jnp.linalg.solve(self.L, K)
-    
-    def _solve_iterative(self, K: jnp.ndarray) -> jnp.ndarray:
-        """反復法によるソルバー"""
-        # JAXのGMRESを使用
-        solution, info = jspl.gmres(
-            self.L, K, 
-            tol=1e-10, 
-            atol=1e-10,
-            restart=50,
-            maxiter=1000
-        )
-        return solution
-        
     @partial(jax.jit, static_argnums=(0,))
     def solve(self, f: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """
@@ -121,16 +129,13 @@ class CCDSolver:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
         # 右辺ベクトルを構築
-        K = self._build_right_hand_vector(f)
+        _, b = self.system_builder.build_system(self.grid_config, f, self.coeffs)
         
-        # 選択したソルバーで方程式を解く
-        if self.use_iterative:
-            solution = self._solve_iterative(K)
-        else:
-            solution = self._solve_direct(K)
+        # 線形方程式を解く
+        solution = self.solver.solve(self.L, b)
         
         # 解から関数値と各階微分を抽出して返す
-        return self._extract_derivatives(solution)
+        return self.system_builder.extract_results(self.grid_config, solution)
 
 
 # ベクトル化対応版のCCDSolverクラス
