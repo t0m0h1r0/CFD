@@ -1,28 +1,21 @@
-sgn: +1;
-f1[0]: f[0,0] + f[1,0]*(sgn  *h) + f[2,0]*(sgn  *h)^2/2! + f[3,0]*(sgn  *h)^3/3! + f[4,0]*(sgn  *h)^4/4! + f[5,0]*(sgn  *h)^5/5! + f[6,0]*(sgn  *h)^6/6! + f[7,0]*(sgn  *h)^7/7! + f[8,0]*(sgn  *h)^8/8!;
-f2[0]: f[0,0] + f[1,0]*(sgn*2*h) + f[2,0]*(sgn*2*h)^2/2! + f[3,0]*(sgn*2*h)^3/3! + f[4,0]*(sgn*2*h)^4/4! + f[5,0]*(sgn*2*h)^5/5! + f[6,0]*(sgn*2*h)^6/6! + f[7,0]*(sgn*2*h)^7/7! + f[8,0]*(sgn*2*h)^8/8!;
+sgn: -1;
+p[0,1*sgn]: f[0,0] + f[1,0]*(sgn  *h) + f[2,0]*(sgn  *h)^2/2! + f[3,0]*(sgn  *h)^3/3! + f[4,0]*(sgn  *h)^4/4! + f[5,0]*(sgn  *h)^5/5! + f[6,0]*(sgn  *h)^6/6! + f[7,0]*(sgn  *h)^7/7! + f[8,0]*(sgn  *h)^8/8!;
+p[0,2*sgn]: f[0,0] + f[1,0]*(sgn*2*h) + f[2,0]*(sgn*2*h)^2/2! + f[3,0]*(sgn*2*h)^3/3! + f[4,0]*(sgn*2*h)^4/4! + f[5,0]*(sgn*2*h)^5/5! + f[6,0]*(sgn*2*h)^6/6! + f[7,0]*(sgn*2*h)^7/7! + f[8,0]*(sgn*2*h)^8/8!;
 
-f1[1]: f[1,0] + f[2,0]*(sgn  *h) + f[3,0]*(sgn  *h)^2/2! + f[4,0]*(sgn  *h)^3/3! + f[5,0]*(sgn  *h)^4/4! + f[6,0]*(sgn  *h)^5/5! + f[7,0]*(sgn  *h)^6/6! + f[8,0]*(sgn  *h)^7/7!;
-f2[1]: f[1,0] + f[2,0]*(sgn*2*h) + f[3,0]*(sgn*2*h)^2/2! + f[4,0]*(sgn*2*h)^3/3! + f[5,0]*(sgn*2*h)^4/4! + f[6,0]*(sgn*2*h)^5/5! + f[7,0]*(sgn*2*h)^6/6! + f[8,0]*(sgn*2*h)^7/7!;
+p[1,1*sgn]: f[1,0] + f[2,0]*(sgn  *h) + f[3,0]*(sgn  *h)^2/2! + f[4,0]*(sgn  *h)^3/3! + f[5,0]*(sgn  *h)^4/4! + f[6,0]*(sgn  *h)^5/5! + f[7,0]*(sgn  *h)^6/6! + f[8,0]*(sgn  *h)^7/7!;
+p[1,2*sgn]: f[1,0] + f[2,0]*(sgn*2*h) + f[3,0]*(sgn*2*h)^2/2! + f[4,0]*(sgn*2*h)^3/3! + f[5,0]*(sgn*2*h)^4/4! + f[6,0]*(sgn*2*h)^5/5! + f[7,0]*(sgn*2*h)^6/6! + f[8,0]*(sgn*2*h)^7/7!;
 
-f1[2]: f[2,0] + f[3,0]*(sgn  *h) + f[4,0]*(sgn  *h)^2/2! + f[5,0]*(sgn  *h)^3/3! + f[6,0]*(sgn  *h)^4/4! + f[7,0]*(sgn  *h)^5/5! + f[8,0]*(sgn  *h)^6/6!;
-f2[2]: f[2,0] + f[3,0]*(sgn*2*h) + f[4,0]*(sgn*2*h)^2/2! + f[5,0]*(sgn*2*h)^3/3! + f[6,0]*(sgn*2*h)^4/4! + f[7,0]*(sgn*2*h)^5/5! + f[8,0]*(sgn*2*h)^6/6!;
+p[2,1*sgn]: f[2,0] + f[3,0]*(sgn  *h) + f[4,0]*(sgn  *h)^2/2! + f[5,0]*(sgn  *h)^3/3! + f[6,0]*(sgn  *h)^4/4! + f[7,0]*(sgn  *h)^5/5! + f[8,0]*(sgn  *h)^6/6!;
+p[2,2*sgn]: f[2,0] + f[3,0]*(sgn*2*h) + f[4,0]*(sgn*2*h)^2/2! + f[5,0]*(sgn*2*h)^3/3! + f[6,0]*(sgn*2*h)^4/4! + f[7,0]*(sgn*2*h)^5/5! + f[8,0]*(sgn*2*h)^6/6!;
 
-f1[3]: f[3,0] + f[4,0]*(sgn  *h) + f[5,0]*(sgn  *h)^2/2! + f[6,0]*(sgn  *h)^3/3! + f[7,0]*(sgn  *h)^4/4! + f[8,0]*(sgn  *h)^5/5!;
-f2[3]: f[3,0] + f[4,0]*(sgn*2*h) + f[5,0]*(sgn*2*h)^2/2! + f[6,0]*(sgn*2*h)^3/3! + f[7,0]*(sgn*2*h)^4/4! + f[8,0]*(sgn*2*h)^5/5!;
-
-
-fp[0]: f1[0] - f[0,1];
-fm[0]: f2[0] - f[0,2];
-fp[1]: f1[1] - f[1,1];
-fm[1]: f2[1] - f[1,2];
-fp[2]: f1[2] - f[2,1];
-fm[2]: f2[2] - f[2,2];
-fp[3]: f1[3] - f[3,1];
-fm[3]: f2[3] - f[3,2];
+p[3,1*sgn]: f[3,0] + f[4,0]*(sgn  *h) + f[5,0]*(sgn  *h)^2/2! + f[6,0]*(sgn  *h)^3/3! + f[7,0]*(sgn  *h)^4/4! + f[8,0]*(sgn  *h)^5/5!;
+p[3,2*sgn]: f[3,0] + f[4,0]*(sgn*2*h) + f[5,0]*(sgn*2*h)^2/2! + f[6,0]*(sgn*2*h)^3/3! + f[7,0]*(sgn*2*h)^4/4! + f[8,0]*(sgn*2*h)^5/5!;
 
 
-base: (a*fp[0] + b*fm[0] + c*fp[1]*h + d*fm[1]*h + r*fp[2]*h^2 + s*fm[2]*h^2 + t*fp[3]*h^3 + u*fm[3]*h^3);
+
+base:
+  a*p[0,1*sgn] + b*p[0,2*sgn] + c*p[1,1*sgn]*h + d*p[1,2*sgn]*h + r*p[2,1*sgn]*h^2 + s*p[2,2*sgn]*h^2 + t*p[3,1*sgn]*h^3 + u*p[3,2*sgn]*h^3
+- a*f[0,1*sgn] - b*f[0,2*sgn] - c*f[1,1*sgn]*h - d*f[1,2*sgn]*h - r*f[2,1*sgn]*h^2 - s*f[2,2*sgn]*h^2 - t*f[3,1*sgn]*h^3 - u*f[3,2*sgn]*h^3;
 expanded: expand(base);
 
 eq0: coeff(coeff(expanded,h,0),f[0,0]);
@@ -35,11 +28,10 @@ eq6: coeff(coeff(expanded,h,6),f[6,0]);
 eq7: coeff(coeff(expanded,h,7),f[7,0]);
 eq8: coeff(coeff(expanded,h,8),f[8,0]);
 
-solution1: solve([eq1=1, eq2=0, eq3=0, eq4=0, eq5=0, eq6=0, t=0, u=0], [a, b, c, d, r, s, t, u]);
-solution2: solve([eq1=0, eq2=1, eq3=0, eq4=0, eq5=0, eq6=0, t=0, u=0], [a, b, c, d, r, s, t, u]);
-solution3: solve([eq1=0, eq2=0, eq3=1, eq4=0, eq5=0, eq6=0, t=0, u=0], [a, b, c, d, r, s, t, u]);
+solution1: solve([eq1=1, eq2=0, eq3=0, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a, b, c, d, r, s, t, u]);
+solution2: solve([eq1=0, eq2=1, eq3=0, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a, b, c, d, r, s, t, u]);
+solution3: solve([eq1=0, eq2=0, eq3=1, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a, b, c, d, r, s, t, u]);
 
-ccd_0: expand(subst(solution0[1],expanded));
 ccd_1: expand(subst(solution1[1],expanded));
 ccd_2: expand(subst(solution2[1],expanded));
 ccd_3: expand(subst(solution3[1],expanded));
@@ -52,13 +44,21 @@ matrix_B: matrix(
 );
 matrix_C: matrix(
     [                             0,                              0,                              0,                              0],
-    [coeff(coeff(ccd_1,h,0),f[0,1]), coeff(coeff(ccd_1,h,1),f[1,1]), coeff(coeff(ccd_1,h,2),f[2,1]), coeff(coeff(ccd_1,h,3),f[3,1])],
-    [coeff(coeff(ccd_2,h,0),f[0,1]), coeff(coeff(ccd_2,h,1),f[1,1]), coeff(coeff(ccd_2,h,2),f[2,1]), coeff(coeff(ccd_2,h,3),f[3,1])],
-    [coeff(coeff(ccd_3,h,0),f[0,1]), coeff(coeff(ccd_3,h,1),f[1,1]), coeff(coeff(ccd_3,h,2),f[2,1]), coeff(coeff(ccd_3,h,3),f[3,1])]
+    [coeff(coeff(ccd_1,h,0),f[0,1*sgn]), coeff(coeff(ccd_1,h,1),f[1,1*sgn]), coeff(coeff(ccd_1,h,2),f[2,1*sgn]), coeff(coeff(ccd_1,h,3),f[3,1*sgn])],
+    [coeff(coeff(ccd_2,h,0),f[0,1*sgn]), coeff(coeff(ccd_2,h,1),f[1,1*sgn]), coeff(coeff(ccd_2,h,2),f[2,1*sgn]), coeff(coeff(ccd_2,h,3),f[3,1*sgn])],
+    [coeff(coeff(ccd_3,h,0),f[0,1*sgn]), coeff(coeff(ccd_3,h,1),f[1,1*sgn]), coeff(coeff(ccd_3,h,2),f[2,1*sgn]), coeff(coeff(ccd_3,h,3),f[3,1*sgn])]
 );
 matrix_D: matrix(
     [                             0,                              0,                              0,                              0],
-    [coeff(coeff(ccd_1,h,0),f[0,2]), coeff(coeff(ccd_1,h,1),f[1,2]), coeff(coeff(ccd_1,h,2),f[2,2]), coeff(coeff(ccd_1,h,3),f[3,2])],
-    [coeff(coeff(ccd_2,h,0),f[0,2]), coeff(coeff(ccd_2,h,1),f[1,2]), coeff(coeff(ccd_2,h,2),f[2,2]), coeff(coeff(ccd_2,h,3),f[3,2])],
-    [coeff(coeff(ccd_3,h,0),f[0,2]), coeff(coeff(ccd_3,h,1),f[1,2]), coeff(coeff(ccd_3,h,2),f[2,2]), coeff(coeff(ccd_3,h,3),f[3,2])]
+    [coeff(coeff(ccd_1,h,0),f[0,2*sgn]), coeff(coeff(ccd_1,h,1),f[1,2*sgn]), coeff(coeff(ccd_1,h,2),f[2,2*sgn]), coeff(coeff(ccd_1,h,3),f[3,2*sgn])],
+    [coeff(coeff(ccd_2,h,0),f[0,2*sgn]), coeff(coeff(ccd_2,h,1),f[1,2*sgn]), coeff(coeff(ccd_2,h,2),f[2,2*sgn]), coeff(coeff(ccd_2,h,3),f[3,2*sgn])],
+    [coeff(coeff(ccd_3,h,0),f[0,2*sgn]), coeff(coeff(ccd_3,h,1),f[1,2*sgn]), coeff(coeff(ccd_3,h,2),f[2,2*sgn]), coeff(coeff(ccd_3,h,3),f[3,2*sgn])]
 );
+
+
+
+display2d:false;
+
+string(matrix_B);
+string(matrix_C);
+string(matrix_D);
