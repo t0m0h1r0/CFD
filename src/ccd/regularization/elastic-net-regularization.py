@@ -3,7 +3,7 @@ Elastic Net 正則化戦略
 
 CCD法のElastic Net 正則化を提供します。
 L1正則化とL2正則化を組み合わせた手法です。
-JAX互換の実装です。
+右辺ベクトルの変換と解の逆変換をサポートするように修正しました。
 """
 
 import jax.numpy as jnp
@@ -62,36 +62,37 @@ class ElasticNetRegularization(RegularizationStrategy):
         Returns:
             正則化された行列L、逆変換関数
         """
-        # クラス変数をローカル変数に保存（ループ内での参照のため）
-        L = self.L
-        L_T = self.L_T
-        alpha = self.alpha
-        l1_ratio = self.l1_ratio
-        tol = self.tol
+        # 行列のスケールを確認
+        matrix_norm = jnp.linalg.norm(self.L, ord=2)
+        
+        # 行列のスケールが大きい場合はスケーリング
+        if matrix_norm > 1.0:
+            self.reg_factor = 1.0 / matrix_norm
+            L_scaled = self.L * self.reg_factor
+            alpha_scaled = self.alpha * self.reg_factor
+        else:
+            self.reg_factor = 1.0
+            L_scaled = self.L
+            alpha_scaled = self.alpha
         
         # L1とL2の重みを計算
-        alpha_l1 = alpha * l1_ratio
-        alpha_l2 = alpha * (1 - l1_ratio)
-        
-        # 初期解を標準的な最小二乗解に設定
-        n = L.shape[1]
+        alpha_l1 = alpha_scaled * self.l1_ratio
+        alpha_l2 = alpha_scaled * (1 - self.l1_ratio)
         
         # L2正則化を考慮した行列の事前計算
-        ATA_l2 = L_T @ L + alpha_l2 * jnp.eye(n)
-        
-        # リプシッツ定数の推定
-        lambda_max = jnp.linalg.norm(ATA_l2, ord=2)
-        step_size = 1.0 / lambda_max
-        
-        # 正則化された行列を計算
-        # 何らかの適切な正則化行列を選択（例：単位行列を加算）
-        L_reg = L + alpha_l2 * jnp.eye(n)
+        n = L_scaled.shape[1]
+        L_reg = L_scaled + alpha_l2 * jnp.eye(n)
         
         # 逆変換関数
-        def inverse_scaling(x_scaled):
-            return x_scaled
+        def inverse_transform(x_reg):
+            return x_reg / self.reg_factor
         
-        return L_reg, inverse_scaling
+        return L_reg, inverse_transform
+    
+    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+        """右辺ベクトルに正則化の変換を適用"""
+        # 行列と同じスケーリングを右辺ベクトルにも適用
+        return rhs * self.reg_factor
 
 
 # 正則化戦略をレジストリに登録

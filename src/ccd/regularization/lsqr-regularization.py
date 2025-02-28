@@ -2,7 +2,7 @@
 LSQR法による正則化戦略
 
 CCD法のLSQR法による正則化戦略を提供します。
-JAX互換の実装です。
+右辺ベクトルの変換と解の逆変換をサポートするように修正しました。
 """
 
 import jax.numpy as jnp
@@ -49,24 +49,37 @@ class LSQRRegularization(RegularizationStrategy):
         Returns:
             正則化された行列L、逆変換関数
         """
-        # クラス変数をローカル変数に保存
-        L = self.L
-        L_T = self.L_T
-        damp = self.damp
+        # 行列のスケールを確認
+        matrix_norm = jnp.linalg.norm(self.L, ord=2)
         
-        # 行列のスペクトルノルムを概算
-        s_max = jnp.linalg.norm(L, ord=2)
+        # 行列のスケールが大きい場合はスケーリング
+        if matrix_norm > 1.0:
+            self.reg_factor = 1.0 / matrix_norm
+            L_scaled = self.L * self.reg_factor
+        else:
+            self.reg_factor = 1.0
+            L_scaled = self.L
         
         # 減衰パラメータを考慮
         # 減衰パラメータがある場合は、単位行列にスケールして加算
-        n = L.shape[1]
-        L_reg = L + damp * jnp.eye(n)
+        damp_scaled = self.damp * self.reg_factor
+        n = L_scaled.shape[1]
+        
+        if damp_scaled > 0:
+            L_reg = L_scaled + damp_scaled * jnp.eye(n)
+        else:
+            L_reg = L_scaled
         
         # 逆変換関数
-        def inverse_scaling(x_scaled):
-            return x_scaled
+        def inverse_transform(x_reg):
+            return x_reg / self.reg_factor
         
-        return L_reg, inverse_scaling
+        return L_reg, inverse_transform
+    
+    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+        """右辺ベクトルに正則化の変換を適用"""
+        # 行列と同じスケーリングを右辺ベクトルにも適用
+        return rhs * self.reg_factor
 
 
 # 正則化戦略をレジストリに登録

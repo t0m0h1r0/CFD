@@ -2,6 +2,7 @@
 Rehu法によるスケーリング戦略
 
 CCD法のRehu法（行と列の最大絶対値）によるスケーリング戦略を提供します。
+右辺ベクトルのスケーリングをサポートするように修正しました。
 """
 
 import jax.numpy as jnp
@@ -33,9 +34,17 @@ class RehuScaling(ScalingStrategy):
         max_values_row = jnp.max(jnp.abs(self.L), axis=1)
         max_values_col = jnp.max(jnp.abs(self.L), axis=0)
         
+        # 0除算を防ぐため、非常に小さい値をクリップ
+        max_values_row = jnp.maximum(max_values_row, 1e-10)
+        max_values_col = jnp.maximum(max_values_col, 1e-10)
+        
         # スケーリング行列を作成
         D_row = jnp.diag(1.0 / jnp.sqrt(max_values_row))
         D_col = jnp.diag(1.0 / jnp.sqrt(max_values_col))
+        
+        # スケーリング行列を保存
+        self.scaling_matrix_row = D_row
+        self.scaling_matrix_col = D_col
         
         # スケーリングを適用
         L_scaled = D_row @ self.L @ D_col

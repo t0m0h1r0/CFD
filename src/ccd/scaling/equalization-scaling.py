@@ -3,6 +3,7 @@
 
 CCD法の均等化スケーリング戦略を提供します。
 各行と列の最大絶対値を1にスケーリングします。
+右辺ベクトルのスケーリングにも対応しました。
 """
 
 import jax.numpy as jnp
@@ -46,6 +47,10 @@ class EqualizationScaling(ScalingStrategy):
         
         # 3. スケーリングを適用
         L_scaled = L_row_eq @ D_col
+        
+        # スケーリング行列を保存
+        self.scaling_matrix_row = D_row
+        self.scaling_matrix_col = D_col
         
         # 逆変換関数
         def inverse_scaling(X_scaled):

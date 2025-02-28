@@ -2,6 +2,7 @@
 反復的スケーリング戦略
 
 CCD法の反復的スケーリング戦略（Sinkhorn-Knopp法）を提供します。
+右辺ベクトルのスケーリングをサポートするように修正しました。
 """
 
 import jax.numpy as jnp
@@ -75,16 +76,16 @@ class IterativeScaling(ScalingStrategy):
             d_row, d_col = d_row_new, d_col_new
             D_row, D_col = D_row_new, D_col_new
         
-        # 最終的なスケーリング行列を保存
-        self.D_row = D_row
-        self.D_col = D_col
+        # スケーリング行列を保存
+        self.scaling_matrix_row = D_row
+        self.scaling_matrix_col = D_col
         
         # スケーリングを適用
-        L_scaled = self.D_row @ self.L @ self.D_col
+        L_scaled = D_row @ self.L @ D_col
         
         # 逆変換関数
         def inverse_scaling(X_scaled):
-            return self.D_col @ X_scaled
+            return D_col @ X_scaled
         
         return L_scaled, inverse_scaling
 

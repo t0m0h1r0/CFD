@@ -2,7 +2,7 @@
 SVD切断法による正則化戦略
 
 CCD法のSVD切断法による正則化戦略を提供します。
-JAX互換の実装です。
+右辺ベクトルの変換と解の逆変換に対応しました。
 """
 
 import jax.numpy as jnp
@@ -41,24 +41,36 @@ class SVDRegularization(RegularizationStrategy):
         Returns:
             正則化された行列L、逆変換関数
         """
-        # クラス変数をローカル変数に保存
-        L = self.L
-        threshold = self.threshold
+        # 行列のスケールを確認
+        matrix_norm = jnp.linalg.norm(self.L, ord=2)
+        
+        # 行列のスケールが大きい場合はスケーリング
+        if matrix_norm > 1.0:
+            self.reg_factor = 1.0 / matrix_norm
+            L_scaled = self.L * self.reg_factor
+        else:
+            self.reg_factor = 1.0
+            L_scaled = self.L
         
         # 特異値分解を実行
-        U, s, Vh = jnp.linalg.svd(L, full_matrices=False)
+        U, s, Vh = jnp.linalg.svd(L_scaled, full_matrices=False)
         
         # 特異値のフィルタリング（JAX互換）
-        s_filtered = jnp.maximum(s, threshold)
+        s_filtered = jnp.maximum(s, self.threshold)
         
         # 正則化された行列を計算
-        L_reg = Vh.T @ jnp.diag(s_filtered) @ U.T
+        L_reg = U @ jnp.diag(s_filtered) @ Vh
         
         # 逆変換関数
-        def inverse_scaling(x_scaled):
-            return x_scaled
+        def inverse_transform(x_reg):
+            return x_reg / self.reg_factor
         
-        return L_reg, inverse_scaling
+        return L_reg, inverse_transform
+    
+    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+        """右辺ベクトルに正則化の変換を適用"""
+        # 行列と同じスケーリングを右辺ベクトルにも適用
+        return rhs * self.reg_factor
 
 
 # 正則化戦略をレジストリに登録

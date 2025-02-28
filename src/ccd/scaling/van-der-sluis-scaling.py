@@ -3,6 +3,7 @@ Van der Sluis スケーリング戦略
 
 CCD法のVan der Sluis スケーリング戦略を提供します。
 各列を2-ノルムで正規化します。
+右辺ベクトルのスケーリングをサポートするように修正しました。
 """
 
 import jax.numpy as jnp
@@ -39,6 +40,10 @@ class VanDerSluisScaling(ScalingStrategy):
         
         # スケーリング行列を作成（列のみスケーリング）
         D_col = jnp.diag(1.0 / col_norms)
+        
+        # スケーリング行列を保存
+        self.scaling_matrix_row = jnp.eye(self.L.shape[0])  # 行方向のスケーリングなし
+        self.scaling_matrix_col = D_col
         
         # スケーリングを適用
         L_scaled = self.L @ D_col

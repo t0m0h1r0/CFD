@@ -2,6 +2,7 @@
 基本的なスケーリング戦略 - 正規化スケーリング
 
 CCD法の基本的なスケーリング戦略（Normalization）を提供します。
+右辺ベクトルのスケーリングをサポートするように修正しました。
 """
 
 import jax.numpy as jnp
@@ -40,6 +41,10 @@ class NormalizationScaling(ScalingStrategy):
         # スケーリング行列を作成
         D_row = jnp.diag(1.0 / jnp.sqrt(row_norms))
         D_col = jnp.diag(1.0 / jnp.sqrt(col_norms))
+        
+        # スケーリング行列を保存
+        self.scaling_matrix_row = D_row
+        self.scaling_matrix_col = D_col
         
         # スケーリングを適用
         L_scaled = D_row @ self.L @ D_col

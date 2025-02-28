@@ -37,12 +37,22 @@ class MaxElementScaling(ScalingStrategy):
         # 0除算を防ぐため、非常に小さい値をクリップ
         max_abs_value = jnp.maximum(max_abs_value, 1e-10)
         
+        # スケーリング係数を保存
+        self.scale_factor = max_abs_value
+        
         # スケーリングを適用
         L_scaled = self.L / max_abs_value
         
-        # 逆変換関数
+        # 右辺ベクトルスケーリング関数を定義
+        def scale_rhs(rhs):
+            return rhs / max_abs_value
+        
+        # 逆変換関数 - この場合はスケーリングが一様なので、何もしない
         def inverse_scaling(X_scaled):
-            return X_scaled  # この方式では逆変換の必要なし
+            return X_scaled
+        
+        # スケーリング情報を保存
+        self.scale_rhs = scale_rhs
         
         return L_scaled, inverse_scaling
 
