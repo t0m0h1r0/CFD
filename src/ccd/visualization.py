@@ -1,14 +1,13 @@
 """
-可視化モジュール - 色の一貫性を修正
+シンプル化された可視化モジュール
 
 CCDソルバーの結果を視覚化するためのユーティリティ関数を提供します。
-同じタイプのデータ（解析解/数値解）には同じ色を使用します。
 """
 
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import os
-from typing import Tuple, List, Dict
+from typing import Tuple, Dict
 
 from test_functions import TestFunction
 from ccd_core import GridConfig
@@ -31,7 +30,7 @@ def visualize_derivative_results(
         test_func: テスト関数
         f_values: グリッド点での関数値
         numerical_derivatives: 数値計算された導関数のタプル (psi, psi_prime, psi_second, psi_third)
-        analytical_derivatives: 解析的な導関数のタプル (psi, psi_prime, psi_second, psi_third)
+        analytical_derivatives: 解析解の導関数のタプル (psi, psi_prime, psi_second, psi_third)
         grid_config: グリッド設定
         x_range: x軸の範囲 (開始位置, 終了位置)
         solver_name: ソルバーの名前 (プロットタイトルに使用)
@@ -41,55 +40,57 @@ def visualize_derivative_results(
     h = grid_config.h
     x_start = x_range[0]
 
-    # 数値導関数のアンパック
+    # 導関数のアンパック
     psi, psi_prime, psi_second, psi_third = numerical_derivatives
-    
-    # 解析的導関数のアンパック
     analytical_psi, analytical_df, analytical_d2f, analytical_d3f = analytical_derivatives
 
     # グリッド点の計算
     x_points = jnp.array([x_start + i * h for i in range(n)])
 
-    # 高解像度の点での解析解
+    # 高解像度の点での解析解（スムーズなグラフ表示用）
     x_fine = jnp.linspace(x_range[0], x_range[1], 200)
-    analytical_f_fine = jnp.array([test_func.f(x) for x in x_fine])
-    analytical_df_fine = jnp.array([test_func.df(x) for x in x_fine])
-    analytical_d2f_fine = jnp.array([test_func.d2f(x) for x in x_fine])
-    analytical_d3f_fine = jnp.array([test_func.d3f(x) for x in x_fine])
+    fine_analytical_f = jnp.array([test_func.f(x) for x in x_fine])
+    fine_analytical_df = jnp.array([test_func.df(x) for x in x_fine])
+    fine_analytical_d2f = jnp.array([test_func.d2f(x) for x in x_fine])
+    fine_analytical_d3f = jnp.array([test_func.d3f(x) for x in x_fine])
 
-    # 色の定義 - 一貫性を保つ
-    analytical_color = 'blue'  # 解析解は常に青
-    numerical_color = 'red'    # 数値解は常に赤
-    input_color = 'green'      # 入力値は常に緑
+    # 色の定義
+    analytical_color = 'blue'  # 解析解は青
+    numerical_color = 'red'    # 数値解は赤
+    input_color = 'green'      # 入力値は緑
 
     # プロット
     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
     fig.suptitle(f"Test Results for {test_func.name} Function using {solver_name}")
 
     # 元関数
-    axes[0, 0].plot(x_fine, analytical_f_fine, color=analytical_color, label="Analytical f(x)")
-    axes[0, 0].plot(x_points, f_values, color=input_color, label="Input f Values")
+    axes[0, 0].plot(x_fine, fine_analytical_f, color=analytical_color, linestyle='-', label="f(x) Continuous")
+    axes[0, 0].plot(x_points, analytical_psi, color=analytical_color, linestyle='-', label="f(x) Grid")
+    axes[0, 0].plot(x_points, f_values, color=input_color, linestyle='-', label="Input f Values")
     axes[0, 0].plot(x_points, psi, color=numerical_color, label="Computed ψ")
     axes[0, 0].set_title("Function Values")
     axes[0, 0].legend()
     axes[0, 0].grid(True)
 
     # 1階導関数
-    axes[0, 1].plot(x_fine, analytical_df_fine, color=analytical_color, label="Analytical f'")
+    axes[0, 1].plot(x_fine, fine_analytical_df, color=analytical_color, linestyle='-', label="f' Continuous")
+    axes[0, 1].plot(x_points, analytical_df, color=analytical_color, linestyle='-', label="f' Grid")
     axes[0, 1].plot(x_points, psi_prime, color=numerical_color, label="Computed ψ'")
     axes[0, 1].set_title("First Derivative")
     axes[0, 1].legend()
     axes[0, 1].grid(True)
 
     # 2階導関数
-    axes[1, 0].plot(x_fine, analytical_d2f_fine, color=analytical_color, label="Analytical f''")
+    axes[1, 0].plot(x_fine, fine_analytical_d2f, color=analytical_color, linestyle='-', label="f'' Continuous")
+    axes[1, 0].plot(x_points, analytical_d2f, color=analytical_color, linestyle='-', label="f'' Grid")
     axes[1, 0].plot(x_points, psi_second, color=numerical_color, label="Computed ψ''")
     axes[1, 0].set_title("Second Derivative")
     axes[1, 0].legend()
     axes[1, 0].grid(True)
 
     # 3階導関数
-    axes[1, 1].plot(x_fine, analytical_d3f_fine, color=analytical_color, label="Analytical f'''")
+    axes[1, 1].plot(x_fine, fine_analytical_d3f, color=analytical_color, linestyle='-', label="f''' Continuous")
+    axes[1, 1].plot(x_points, analytical_d3f, color=analytical_color, linestyle='-', label="f''' Grid")
     axes[1, 1].plot(x_points, psi_third, color=numerical_color, label="Computed ψ'''")
     axes[1, 1].set_title("Third Derivative")
     axes[1, 1].legend()
@@ -97,16 +98,13 @@ def visualize_derivative_results(
 
     plt.tight_layout()
     if save_path:
-        # ディレクトリ部分を取得
-        save_dir = os.path.dirname(save_path)
-        if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
         plt.savefig(save_path)
     plt.close()
 
 
 def visualize_error_comparison(
-    results: Dict[str, Dict[str, List[float]]],
+    results: Dict[str, Dict[str, list]],
     timings: Dict[str, Dict[str, float]],
     test_func_name: str,
     save_path: str = None
@@ -126,12 +124,10 @@ def visualize_error_comparison(
     bar_width = 0.25
     indexes = jnp.arange(len(solver_names))
     
-    # 1階, 2階, 3階の誤差データを抽出
+    # 誤差データと計算時間を抽出
     errors_1st = [results[name][test_func_name][0] for name in solver_names]
     errors_2nd = [results[name][test_func_name][1] for name in solver_names]
     errors_3rd = [results[name][test_func_name][2] for name in solver_names]
-    
-    # 計算時間
     times = [timings[name][test_func_name] for name in solver_names]
     
     # 色の定義
@@ -163,12 +159,11 @@ def visualize_error_comparison(
     
     plt.tight_layout()
     
-    # 保存先が指定されていなければデフォルトパスを使用
+    # 保存先のパス処理
     if save_path is None:
-        # 'results' ディレクトリを作成
         os.makedirs("results", exist_ok=True)
         save_path = f"results/comparison_{test_func_name.lower()}.png"
-        
+    
     plt.savefig(save_path)
     plt.close()
 
@@ -201,9 +196,6 @@ def visualize_matrix_properties(L: jnp.ndarray, title: str, save_path: str = Non
     plt.tight_layout()
     
     if save_path:
-        # ディレクトリ部分を取得
-        save_dir = os.path.dirname(save_path)
-        if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
         plt.savefig(save_path)
     plt.close()
