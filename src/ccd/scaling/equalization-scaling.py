@@ -1,28 +1,33 @@
 """
 均等化スケーリング戦略
 
-CCD法の均等化スケーリング戦略を提供します。
-各行と列の最大絶対値を1にスケーリングします。
-右辺ベクトルのスケーリングにも対応しました。
+各行と列の最大絶対値を1にスケーリングする手法を提供します。
 """
 
 import jax.numpy as jnp
 from typing import Tuple, Dict, Any, Callable
 
-from scaling_strategies_base import ScalingStrategy, scaling_registry
+from scaling_strategy import ScalingStrategy, scaling_registry
 
 
 class EqualizationScaling(ScalingStrategy):
-    """均等化スケーリング"""
+    """
+    均等化スケーリング
+    
+    各行と列の最大絶対値を1にスケーリングします
+    """
     
     @classmethod
     def get_param_info(cls) -> Dict[str, Dict[str, Any]]:
         """
         パラメータ情報を返す
+        
+        Returns:
+            パラメータ情報の辞書
         """
         return {}
     
-    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
         """
         均等化スケーリングを適用
         
@@ -30,14 +35,14 @@ class EqualizationScaling(ScalingStrategy):
         行列の要素間のスケールを均一化することで数値的な安定性を向上させます。
         
         Returns:
-            スケーリングされた行列L、逆変換関数
+            (スケーリングされた行列, 逆変換関数)
         """
         # 1. 行の均等化
-        row_max = jnp.max(jnp.abs(self.L), axis=1)
+        row_max = jnp.max(jnp.abs(self.matrix), axis=1)
         # 0除算を防ぐため、非常に小さい値をクリップ
         row_max = jnp.maximum(row_max, 1e-10)
         D_row = jnp.diag(1.0 / row_max)
-        L_row_eq = D_row @ self.L
+        L_row_eq = D_row @ self.matrix
         
         # 2. 列の均等化
         col_max = jnp.max(jnp.abs(L_row_eq), axis=0)
@@ -57,6 +62,21 @@ class EqualizationScaling(ScalingStrategy):
             return D_col @ X_scaled
         
         return L_scaled, inverse_scaling
+    
+    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+        """
+        右辺ベクトルにスケーリングを適用
+        
+        Args:
+            rhs: 変換する右辺ベクトル
+            
+        Returns:
+            変換された右辺ベクトル
+        """
+        # 行方向のスケーリングのみ適用
+        if hasattr(self, 'scaling_matrix_row'):
+            return self.scaling_matrix_row @ rhs
+        return rhs
 
 
 # スケーリング戦略をレジストリに登録

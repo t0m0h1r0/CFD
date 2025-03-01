@@ -1,28 +1,33 @@
 """
 対角優位スケーリング戦略
 
-CCD法の対角優位スケーリング戦略を提供します。
-対角要素が1になるようスケーリングします。
-右辺ベクトルのスケーリングをサポートするように修正しました。
+対角要素が1になるようスケーリングする手法を提供します。
 """
 
 import jax.numpy as jnp
 from typing import Tuple, Dict, Any, Callable
 
-from scaling_strategies_base import ScalingStrategy, scaling_registry
+from scaling_strategy import ScalingStrategy, scaling_registry
 
 
 class DiagonalDominanceScaling(ScalingStrategy):
-    """対角優位スケーリング"""
+    """
+    対角優位スケーリング
+    
+    対角要素が1になるようスケーリングします
+    """
     
     @classmethod
     def get_param_info(cls) -> Dict[str, Dict[str, Any]]:
         """
         パラメータ情報を返す
+        
+        Returns:
+            パラメータ情報の辞書
         """
         return {}
     
-    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable]:
+    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
         """
         対角優位スケーリングを適用
         
@@ -30,10 +35,10 @@ class DiagonalDominanceScaling(ScalingStrategy):
         数値解法の収束特性の改善に役立ちます。
         
         Returns:
-            スケーリングされた行列L、逆変換関数
+            (スケーリングされた行列, 逆変換関数)
         """
-        n = self.L.shape[0]
-        diag_elements = jnp.diag(self.L)
+        n = self.matrix.shape[0]
+        diag_elements = jnp.diag(self.matrix)
         
         # 対角要素が0の場合に備えて小さな値を加える
         diag_elements = jnp.where(jnp.abs(diag_elements) < 1e-10, 1e-10, diag_elements)
@@ -46,13 +51,28 @@ class DiagonalDominanceScaling(ScalingStrategy):
         self.scaling_matrix_col = D
         
         # スケーリングを適用
-        L_scaled = D @ self.L @ D
+        L_scaled = D @ self.matrix @ D
         
         # 逆変換関数
         def inverse_scaling(X_scaled):
             return D @ X_scaled
         
         return L_scaled, inverse_scaling
+    
+    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+        """
+        右辺ベクトルにスケーリングを適用
+        
+        Args:
+            rhs: 変換する右辺ベクトル
+            
+        Returns:
+            変換された右辺ベクトル
+        """
+        # 行方向のスケーリングを適用
+        if hasattr(self, 'scaling_matrix_row'):
+            return self.scaling_matrix_row @ rhs
+        return rhs
 
 
 # スケーリング戦略をレジストリに登録
