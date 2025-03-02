@@ -17,14 +17,14 @@ from visualization import visualize_error_comparison
 
 class SolverComparator:
     """複数のソルバーを比較するクラス"""
-    
+
     def __init__(
-        self, 
+        self,
         solvers_list: List[Tuple[str, CCDMethodTester]],
         grid_config: GridConfig,
         x_range: Tuple[float, float],
         test_functions: Optional[List[TestFunction]] = None,
-        coeffs: Optional[List[float]] = None
+        coeffs: Optional[List[float]] = None,
     ):
         """
         Args:
@@ -37,57 +37,69 @@ class SolverComparator:
         self.solvers_list = solvers_list
         self.grid_config = grid_config
         self.x_range = x_range
-        self.test_functions = test_functions or TestFunctionFactory.create_standard_functions()
+        self.test_functions = (
+            test_functions or TestFunctionFactory.create_standard_functions()
+        )
         self.coeffs = coeffs
-        
+
         # 各テスターのテスト関数をこのクラスで指定したものに統一
         for _, tester in solvers_list:
             tester.test_functions = self.test_functions
             if self.coeffs is not None:
                 tester.coeffs = self.coeffs
-    
+
     def _print_comparison_tables(self, results: Dict, timings: Dict):
         """比較表を出力"""
         # 係数情報の文字列
         coeff_str = "" if self.coeffs is None else f" (coeffs={self.coeffs})"
-        
+
         # 各テスト関数ごとに比較表を出力
         print(f"\n===== Error Comparison{coeff_str} =====")
         for func_name in next(iter(results.values())).keys():
             print(f"\n{func_name} Function:")
-            print(f"{'Solver':<15} {'1st Der.':<12} {'2nd Der.':<12} {'3rd Der.':<12} {'Time (s)':<12}")
+            print(
+                f"{'Solver':<15} {'1st Der.':<12} {'2nd Der.':<12} {'3rd Der.':<12} {'Time (s)':<12}"
+            )
             print("-" * 63)
-            
+
             for name in results.keys():
                 errors = results[name][func_name]
                 time = timings[name][func_name]
-                print(f"{name:<15} {errors[0]:<12.2e} {errors[1]:<12.2e} {errors[2]:<12.2e} {time:<12.4f}")
-        
+                print(
+                    f"{name:<15} {errors[0]:<12.2e} {errors[1]:<12.2e} {errors[2]:<12.2e} {time:<12.4f}"
+                )
+
         # 全体の平均誤差と時間を計算
         print(f"\n===== Overall Performance{coeff_str} =====")
-        print(f"{'Solver':<15} {'Avg 1st Der.':<12} {'Avg 2nd Der.':<12} {'Avg 3rd Der.':<12} {'Avg Time (s)':<12}")
+        print(
+            f"{'Solver':<15} {'Avg 1st Der.':<12} {'Avg 2nd Der.':<12} {'Avg 3rd Der.':<12} {'Avg Time (s)':<12}"
+        )
         print("-" * 63)
-        
+
         for name in results.keys():
             avg_errors = [0.0, 0.0, 0.0]
             avg_time = 0.0
-            
+
             for func_name in results[name].keys():
                 for i in range(3):
                     avg_errors[i] += results[name][func_name][i]
                 avg_time += timings[name][func_name]
-            
+
             # 平均を計算
             func_count = len(results[name])
             avg_errors = [e / func_count for e in avg_errors]
             avg_time /= func_count
-            
-            print(f"{name:<15} {avg_errors[0]:<12.2e} {avg_errors[1]:<12.2e} {avg_errors[2]:<12.2e} {avg_time:<12.4f}")
-    
-    def run_comparison(self, save_results: bool = True, visualize: bool = True, prefix: str = ""):
+
+            print(
+                f"{name:<15} {avg_errors[0]:<12.2e} {avg_errors[1]:<12.2e} {avg_errors[2]:<12.2e} {avg_time:<12.4f}"
+            )
+
+    def run_comparison(
+        self, save_results: bool = True, visualize: bool = True, prefix: str = ""
+    ):
         """
         全てのソルバーに対して比較テストを実行
-        
+
         Args:
             save_results: 結果をJSONファイルに保存するかどうか
             visualize: 比較結果を可視化するかどうか
@@ -95,45 +107,45 @@ class SolverComparator:
         """
         results = {}  # ソルバー名 -> {関数名 -> [1階誤差, 2階誤差, 3階誤差]} の辞書
         timings = {}  # ソルバー名 -> {関数名 -> 計算時間} の辞書
-        
+
         # 出力ディレクトリの作成
         os.makedirs("results", exist_ok=True)
-        
+
         # 係数情報の文字列
         coeff_str = "" if self.coeffs is None else f" (coeffs={self.coeffs})"
-        
+
         # 各ソルバーに対してテストを実行
         for name, tester in self.solvers_list:
             print(f"\n===== Testing {name} solver{coeff_str} =====")
-            
+
             # テストを実行
             test_prefix = f"{name.lower()}_{prefix}" if prefix else f"{name.lower()}_"
             test_results = tester.run_tests(prefix=test_prefix, visualize=visualize)
-            
+
             # 結果を格納
             solver_results = {}
             solver_timings = {}
-            
+
             for func_name, (errors, time_val) in test_results.items():
                 solver_results[func_name] = errors
                 solver_timings[func_name] = time_val
-            
+
             results[name] = solver_results
             timings[name] = solver_timings
-        
+
         # 各ソルバー間の比較表を作成
         self._print_comparison_tables(results, timings)
-        
+
         # 可視化
         if visualize:
             for func in self.test_functions:
                 visualize_error_comparison(
-                    results, 
-                    timings, 
-                    func.name, 
-                    save_path=f"results/{prefix}comparison_{func.name.lower()}.png"
+                    results,
+                    timings,
+                    func.name,
+                    save_path=f"results/{prefix}comparison_{func.name.lower()}.png",
                 )
-        
+
         # 結果の保存
         if save_results:
             comparison_data = {
@@ -143,13 +155,19 @@ class SolverComparator:
                 "coefficients": self.coeffs,
                 "solvers": [name for name, _ in self.solvers_list],
                 "results": results,
-                "timings": timings
+                "timings": timings,
             }
-            
+
             os.makedirs("results", exist_ok=True)
             # ファイル名に接頭辞と係数情報を含める
-            coeff_suffix = "" if self.coeffs is None else f"_coeffs_{'-'.join(map(str, self.coeffs))}"
-            with open(f"results/{prefix}comparison_results{coeff_suffix}.json", "w") as f:
+            coeff_suffix = (
+                ""
+                if self.coeffs is None
+                else f"_coeffs_{'-'.join(map(str, self.coeffs))}"
+            )
+            with open(
+                f"results/{prefix}comparison_results{coeff_suffix}.json", "w"
+            ) as f:
                 json.dump(comparison_data, f, indent=2)
-        
+
         return results, timings

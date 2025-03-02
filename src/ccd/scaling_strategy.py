@@ -5,7 +5,7 @@
 """
 
 import jax.numpy as jnp
-from typing import Tuple, Dict, Any, Callable
+from typing import Tuple, Callable
 
 from strategy_interface import TransformationStrategy
 from plugin_registry import PluginRegistry
@@ -14,28 +14,30 @@ from plugin_registry import PluginRegistry
 class ScalingStrategy(TransformationStrategy):
     """
     スケーリング戦略の基底クラス
-    
+
     行列のスケーリングを行うための共通インターフェース
     """
-    
-    def transform_matrix(self, matrix=None) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+
+    def transform_matrix(
+        self, matrix=None
+    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
         """
         スケーリングを適用し、逆変換関数を返す
-        
+
         Args:
             matrix: 変換する行列（指定がない場合は初期化時の行列を使用）
-            
+
         Returns:
             (スケーリングされた行列, 逆スケーリング関数)
         """
         if matrix is not None:
             self.matrix = matrix
         return self.apply_scaling()
-    
+
     def apply_scaling(self) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
         """
         スケーリングを適用する具体的な実装
-        
+
         Returns:
             (スケーリングされた行列, 逆スケーリング関数)
         """
@@ -46,14 +48,14 @@ class ScalingStrategy(TransformationStrategy):
 class NoneScaling(ScalingStrategy):
     """
     スケーリングなし
-    
+
     元の行列をそのまま返す
     """
-    
+
     def apply_scaling(self) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
         """
         スケーリングを適用しない
-        
+
         Returns:
             (元の行列, 恒等関数)
         """
