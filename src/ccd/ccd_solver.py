@@ -74,7 +74,9 @@ class CCDSolver:
         grid_config: GridConfig, 
         coeffs: Optional[List[float]] = None,
         use_iterative: bool = False,
-        solver_kwargs: Optional[dict] = None
+        solver_kwargs: Optional[dict] = None,
+        dirichlet_enabled: bool = None,
+        neumann_enabled: bool = None
     ):
         """
         CCDソルバーの初期化
@@ -84,11 +86,22 @@ class CCDSolver:
             coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用 (f = psi)
             use_iterative: 反復法を使用するかどうか
             solver_kwargs: 線形ソルバーのパラメータ
+            dirichlet_enabled: ディリクレ境界条件を有効にするか (Noneの場合はgrid_configから判断)
+            neumann_enabled: ノイマン境界条件を有効にするか (Noneの場合はgrid_configから判断)
         """
         self.grid_config = grid_config
         
         # 係数を設定
         self.coeffs = coeffs if coeffs is not None else [1.0, 0.0, 0.0, 0.0]
+        
+        # 境界条件の判断（未指定の場合はグリッド設定から判断）
+        self.dirichlet_enabled = grid_config.is_dirichlet if dirichlet_enabled is None else dirichlet_enabled
+        self.neumann_enabled = grid_config.is_neumann if neumann_enabled is None else neumann_enabled
+        
+        # 境界条件が指定されているかどうかを確認して警告
+        if not self.dirichlet_enabled and not self.neumann_enabled:
+            print("警告: 境界条件が指定されていません。デフォルトではディリクレ条件[0,0]を使用します。")
+            self.dirichlet_enabled = True  # デフォルトではディリクレ条件を有効化
         
         # システムビルダーの初期化
         self.system_builder = CCDSystemBuilder(
@@ -97,8 +110,14 @@ class CCDSolver:
             CCDResultExtractor()
         )
         
-        # 左辺行列の構築
-        self.L, _ = self.system_builder.build_system(grid_config, jnp.zeros(grid_config.n_points), self.coeffs)
+        # 左辺行列の構築 - 境界条件の判断をシステムビルダーに渡す
+        self.L, _ = self.system_builder.build_system(
+            grid_config, 
+            jnp.zeros(grid_config.n_points), 
+            self.coeffs,
+            dirichlet_enabled=self.dirichlet_enabled,
+            neumann_enabled=self.neumann_enabled
+        )
         
         # 行列の特性を分析して最適なソルバーを選択
         self._select_solver(use_iterative, solver_kwargs or {})
@@ -128,8 +147,14 @@ class CCDSolver:
         Returns:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
-        # 右辺ベクトルを構築
-        _, b = self.system_builder.build_system(self.grid_config, f, self.coeffs)
+        # 右辺ベクトルを構築 - 境界条件の判断をシステムビルダーに渡す
+        _, b = self.system_builder.build_system(
+            self.grid_config, 
+            f, 
+            self.coeffs,
+            dirichlet_enabled=self.dirichlet_enabled,
+            neumann_enabled=self.neumann_enabled
+        )
         
         # 線形方程式を解く
         solution = self.solver.solve(self.L, b)
