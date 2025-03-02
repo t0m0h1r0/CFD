@@ -82,13 +82,7 @@ class TestFunctionFactory:
                 df=lambda x: 2*x*(1 - x**2) - 2*x**3,  # = 2x - 4x^3
                 d2f=lambda x: 2 - 12*x**2,  # 修正: 正しい2階導関数
                 d3f=lambda x: -24*x  # 修正: 正しい3階導関数
-            )
-        ]
-
-    @staticmethod
-    def create_challenging_functions() -> List[TestFunction]:
-        """数値的に挑戦的なテスト関数セットを生成"""
-        return [
+            ),
             TestFunction(
                 name="Runge",
                 f=lambda x: 1 / (1 + 25 * x**2),  # Runge関数 (急峻な変化)
