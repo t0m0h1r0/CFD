@@ -15,40 +15,43 @@ from ccd_diagnostics import CCDSolverDiagnostics
 from solver_comparator import SolverComparator
 
 
+#!/usr/bin/env python3
+
 def parse_args():
     """コマンドライン引数をパース"""
     parser = argparse.ArgumentParser(description='CCD法の計算・テスト')
     
-    # 共通オプション
-    parser.add_argument('--n', type=int, default=256, help='グリッド点の数')
-    parser.add_argument('--xrange', type=float, nargs=2, default=[-1.0, 1.0], 
+    # 親パーサーを作成 - 共通オプション
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument('--n', type=int, default=256, help='グリッド点の数')
+    parent_parser.add_argument('--xrange', type=float, nargs=2, default=[-1.0, 1.0], 
                        help='x軸の範囲 (開始点 終了点)')
-    parser.add_argument('--coeffs', type=float, nargs='+', default=[1.0, 0.0, 0.0, 0.0],
+    parent_parser.add_argument('--coeffs', type=float, nargs='+', default=[1.0, 0.0, 0.0, 0.0],
                        help='[a, b, c, d] 係数リスト (f = a*psi + b*psi\' + c*psi\'\' + d*psi\'\'\')')
     
     # サブコマンド
     subparsers = parser.add_subparsers(dest='command', help='実行するコマンド', required=True)
     
-    # テストコマンド
-    test_parser = subparsers.add_parser('test', help='テストを実行')
+    # テストコマンド - 親パーサーから引数を継承
+    test_parser = subparsers.add_parser('test', parents=[parent_parser], help='テストを実行')
     test_parser.add_argument('--scaling', type=str, default='none', help='スケーリング手法')
     test_parser.add_argument('--reg', type=str, default='none', help='正則化手法')
     test_parser.add_argument('--no-viz', action='store_true', help='可視化を無効化')
     
-    # 診断コマンド
-    diag_parser = subparsers.add_parser('diagnostics', help='診断を実行')
+    # 診断コマンド - 親パーサーから引数を継承
+    diag_parser = subparsers.add_parser('diagnostics', parents=[parent_parser], help='診断を実行')
     diag_parser.add_argument('--scaling', type=str, default='none', help='スケーリング手法')
     diag_parser.add_argument('--reg', type=str, default='none', help='正則化手法')
     diag_parser.add_argument('--viz', action='store_true', help='可視化を有効化')
     
-    # 比較コマンド
-    compare_parser = subparsers.add_parser('compare', help='ソルバー間の比較を実行')
+    # 比較コマンド - 親パーサーから引数を継承
+    compare_parser = subparsers.add_parser('compare', parents=[parent_parser], help='ソルバー間の比較を実行')
     compare_parser.add_argument('--mode', choices=['scaling', 'reg'], 
                               default='reg', help='比較モード')
     compare_parser.add_argument('--no-viz', action='store_true', help='可視化を無効化')
     
-    # 一覧表示コマンド
-    list_parser = subparsers.add_parser('list', help='使用可能な設定を一覧表示')
+    # 一覧表示コマンド - こちらも親パーサーから引数を継承（必要に応じて）
+    list_parser = subparsers.add_parser('list', parents=[parent_parser], help='使用可能な設定を一覧表示')
     
     return parser.parse_args()
 

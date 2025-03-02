@@ -1,64 +1,85 @@
-sgn: -1;
-p[0,-1]: f[0,0] - f[1,0]*h + f[2,0]*h^2/2! - f[3,0]*h^3/3! + f[4,0]*h^4/4! - f[5,0]*h^5/5! + f[6,0]*h^6/6! - f[7,0]*h^7/7! + f[8,0]*h^8/8!;
-p[0, 1]: f[0,0] + f[1,0]*h + f[2,0]*h^2/2! + f[3,0]*h^3/3! + f[4,0]*h^4/4! + f[5,0]*h^5/5! + f[6,0]*h^6/6! + f[7,0]*h^7/7! + f[8,0]*h^8/8!;
+display2d:false;
 
-p[1,-1]: f[1,0] - f[2,0]*h + f[3,0]*h^2/2! - f[4,0]*h^3/3! + f[5,0]*h^4/4! - f[6,0]*h^5/5! + f[7,0]*h^6/6! - f[8,0]*h^7/7!;
-p[1, 1]: f[1,0] + f[2,0]*h + f[3,0]*h^2/2! + f[4,0]*h^3/3! + f[5,0]*h^4/4! + f[6,0]*h^5/5! + f[7,0]*h^6/6! + f[8,0]*h^7/7!;
+/* テイラー級数展開を生成する関数 */
+p(i, j, n) := sum(f[i+k,0] * (j*h)^k / factorial(k), k, 0, n);
 
-p[2,-1]: f[2,0] - f[3,0]*h + f[4,0]*h^2/2! - f[5,0]*h^3/3! + f[6,0]*h^4/4! - f[7,0]*h^5/5! + f[8,0]*h^6/6!;
-p[2, 1]: f[2,0] + f[3,0]*h + f[4,0]*h^2/2! + f[5,0]*h^3/3! + f[6,0]*h^4/4! + f[7,0]*h^5/5! + f[8,0]*h^6/6!;
+/* 内部点のp関数を生成 */
+generate_internal_p() := block(
+  for i:0 thru 3 do (
+    p[i,-1]: p(i, -1, 8-i),
+    p[i,1]: p(i, 1, 8-i)
+  )
+);
 
-p[3,-1]: f[3,0] - f[4,0]*h + f[5,0]*h^2/2! - f[6,0]*h^3/3! + f[7,0]*h^4/4! - f[8,0]*h^5/5!;
-p[3, 1]: f[3,0] + f[4,0]*h + f[5,0]*h^2/2! + f[6,0]*h^3/3! + f[7,0]*h^4/4! + f[8,0]*h^5/5!;
+/* 内部点の多項式を生成 */
+generate_internal_p();
 
+/* 基本方程式を定義 */
+term(i, j) := a[i,j] * (p[i,j] - f[i,j]) * h^i;
+base: term(0,-1) + term(0,1) + term(1,-1) + term(1,1) + term(2,-1) + term(2,1) + term(3,-1) + term(3,1);
 
-base:
-  a*p[0,-1] + b*p[0, 1] + c*p[1,-1]*h + d*p[1, 1]*h + r*p[2,-1]*h^2 + s*p[2, 1]*h^2 + t*p[3,-1]*h^3 + u*p[3, 1]*h^3
-- a*f[0,-1] - b*f[0, 1] - c*f[1,-1]*h - d*f[1, 1]*h - r*f[2,-1]*h^2 - s*f[2, 1]*h^2 - t*f[3,-1]*h^3 - u*f[3, 1]*h^3;
+/* 展開式を計算 */
 expanded: expand(base);
 
-eq0: coeff(coeff(expanded,h,0),f[0,0]);
-eq1: coeff(coeff(expanded,h,1),f[1,0]);
-eq2: coeff(coeff(expanded,h,2),f[2,0]);
-eq3: coeff(coeff(expanded,h,3),f[3,0]);
-eq4: coeff(coeff(expanded,h,4),f[4,0]);
-eq5: coeff(coeff(expanded,h,5),f[5,0]);
-eq6: coeff(coeff(expanded,h,6),f[6,0]);
-eq7: coeff(coeff(expanded,h,7),f[7,0]);
-eq8: coeff(coeff(expanded,h,8),f[8,0]);
+/* 係数を抽出 */
+for i:0 thru 8 do (
+  eq[i]: coeff(coeff(expanded, h, i), f[i,0])
+);
 
-solution1: solve([eq1=1, eq2=0, eq3=0, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a,b,c,d,r,s,t,u]);
-solution2: solve([eq1=0, eq2=1, eq3=0, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a,b,c,d,r,s,t,u]);
-solution3: solve([eq1=0, eq2=0, eq3=1, eq4=0, eq5=0, eq6=0, eq7=0, eq8=0], [a,b,c,d,r,s,t,u]);
+/* 1階、2階、3階微分のソリューション */
+solution1: solve(
+  [eq[0]=1, eq[1]=0, eq[2]=0, eq[3]=0, eq[4]=0, eq[5]=0, eq[6]=0, eq[7]=0], 
+  [a[0,-1], a[0,1], a[1,-1], a[1,1], a[2,-1], a[2,1], a[3,-1], a[3,1]]
+);
 
-ccd_1: expand(subst(solution1[1],expanded));
-ccd_2: expand(subst(solution2[1],expanded));
-ccd_3: expand(subst(solution3[1],expanded));
+solution1: solve(
+  [eq[0]=0, eq[1]=1, eq[2]=0, eq[3]=0, eq[4]=0, eq[5]=0, eq[6]=0, eq[7]=0, eq[8]=0], 
+  [a[0,-1], a[0,1], a[1,-1], a[1,1], a[2,-1], a[2,1], a[3,-1], a[3,1]]
+);
 
+solution2: solve(
+  [         eq[1]=0, eq[2]=1, eq[3]=0, eq[4]=0, eq[5]=0, eq[6]=0, eq[7]=0, eq[8]=0], 
+  [a[0,-1], a[0,1], a[1,-1], a[1,1], a[2,-1], a[2,1], a[3,-1], a[3,1]]
+);
 
-display2d:false;
+solution3: solve(
+  [eq[0]=0, eq[1]=0, eq[2]=0, eq[3]=1, eq[4]=0, eq[5]=0, eq[6]=0, eq[7]=0, eq[8]=0], 
+  [a[0,-1], a[0,1], a[1,-1], a[1,1], a[2,-1], a[2,1], a[3,-1], a[3,1]]
+);
+
+/* 展開式を計算 */
+ccd_1: expand(subst(solution1[1], expanded));
+ccd_2: expand(subst(solution2[1], expanded));
+ccd_3: expand(subst(solution3[1], expanded));
+
+/* 行列の定義 */
 matrix_A: matrix(
-    [                             0,                              0,                              0,                              0],
-    [coeff(coeff(ccd_1,h,0),f[0,-1]), coeff(coeff(ccd_1,h,1),f[1,-1]), coeff(coeff(ccd_1,h,2),f[2,-1]), coeff(coeff(ccd_1,h,3),f[3,-1])],
-    [coeff(coeff(ccd_2,h,0),f[0,-1]), coeff(coeff(ccd_2,h,1),f[1,-1]), coeff(coeff(ccd_2,h,2),f[2,-1]), coeff(coeff(ccd_2,h,3),f[3,-1])],
-    [coeff(coeff(ccd_3,h,0),f[0,-1]), coeff(coeff(ccd_3,h,1),f[1,-1]), coeff(coeff(ccd_3,h,2),f[2,-1]), coeff(coeff(ccd_3,h,3),f[3,-1])]
+  [0, 0, 0, 0],
+  [coeff(coeff(ccd_1, h, 0), f[0,-1]), coeff(coeff(ccd_1, h, 1), f[1,-1]), coeff(coeff(ccd_1, h, 2), f[2,-1]), coeff(coeff(ccd_1, h, 3), f[3,-1])],
+  [coeff(coeff(ccd_2, h, 0), f[0,-1]), coeff(coeff(ccd_2, h, 1), f[1,-1]), coeff(coeff(ccd_2, h, 2), f[2,-1]), coeff(coeff(ccd_2, h, 3), f[3,-1])],
+  [coeff(coeff(ccd_3, h, 0), f[0,-1]), coeff(coeff(ccd_3, h, 1), f[1,-1]), coeff(coeff(ccd_3, h, 2), f[2,-1]), coeff(coeff(ccd_3, h, 3), f[3,-1])]
 );
+
 matrix_B: matrix(
-    [                             1,                              0,                              0,                              0],
-    [coeff(coeff(ccd_1,h,0),f[0,0]), coeff(coeff(ccd_1,h,1),f[1,0]), coeff(coeff(ccd_1,h,2),f[2,0]), coeff(coeff(ccd_1,h,3),f[3,0])],
-    [coeff(coeff(ccd_2,h,0),f[0,0]), coeff(coeff(ccd_2,h,1),f[1,0]), coeff(coeff(ccd_2,h,2),f[2,0]), coeff(coeff(ccd_2,h,3),f[3,0])],
-    [coeff(coeff(ccd_3,h,0),f[0,0]), coeff(coeff(ccd_3,h,1),f[1,0]), coeff(coeff(ccd_3,h,2),f[2,0]), coeff(coeff(ccd_3,h,3),f[3,0])]
+  [1, 0, 0, 0],
+  [coeff(coeff(ccd_1, h, 0), f[0,0]), coeff(coeff(ccd_1, h, 1), f[1,0]), coeff(coeff(ccd_1, h, 2), f[2,0]), coeff(coeff(ccd_1, h, 3), f[3,0])],
+  [coeff(coeff(ccd_2, h, 0), f[0,0]), coeff(coeff(ccd_2, h, 1), f[1,0]), coeff(coeff(ccd_2, h, 2), f[2,0]), coeff(coeff(ccd_2, h, 3), f[3,0])],
+  [coeff(coeff(ccd_3, h, 0), f[0,0]), coeff(coeff(ccd_3, h, 1), f[1,0]), coeff(coeff(ccd_3, h, 2), f[2,0]), coeff(coeff(ccd_3, h, 3), f[3,0])]
 );
+
 matrix_C: matrix(
-    [                             0,                              0,                              0,                              0],
-    [coeff(coeff(ccd_1,h,0),f[0,1]), coeff(coeff(ccd_1,h,1),f[1,1]), coeff(coeff(ccd_1,h,2),f[2,1]), coeff(coeff(ccd_1,h,3),f[3,1])],
-    [coeff(coeff(ccd_2,h,0),f[0,1]), coeff(coeff(ccd_2,h,1),f[1,1]), coeff(coeff(ccd_2,h,2),f[2,1]), coeff(coeff(ccd_2,h,3),f[3,1])],
-    [coeff(coeff(ccd_3,h,0),f[0,1]), coeff(coeff(ccd_3,h,1),f[1,1]), coeff(coeff(ccd_3,h,2),f[2,1]), coeff(coeff(ccd_3,h,3),f[3,1])]
+  [0, 0, 0, 0],
+  [coeff(coeff(ccd_1, h, 0), f[0,1]), coeff(coeff(ccd_1, h, 1), f[1,1]), coeff(coeff(ccd_1, h, 2), f[2,1]), coeff(coeff(ccd_1, h, 3), f[3,1])],
+  [coeff(coeff(ccd_2, h, 0), f[0,1]), coeff(coeff(ccd_2, h, 1), f[1,1]), coeff(coeff(ccd_2, h, 2), f[2,1]), coeff(coeff(ccd_2, h, 3), f[3,1])],
+  [coeff(coeff(ccd_3, h, 0), f[0,1]), coeff(coeff(ccd_3, h, 1), f[1,1]), coeff(coeff(ccd_3, h, 2), f[2,1]), coeff(coeff(ccd_3, h, 3), f[3,1])]
 );
 
+/* 結果を表示 */
+ratsimp(matrix_A);
+ratsimp(matrix_B);
+ratsimp(matrix_C);
 
-display2d:false;
-
-string(matrix_A);
-string(matrix_B);
-string(matrix_C);
+/* 文字列として出力 */
+string(ratsimp(matrix_A));
+string(ratsimp(matrix_B));
+string(ratsimp(matrix_C));

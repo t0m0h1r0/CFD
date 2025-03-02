@@ -113,7 +113,7 @@ class CCDLeftHandBuilder:
         )
 
         # 中央ブロック行列 B - 第1行を係数で置き換え
-        B = jnp.array([[1, 0, 0, 0], [0, 1, 0, 0], [8, 0, 1, 0], [0, 0, 0, 1]])
+        B = jnp.array([[a, b, c, d], [0, 1, 0, 0], [8, 0, 1, 0], [0, 0, 0, 1]])
 
         # 右ブロック行列 C - Aに対して反対称的な構造
         C = jnp.array(
@@ -150,43 +150,52 @@ class CCDLeftHandBuilder:
             coeffs = [1.0, 0.0, 0.0, 0.0]
 
         a, b, c, d = coeffs
-        B0 = jnp.array([[1, 0, 0, 0], [6, 1, 0, 0], [-31, 0, 1, 0], [135, 0, 0, 1]])
+        B0 = jnp.array(
+            [[1, 0, 0, 0], [11 / 2, 1, 0, 0], [-(51 / 2), 0, 1, 0], [387 / 4, 0, 0, 1]]
+        )
 
         C0 = jnp.array(
             [
                 [0, 0, 0, 0],
-                [128, 80, 16, 8 / 3],
-                [-1408, -832, -176, -(80 / 3)],
-                [9600, 5520, 1200, 168],
+                [24, 24, 4, 4 / 3],
+                [-264, -216, -44, -12],
+                [1644, 1236, 282, 66],
             ]
         )
 
         D0 = jnp.array(
             [
                 [0, 0, 0, 0],
-                [-134, 59, -10, 2 / 3],
-                [1439, -638, 109, -(22 / 3)],
-                [-9735, 4350, -750, 51],
+                [-(59 / 2), 10, -1, 0],
+                [579 / 2, -99, 10, 0],
+                [-(6963 / 4), 1203 / 2, -(123 / 2), 0],
             ]
         )
 
-        BR = jnp.array([[1, 0, 0, 0], [-6, 1, 0, 0], [-31, 0, 1, 0], [-135, 0, 0, 1]])
+        BR = jnp.array(
+            [
+                [1, 0, 0, 0],
+                [-(11 / 2), 1, 0, 0],
+                [-(51 / 2), 0, 1, 0],
+                [-(387 / 4), 0, 0, 1],
+            ]
+        )
 
         AR = jnp.array(
             [
                 [0, 0, 0, 0],
-                [-128, 80, -16, 8 / 3],
-                [-1408, 832, -176, 80 / 3],
-                [-9600, 5520, -1200, 168],
+                [-24, 24, -4, 4 / 3],
+                [-264, 216, -44, 12],
+                [-1644, 1236, -282, 66],
             ]
         )
 
         ZR = jnp.array(
             [
                 [0, 0, 0, 0],
-                [134, 59, 10, 2 / 3],
-                [1439, 638, 109, 22 / 3],
-                [9735, 4350, 750, 51],
+                [59 / 2, 10, 1, 0],
+                [579 / 2, 99, 10, 0],
+                [6963 / 4, 1203 / 2, 123 / 2, 0],
             ]
         )
 
@@ -213,10 +222,10 @@ class CCDLeftHandBuilder:
         # 次数行列の定義
         DEGREE = jnp.array(
             [
-                [       1,        1,        1,     1],
-                [1 / h**1,        1,     h**1,  h**2],
-                [1 / h**2, 1 / h**1,        1,  h**1],
-                [1 / h**3, 1 / h**2, 1 / h**1,     1],
+                [1, 1, 1, 1],
+                [h**-1, h**0, h**1, h**2],
+                [h**-2, h**-1, h**0, h**1],
+                [h**-3, h**-2, h**1, h**0],
             ]
         )
 
@@ -249,8 +258,8 @@ class CCDLeftHandBuilder:
         # 右境界条件を設定
         row_start = 4 * (n - 1)
         L = L.at[row_start : row_start + 4, row_start - 8 : row_start - 4].set(ZR)
-        L = L.at[row_start : row_start + 4, row_start - 4 : row_start    ].set(AR)
-        L = L.at[row_start : row_start + 4, row_start     : row_start + 4].set(BR)
+        L = L.at[row_start : row_start + 4, row_start - 4 : row_start].set(AR)
+        L = L.at[row_start : row_start + 4, row_start : row_start + 4].set(BR)
 
         return L
 
@@ -271,14 +280,14 @@ class CCDRightHandBuilder:
         """
         n = grid_config.n_points
         depth = 4
-        
+
         # 右辺ベクトルを効率的に生成
         rhs = jnp.zeros(n * depth)
-        
+
         # 全てのインデックスを一度に更新
         indices = jnp.arange(0, n * depth, depth)
         rhs = rhs.at[indices].set(values)
-        
+
         return rhs
 
 
