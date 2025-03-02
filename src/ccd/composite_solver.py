@@ -151,7 +151,10 @@ class CCDCompositeSolver(CCDSolver):
         scaling: str = "none", 
         regularization: str = "none", 
         params: Optional[Dict[str, Any]] = None,
-        coeffs: Optional[List[float]] = None
+        coeffs: Optional[List[float]] = None,
+        dirichlet_bc: bool = False,
+        bc_left: float = 0.0,
+        bc_right: float = 0.0
     ) -> 'CCDCompositeSolver':
         """
         パラメータを指定してソルバーを作成するファクトリーメソッド
@@ -162,6 +165,9 @@ class CCDCompositeSolver(CCDSolver):
             regularization: 正則化戦略名
             params: パラメータの辞書
             coeffs: 微分係数 [a, b, c, d]
+            dirichlet_bc: ディリクレ境界条件を使用するかどうか
+            bc_left: 左端の境界条件値
+            bc_right: 右端の境界条件値
             
         Returns:
             CCDCompositeSolver インスタンス
@@ -196,6 +202,17 @@ class CCDCompositeSolver(CCDSolver):
                 scaling_params[param_name] = param_value
             elif param_name in regularization_info:
                 regularization_params[param_name] = param_value
+        
+        # ディリクレ境界条件がある場合、グリッド設定を更新する
+        if dirichlet_bc:
+            # 新しいGridConfigを作成（既存のn_pointsとhを維持）
+            grid_config = GridConfig(
+                n_points=grid_config.n_points,
+                h=grid_config.h,
+                dirichlet_bc=True,
+                bc_left=bc_left,
+                bc_right=bc_right
+            )
         
         return cls(
             grid_config=grid_config,

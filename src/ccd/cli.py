@@ -28,6 +28,9 @@ def parse_args():
                        help='x軸の範囲 (開始点 終了点)')
     parent_parser.add_argument('--coeffs', type=float, nargs='+', default=[1.0, 0.0, 0.0, 0.0],
                        help='[a, b, c, d] 係数リスト (f = a*psi + b*psi\' + c*psi\'\' + d*psi\'\'\')')
+    # ディリクレ境界条件は常に使用するため、このオプションは削除
+    parent_parser.add_argument('--bc-left', type=float, default=0.0, help='左端の境界条件値')
+    parent_parser.add_argument('--bc-right', type=float, default=0.0, help='右端の境界条件値')
     
     # サブコマンド
     subparsers = parser.add_subparsers(dest='command', help='実行するコマンド', required=True)
@@ -67,7 +70,15 @@ def run_cli():
     n = args.n
     x_range = tuple(args.xrange)
     L = x_range[1] - x_range[0]
-    grid_config = GridConfig(n_points=n, h=L / (n - 1))
+    
+    # 常にディリクレ境界条件を使用する設定
+    grid_config = GridConfig(
+        n_points=n, 
+        h=L / (n - 1),
+        dirichlet_bc=True,  # 常にTrue
+        bc_left=args.bc_left,
+        bc_right=args.bc_right
+    )
     
     # コマンドの実行
     if args.command == 'test':
@@ -92,8 +103,8 @@ def run_cli():
         tester.solver = solver
         
         name = f"{args.scaling}_{args.reg}"
-        print(f"テスト実行中: {name} (coeffs={args.coeffs})")
-        tester.run_tests(prefix=f"{name.lower()}_", visualize=not args.no_viz)
+        print(f"テスト実行中: {name}_dirichlet (coeffs={args.coeffs})")
+        tester.run_tests(prefix=f"{name.lower()}_dirichlet_", visualize=not args.no_viz)
     
     elif args.command == 'diagnostics':
         # ソルバー作成と診断実行
@@ -109,7 +120,7 @@ def run_cli():
         diagnostics.solver = solver
         
         name = f"{args.scaling}_{args.reg}"
-        print(f"診断実行中: {name} (coeffs={args.coeffs})")
+        print(f"診断実行中: {name}_dirichlet (coeffs={args.coeffs})")
         diagnostics.perform_full_diagnosis(visualize=args.viz)
     
     elif args.command == 'compare':
@@ -129,9 +140,18 @@ def run_cli():
             params_copy = params.copy()
             params_copy['coeffs'] = args.coeffs
             
+            # 常にディリクレ境界条件を使用
+            solver_grid_config = GridConfig(
+                n_points=grid_config.n_points,
+                h=grid_config.h,
+                dirichlet_bc=True,  # 常にTrue
+                bc_left=args.bc_left,
+                bc_right=args.bc_right
+            )
+            
             tester = CCDMethodTester(
                 CCDCompositeSolver, 
-                grid_config, 
+                solver_grid_config, 
                 x_range, 
                 solver_kwargs={
                     'scaling': scaling,
@@ -143,9 +163,9 @@ def run_cli():
             solvers_list.append((name, tester))
         
         # 比較実行
-        print(f"比較実行中: {len(configs)}個の{args.mode}設定を比較します")
+        print(f"比較実行中: {len(configs)}個の{args.mode}設定を比較します_dirichlet")
         comparator = SolverComparator(solvers_list, grid_config, x_range)
-        comparator.run_comparison(save_results=True, visualize=not args.no_viz, prefix=f"{args.mode}_")
+        comparator.run_comparison(save_results=True, visualize=not args.no_viz, prefix=f"{args.mode}_dirichlet_")
     
     elif args.command == 'list':
         # 利用可能なスケーリング・正則化手法を表示

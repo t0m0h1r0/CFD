@@ -36,21 +36,42 @@ class CCDMethodTester:
             test_functions: テスト関数のリスト (Noneの場合は標準関数セットを使用)
             coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用 (f = psi)
         """
-        self.grid_config = grid_config
+        # 元のグリッド設定を保存
+        self.original_grid_config = grid_config
         self.x_range = x_range
         self.coeffs = coeffs if coeffs is not None else [1.0, 0.0, 0.0, 0.0]
+        
+        # 境界値を計算するためのヘルパー変数を設定
+        self.x_start = x_range[0]
+        self.x_end = x_range[1]
         
         # ソルバーパラメータと係数を結合
         solver_kwargs = solver_kwargs or {}
         if self.coeffs is not None:
             solver_kwargs['coeffs'] = self.coeffs
         
+        # テスト関数の設定（先に設定して境界値を取得できるようにする）
+        self.test_functions = test_functions or TestFunctionFactory.create_standard_functions()
+        
+        # 最初のテスト関数を使って、ディリクレ境界条件の値を設定（実際はcompute_errorsで毎回更新される）
+        first_test_func = self.test_functions[0]
+        bc_left = first_test_func.f(self.x_start)
+        bc_right = first_test_func.f(self.x_end)
+        
+        # 常にディリクレ境界条件を使用するグリッド設定を作成
+        self.grid_config = GridConfig(
+            n_points=self.original_grid_config.n_points,
+            h=self.original_grid_config.h,
+            dirichlet_bc=True,  # 常にTrue
+            bc_left=bc_left,
+            bc_right=bc_right
+        )
+        
         # ソルバーの初期化
-        self.solver = solver_class(grid_config, **solver_kwargs)
+        self.solver = solver_class(self.grid_config, **solver_kwargs)
         self.solver_name = solver_class.__name__
         
-        # テスト関数の設定
-        self.test_functions = test_functions or TestFunctionFactory.create_standard_functions()
+        # テスト関数は既に設定済み
 
     def compute_errors(self, test_func: TestFunction) -> Tuple[float, float, float, float]:
         """
@@ -72,6 +93,22 @@ class CCDMethodTester:
         analytical_df = jnp.array([test_func.df(x) for x in x_points])
         analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
         analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
+        
+        # テスト関数の境界値を取得し、グリッド設定を更新
+        bc_left = test_func.f(self.x_start)
+        bc_right = test_func.f(self.x_end)
+        
+        # グリッド設定の境界値を更新
+        self.grid_config = GridConfig(
+            n_points=self.grid_config.n_points,
+            h=self.grid_config.h,
+            dirichlet_bc=True,
+            bc_left=bc_left,
+            bc_right=bc_right
+        )
+        
+        # ソルバーのグリッド設定も更新
+        self.solver.grid_config = self.grid_config
         
         # 係数に基づいて入力関数値を計算
         a, b, c, d = self.coeffs
@@ -146,6 +183,22 @@ class CCDMethodTester:
                 analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
                 analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
                 
+                # 境界値を取得し、グリッド設定を更新
+                bc_left = test_func.f(self.x_start)
+                bc_right = test_func.f(self.x_end)
+                
+                # グリッド設定の境界値を更新
+                self.grid_config = GridConfig(
+                    n_points=self.grid_config.n_points,
+                    h=self.grid_config.h,
+                    dirichlet_bc=True,
+                    bc_left=bc_left,
+                    bc_right=bc_right
+                )
+                
+                # ソルバーのグリッド設定も更新
+                self.solver.grid_config = self.grid_config
+                
                 # 入力関数値の計算
                 a, b, c, d = self.coeffs
                 f_values = (a * analytical_psi + b * analytical_df + 
@@ -180,6 +233,10 @@ class CCDMethodTester:
         print(f"{'Average':<15} {avg_errors[0]:<12.2e} {avg_errors[1]:<12.2e} {avg_errors[2]:<12.2e} {avg_time:<12.4f}")
         print("-" * 75)
         
+        # 境界条件の情報を表示
+        print(f"\n境界条件: ディリクレ (テスト関数の境界値を使用)")
+        print(f"各テスト関数ごとに境界値を動的に設定")
+        
         return results
     
     def _get_mode_name(self) -> str:
@@ -194,5 +251,8 @@ class CCDMethodTester:
             (1, 1, 1, 0): "PSI+PSI'+PSI''"
         }
         
+        # 常にディリクレ境界条件として表示
+        dirichlet_str = " (Dirichlet)"
+        
         coeffs_tuple = tuple(self.coeffs)
-        return mode_names.get(coeffs_tuple, f"coeffs={self.coeffs}")
+        return mode_names.get(coeffs_tuple, f"coeffs={self.coeffs}") + dirichlet_str
