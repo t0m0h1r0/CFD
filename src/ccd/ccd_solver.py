@@ -74,9 +74,7 @@ class CCDSolver:
         grid_config: GridConfig, 
         coeffs: Optional[List[float]] = None,
         use_iterative: bool = False,
-        solver_kwargs: Optional[dict] = None,
-        dirichlet_enabled: bool = None,
-        neumann_enabled: bool = None
+        solver_kwargs: Optional[dict] = None
     ):
         """
         CCDソルバーの初期化
@@ -86,22 +84,27 @@ class CCDSolver:
             coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用 (f = psi)
             use_iterative: 反復法を使用するかどうか
             solver_kwargs: 線形ソルバーのパラメータ
-            dirichlet_enabled: ディリクレ境界条件を有効にするか (Noneの場合はgrid_configから判断)
-            neumann_enabled: ノイマン境界条件を有効にするか (Noneの場合はgrid_configから判断)
         """
         self.grid_config = grid_config
         
         # 係数を設定
         self.coeffs = coeffs if coeffs is not None else [1.0, 0.0, 0.0, 0.0]
         
-        # 境界条件の判断（未指定の場合はグリッド設定から判断）
-        self.dirichlet_enabled = grid_config.is_dirichlet if dirichlet_enabled is None else dirichlet_enabled
-        self.neumann_enabled = grid_config.is_neumann if neumann_enabled is None else neumann_enabled
+        # 境界条件の有効性を判断
+        dirichlet_enabled = False
+        neumann_enabled = False
         
-        # 境界条件が指定されているかどうかを確認して警告
-        if not self.dirichlet_enabled and not self.neumann_enabled:
-            print("警告: 境界条件が指定されていません。デフォルトではディリクレ条件[0,0]を使用します。")
-            self.dirichlet_enabled = True  # デフォルトではディリクレ条件を有効化
+        # dirichlet_values!=None且つcoeff!=[1,0,0,0]ならdirichlet_enable=True
+        if grid_config.dirichlet_values is not None and self.coeffs != [1.0, 0.0, 0.0, 0.0]:
+            dirichlet_enabled = True
+            
+        # neumann_values!=None且つcoeff!=[0,1,0,0]ならneumann_enable=True
+        if grid_config.neumann_values is not None and self.coeffs != [0.0, 1.0, 0.0, 0.0]:
+            neumann_enabled = True
+                
+        # 有効な境界条件を保存
+        self.dirichlet_enabled = dirichlet_enabled
+        self.neumann_enabled = neumann_enabled
         
         # システムビルダーの初期化
         self.system_builder = CCDSystemBuilder(
@@ -110,13 +113,13 @@ class CCDSolver:
             CCDResultExtractor()
         )
         
-        # 左辺行列の構築 - 境界条件の判断をシステムビルダーに渡す
+        # 左辺行列の構築 - 判断した境界条件を使用
         self.L, _ = self.system_builder.build_system(
             grid_config, 
             jnp.zeros(grid_config.n_points), 
             self.coeffs,
-            dirichlet_enabled=self.dirichlet_enabled,
-            neumann_enabled=self.neumann_enabled
+            dirichlet_enabled=dirichlet_enabled,
+            neumann_enabled=neumann_enabled
         )
         
         # 行列の特性を分析して最適なソルバーを選択
@@ -147,7 +150,7 @@ class CCDSolver:
         Returns:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
-        # 右辺ベクトルを構築 - 境界条件の判断をシステムビルダーに渡す
+        # 右辺ベクトルを構築 - 判断した境界条件を使用
         _, b = self.system_builder.build_system(
             self.grid_config, 
             f, 

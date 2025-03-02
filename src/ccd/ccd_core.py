@@ -15,11 +15,7 @@ class GridConfig:
     neumann_values: Optional[List[float]] = None    # ノイマン境界条件値 [左端, 右端]
     
     def __post_init__(self):
-        """初期化後の処理 - 値の検証と設定"""
-        # いずれの境界条件も設定されていない場合、デフォルトとしてディリクレを使用
-        if self.dirichlet_values is None and self.neumann_values is None:
-            self.dirichlet_values = [0.0, 0.0]
-            
+        """初期化後の処理 - 単一値からリストへの変換のみ行う"""
         # 単一値が指定された場合にリストに変換
         if self.dirichlet_values is not None and not isinstance(self.dirichlet_values, (list, tuple)):
             self.dirichlet_values = [self.dirichlet_values, self.dirichlet_values]
@@ -245,14 +241,7 @@ class CCDRightHandBuilder:
         
         n = grid_config.n_points
         depth = 4
-        
-        # 境界条件の状態を決定
-        if dirichlet_enabled is None:
-            dirichlet_enabled = grid_config.is_dirichlet
-        
-        if neumann_enabled is None:
-            neumann_enabled = grid_config.is_neumann
-        
+                
         # 境界値
         dirichlet_values = grid_config.dirichlet_values if grid_config.is_dirichlet else [0.0, 0.0]
         neumann_values = grid_config.neumann_values if grid_config.is_neumann else [0.0, 0.0]
