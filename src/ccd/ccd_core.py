@@ -196,6 +196,10 @@ class CCDLeftHandBuilder:
         has_dirichlet = grid_config.is_dirichlet
         has_neumann = grid_config.is_neumann
         
+        # 係数に基づくフラグ
+        is_dirichlet_coeff = abs(a - 1.0) < 1e-10 and abs(b) < 1e-10 and abs(c) < 1e-10 and abs(d) < 1e-10  # [1,0,0,0]
+        is_neumann_coeff = abs(a) < 1e-10 and abs(b - 1.0) < 1e-10 and abs(c) < 1e-10 and abs(d) < 1e-10   # [0,1,0,0]
+        
         # 左境界 - 主ブロック B0
         B0 = jnp.array(
             [
@@ -258,32 +262,28 @@ class CCDLeftHandBuilder:
         
         # 境界条件に応じて必要な行を更新
         # ディリクレ境界条件が設定されている場合
-        if has_dirichlet:
-            # 係数が[1,0,0,0]以外の場合
-            if not (a == 1.0 and b == 0.0 and c == 0.0 and d == 0.0):
-                # 左端の第4行
-                B0 = B0.at[3].set([1, 0, 0, 0])
-                C0 = C0.at[3].set([0, 0, 0, 0])
-                D0 = D0.at[3].set([0, 0, 0, 0])
-                
-                # 右端の第4行
-                BR = BR.at[3].set([1, 0, 0, 0])
-                AR = AR.at[3].set([0, 0, 0, 0])
-                ZR = ZR.at[3].set([0, 0, 0, 0])
+        if has_dirichlet and is_dirichlet_coeff:
+            # 左端の第4行
+            B0 = B0.at[3].set([1, 0, 0, 0])
+            C0 = C0.at[3].set([0, 0, 0, 0])
+            D0 = D0.at[3].set([0, 0, 0, 0])
+            
+            # 右端の第4行
+            BR = BR.at[3].set([1, 0, 0, 0])
+            AR = AR.at[3].set([0, 0, 0, 0])
+            ZR = ZR.at[3].set([0, 0, 0, 0])
         
         # ノイマン境界条件が設定されている場合
-        if has_neumann:
-            if not (a == 0.0 and b == 1.0 and c == 0.0 and d == 0.0):
-
-                # 左端の第2行
-                B0 = B0.at[1].set([0, 1, 0, 0])
-                C0 = C0.at[1].set([0, 0, 0, 0])
-                D0 = D0.at[1].set([0, 0, 0, 0])
-                
-                # 右端の第2行
-                BR = BR.at[1].set([0, 1, 0, 0])
-                AR = AR.at[1].set([0, 0, 0, 0])
-                ZR = ZR.at[1].set([0, 0, 0, 0])
+        if has_neumann and is_neumann_coeff:
+            # 左端の第2行
+            B0 = B0.at[1].set([0, 1, 0, 0])
+            C0 = C0.at[1].set([0, 0, 0, 0])
+            D0 = D0.at[1].set([0, 0, 0, 0])
+            
+            # 右端の第2行
+            BR = BR.at[1].set([0, 1, 0, 0])
+            AR = AR.at[1].set([0, 0, 0, 0])
+            ZR = ZR.at[1].set([0, 0, 0, 0])
 
         return B0, C0, D0, ZR, AR, BR
 
@@ -353,23 +353,34 @@ class CCDLeftHandBuilder:
 class CCDRightHandBuilder:
     """右辺ベクトルを生成するクラス"""
 
-    def build_vector(self, grid_config: GridConfig, values: jnp.ndarray) -> jnp.ndarray:
+    def build_vector(self, grid_config: GridConfig, values: jnp.ndarray, coeffs: Optional[List[float]] = None) -> jnp.ndarray:
         """
         関数値から右辺ベクトルを生成
 
         Args:
             grid_config: グリッド設定
             values: グリッド点での関数値
+            coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用
 
         Returns:
             パターン[f[0],0,0,0,f[1],0,0,0,...]の右辺ベクトル
         """
+        # デフォルト係数: f = psi
+        if coeffs is None:
+            coeffs = [1.0, 0.0, 0.0, 0.0]
+
+        a, b, c, d = coeffs
+        
         n = grid_config.n_points
         depth = 4
         
         # 境界条件
         has_dirichlet = grid_config.is_dirichlet
         has_neumann = grid_config.is_neumann
+        
+        # 係数に基づくフラグ
+        is_dirichlet_coeff = abs(a - 1.0) < 1e-10 and abs(b) < 1e-10 and abs(c) < 1e-10 and abs(d) < 1e-10  # [1,0,0,0]
+        is_neumann_coeff = abs(a) < 1e-10 and abs(b - 1.0) < 1e-10 and abs(c) < 1e-10 and abs(d) < 1e-10   # [0,1,0,0]
         
         # 境界値
         dirichlet_values = grid_config.dirichlet_values if has_dirichlet else [0.0, 0.0]
@@ -383,12 +394,12 @@ class CCDRightHandBuilder:
         rhs = rhs.at[indices].set(values)
 
         # 境界条件を設定
-        if has_dirichlet:
+        if has_dirichlet and is_dirichlet_coeff:
             # ディリクレ境界条件の場合、境界点での第4成分を設定
             rhs = rhs.at[3].set(dirichlet_values[0])  # 左端
             rhs = rhs.at[n * depth - 1].set(dirichlet_values[1])  # 右端
         
-        if has_neumann:
+        if has_neumann and is_neumann_coeff:
             # ノイマン境界条件の場合、境界点での第2成分を設定
             rhs = rhs.at[1].set(neumann_values[0])  # 左端
             rhs = rhs.at[n * depth - 3].set(neumann_values[1])  # 右端
@@ -469,7 +480,7 @@ class CCDSystemBuilder(SystemBuilder):
         L = self.matrix_builder.build_matrix(grid_config, coeffs)
 
         # 右辺ベクトルの構築
-        b = self.vector_builder.build_vector(grid_config, values)
+        b = self.vector_builder.build_vector(grid_config, values, coeffs)
 
         return L, b
 
