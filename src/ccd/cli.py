@@ -71,55 +71,48 @@ def run_cli():
         # 出力ディレクトリの作成
         os.makedirs("results", exist_ok=True)
         
-        # グリッド設定の作成（ノイマンとディリクレの境界条件は両方設定、実際の値はCCDMethodTesterで設定される）
+        # 基本的なグリッド設定を作成（境界条件は後でccd_testerで設定される）
         grid_config = GridConfig(
             n_points=n,
-            h=L / (n - 1),
-            dirichlet_values=[0.0, 0.0],
-            neumann_values=[0.0, 0.0]
+            h=L / (n - 1)
         )
         
-        # ソルバー作成とテスト実行
-        solver = CCDCompositeSolver(
-            grid_config=grid_config,
-            scaling=args.scaling,
-            regularization=args.reg,
-            coeffs=args.coeffs
-        )
+        # ソルバー設定を準備（境界条件はccd_testerで設定されるため、ここでは指定しない）
+        solver_kwargs = {
+            'scaling': args.scaling,
+            'regularization': args.reg,
+            'coeffs': args.coeffs
+        }
         
         # テストを実行
         tester = CCDMethodTester(
             CCDCompositeSolver, 
             grid_config, 
             x_range,
+            solver_kwargs=solver_kwargs,
             coeffs=args.coeffs
         )
-        tester.solver = solver
         
         name = f"{args.scaling}_{args.reg}"
         print(f"テスト実行中: {name} (coeffs={args.coeffs})")
         tester.run_tests(prefix=f"{name.lower()}_", visualize=not args.no_viz)
     
     elif args.command == 'diagnostics':
-        # グリッド設定の作成（ノイマンとディリクレの境界条件は両方設定）
+        # 基本的なグリッド設定を作成
         grid_config = GridConfig(
             n_points=n,
-            h=L / (n - 1),
-            dirichlet_values=[0.0, 0.0],
-            neumann_values=[0.0, 0.0]
+            h=L / (n - 1)
         )
         
-        # ソルバー作成と診断実行
-        solver = CCDCompositeSolver(
-            grid_config=grid_config,
-            scaling=args.scaling,
-            regularization=args.reg,
-            coeffs=args.coeffs
-        )
+        # 診断用ソルバーの作成
+        solver_kwargs = {
+            'scaling': args.scaling,
+            'regularization': args.reg,
+            'coeffs': args.coeffs
+        }
         
         # 診断を実行
-        diagnostics = CCDSolverDiagnostics(CCDCompositeSolver, grid_config)
-        diagnostics.solver = solver
+        diagnostics = CCDSolverDiagnostics(CCDCompositeSolver, grid_config, solver_kwargs)
         
         name = f"{args.scaling}_{args.reg}"
         print(f"診断実行中: {name} (coeffs={args.coeffs})")
@@ -136,12 +129,10 @@ def run_cli():
             reg_methods = CCDCompositeSolver.available_regularization_methods()
             configs = [(r.capitalize(), "none", r, {}) for r in reg_methods]
         
-        # グリッド設定の作成（ノイマンとディリクレの境界条件は両方設定）
+        # 基本的なグリッド設定を作成
         grid_config = GridConfig(
             n_points=n,
-            h=L / (n - 1),
-            dirichlet_values=[0.0, 0.0],
-            neumann_values=[0.0, 0.0]
+            h=L / (n - 1)
         )
         
         # ソルバーリストの作成
@@ -153,9 +144,7 @@ def run_cli():
             # ソルバー用のグリッド設定を作成
             solver_grid_config = GridConfig(
                 n_points=grid_config.n_points,
-                h=grid_config.h,
-                dirichlet_values=grid_config.dirichlet_values,
-                neumann_values=grid_config.neumann_values
+                h=grid_config.h
             )
             
             tester = CCDMethodTester(
