@@ -59,56 +59,57 @@ def visualize_derivative_results(
     numerical_color = 'red'    # 数値解は赤
     input_color = 'green'      # 入力値は緑
 
-    # プロット
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    # プロット - 5つのサブプロットを作成（入力関数値用に別のグラフを追加）
+    fig, axes = plt.subplots(3, 2, figsize=(15, 15))
     fig.suptitle(f"Test Results for {test_func.name} Function using {solver_name}")
 
-    # 関数値のプロット（入力値を別に追加）
-    axes[0, 0].plot(x_fine, fine_analytical_psi, color=analytical_color, linestyle='-', label="ψ Continuous")
-    axes[0, 0].plot(x_points, analytical_psi, color=analytical_color, linestyle='-', label="ψ Grid")
-    
-    # 入力値は別のグラフで
-    ax_input = axes[0, 0].twinx()
-    ax_input.plot(x_points, f_values, color=input_color, linestyle='--', label="Input f Values")
-    ax_input.set_ylabel("Input f Values", color=input_color)
-    ax_input.tick_params(axis='y', labelcolor=input_color)
-    
-    # プロットの設定
-    axes[0, 0].plot(x_points, psi, color=numerical_color, label="Computed ψ")
-    axes[0, 0].set_title("Function Values")
-    axes[0, 0].legend(loc='upper left')
+    # 入力関数値 (左上)
+    axes[0, 0].plot(x_points, f_values, color=input_color, linestyle='-', label="Input f Values")
+    axes[0, 0].set_title("Input Function Values")
+    axes[0, 0].legend()
     axes[0, 0].grid(True)
 
-    # 1階導関数
-    # スケールを青線（解析解）に合わせる
-    axes[0, 1].plot(x_fine, fine_analytical_df, color=analytical_color, linestyle='-', label="ψ' Continuous")
-    axes[0, 1].plot(x_points, analytical_df, color=analytical_color, linestyle='-', label="ψ' Grid")
-    axes[0, 1].plot(x_points, psi_prime, color=numerical_color, label="Computed ψ'")
-    axes[0, 1].set_title("First Derivative")
+    # 元関数 (右上)
+    axes[0, 1].plot(x_fine, fine_analytical_psi, color=analytical_color, linestyle='-', label="ψ Continuous")
+    axes[0, 1].plot(x_points, analytical_psi, color=analytical_color, marker='o', markersize=3, linestyle='None', label="ψ Analytical")
+    axes[0, 1].plot(x_points, psi, color=numerical_color, label="Computed ψ")
+    axes[0, 1].set_title("Function Values (ψ)")
     axes[0, 1].legend()
     axes[0, 1].grid(True)
 
-    # 2階導関数
-    axes[1, 0].plot(x_fine, fine_analytical_d2f, color=analytical_color, linestyle='-', label="ψ'' Continuous")
-    axes[1, 0].plot(x_points, analytical_d2f, color=analytical_color, linestyle='-', label="ψ'' Grid")
-    axes[1, 0].plot(x_points, psi_second, color=numerical_color, label="Computed ψ''")
-    axes[1, 0].set_title("Second Derivative")
+    # 1階導関数 (中央左)
+    axes[1, 0].plot(x_fine, fine_analytical_df, color=analytical_color, linestyle='-', label="ψ' Continuous")
+    axes[1, 0].plot(x_points, analytical_df, color=analytical_color, marker='o', markersize=3, linestyle='None', label="ψ' Analytical")
+    axes[1, 0].plot(x_points, psi_prime, color=numerical_color, label="Computed ψ'")
+    axes[1, 0].set_title("First Derivative (ψ')")
     axes[1, 0].legend()
     axes[1, 0].grid(True)
 
-    # 3階導関数
-    axes[1, 1].plot(x_fine, fine_analytical_d3f, color=analytical_color, linestyle='-', label="ψ''' Continuous")
-    axes[1, 1].plot(x_points, analytical_d3f, color=analytical_color, linestyle='-', label="ψ''' Grid")
-    axes[1, 1].plot(x_points, psi_third, color=numerical_color, label="Computed ψ'''")
-    axes[1, 1].set_title("Third Derivative")
+    # 2階導関数 (中央右)
+    axes[1, 1].plot(x_fine, fine_analytical_d2f, color=analytical_color, linestyle='-', label="ψ'' Continuous")
+    axes[1, 1].plot(x_points, analytical_d2f, color=analytical_color, marker='o', markersize=3, linestyle='None', label="ψ'' Analytical")
+    axes[1, 1].plot(x_points, psi_second, color=numerical_color, label="Computed ψ''")
+    axes[1, 1].set_title("Second Derivative (ψ'')")
     axes[1, 1].legend()
     axes[1, 1].grid(True)
+
+    # 3階導関数 (左下)
+    axes[2, 0].plot(x_fine, fine_analytical_d3f, color=analytical_color, linestyle='-', label="ψ''' Continuous")
+    axes[2, 0].plot(x_points, analytical_d3f, color=analytical_color, marker='o', markersize=3, linestyle='None', label="ψ''' Analytical")
+    axes[2, 0].plot(x_points, psi_third, color=numerical_color, label="Computed ψ'''")
+    axes[2, 0].set_title("Third Derivative (ψ''')")
+    axes[2, 0].legend()
+    axes[2, 0].grid(True)
+
+    # 右下のグラフは空白にする
+    fig.delaxes(axes[2, 1])
 
     plt.tight_layout()
     if save_path:
         os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
         plt.savefig(save_path)
     plt.close()
+
 
 def visualize_error_comparison(
     results: Dict[str, Dict[str, list]],
@@ -144,9 +145,9 @@ def visualize_error_comparison(
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     
     # 誤差のプロット
-    ax1.bar(indexes - bar_width, errors_1st, bar_width, label='1st Derivative', color=colors[0])
-    ax1.bar(indexes, errors_2nd, bar_width, label='2nd Derivative', color=colors[1])
-    ax1.bar(indexes + bar_width, errors_3rd, bar_width, label='3rd Derivative', color=colors[2])
+    ax1.bar(indexes - bar_width, errors_1st, bar_width, label='1st Derivative (ψ\')', color=colors[0])
+    ax1.bar(indexes, errors_2nd, bar_width, label='2nd Derivative (ψ\'\')', color=colors[1])
+    ax1.bar(indexes + bar_width, errors_3rd, bar_width, label='3rd Derivative (ψ\'\'\')', color=colors[2])
     
     ax1.set_xlabel('Solver / Diff Mode')
     ax1.set_ylabel('Error (L2 norm)')
