@@ -21,20 +21,27 @@ class GridConfig:
     bc_right: float = 0.0      # 右端の境界条件値（非推奨）
     
     def __post_init__(self):
-        """初期化後の処理 - 後方互換性のためのチェックと値の検証"""
-        # dirichlet_bcが明示的に設定された場合、新しい設定を更新
+        """初期化後の処理 - 後方互換性と柔軟性のためのチェックと値の検証"""
+        # 明示的に設定された場合のみ境界条件を更新
         if self.dirichlet_bc:
             self.dirichlet_values = [self.bc_left, self.bc_right]
-            
-        # いずれの境界条件も設定されていない場合、デフォルトとしてディリクレを使用
-        if self.dirichlet_values is None and self.neumann_values is None:
-            self.dirichlet_values = [0.0, 0.0]
-            
-        # dirichlet_valuesが設定されているがリストでない場合
+        
+        # プログラマーが明示的に指定した場合のみ境界条件を使用
+        if self.dirichlet_values is not None and len(self.dirichlet_values) == 2:
+            # すでに明示的に設定されているので何もしない
+            pass
+        elif self.neumann_values is not None and len(self.neumann_values) == 2:
+            # すでに明示的に設定されているので何もしない
+            pass
+        else:
+            # デフォルトでは境界条件を設定しない
+            self.dirichlet_values = None
+            self.neumann_values = None
+
+        # リストでない場合にリストに変換する処理は維持
         if self.dirichlet_values is not None and not isinstance(self.dirichlet_values, (list, tuple)):
             self.dirichlet_values = [self.dirichlet_values, self.dirichlet_values]
-            
-        # neumann_valuesが設定されているがリストでない場合
+        
         if self.neumann_values is not None and not isinstance(self.neumann_values, (list, tuple)):
             self.neumann_values = [self.neumann_values, self.neumann_values]
     
