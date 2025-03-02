@@ -20,7 +20,7 @@ class CCDMethodTester:
 
     def __init__(
         self, 
-        solver_class: Type[CCDSolver], 
+        solver_class: Type[CCDSolver],  # type: ignore
         grid_config: GridConfig, 
         x_range: Tuple[float, float], 
         solver_kwargs: Optional[Dict[str, Any]] = None,
@@ -53,18 +53,23 @@ class CCDMethodTester:
         # テスト関数の設定（先に設定して境界値を取得できるようにする）
         self.test_functions = test_functions or TestFunctionFactory.create_standard_functions()
         
-        # 最初のテスト関数を使って、ディリクレ境界条件の値を設定（実際はcompute_errorsで毎回更新される）
+        # 最初のテスト関数を使って、境界条件の値を設定（実際はcompute_errorsで毎回更新される）
         first_test_func = self.test_functions[0]
-        bc_left = first_test_func.f(self.x_start)
-        bc_right = first_test_func.f(self.x_end)
         
-        # 常にディリクレ境界条件を使用するグリッド設定を作成
+        # ディリクレ境界条件の値（関数値）
+        dirichlet_left = first_test_func.f(self.x_start)
+        dirichlet_right = first_test_func.f(self.x_end)
+        
+        # ノイマン境界条件の値（微分値）
+        neumann_left = first_test_func.df(self.x_start)
+        neumann_right = first_test_func.df(self.x_end)
+        
+        # 境界条件を設定 - ディリクレとノイマンの両方を設定
         self.grid_config = GridConfig(
             n_points=self.original_grid_config.n_points,
             h=self.original_grid_config.h,
-            dirichlet_bc=True,  # 常にTrue
-            bc_left=bc_left,
-            bc_right=bc_right
+            dirichlet_values=[dirichlet_left, dirichlet_right],
+            neumann_values=[neumann_left, neumann_right]
         )
         
         # ソルバーの初期化
@@ -94,17 +99,21 @@ class CCDMethodTester:
         analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
         analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
         
-        # テスト関数の境界値を取得し、グリッド設定を更新
-        bc_left = test_func.f(self.x_start)
-        bc_right = test_func.f(self.x_end)
+        # テスト関数の境界値を取得
+        # ディリクレ境界条件の値（関数値）
+        dirichlet_left = test_func.f(self.x_start)
+        dirichlet_right = test_func.f(self.x_end)
         
-        # グリッド設定の境界値を更新
+        # ノイマン境界条件の値（微分値）
+        neumann_left = test_func.df(self.x_start)
+        neumann_right = test_func.df(self.x_end)
+        
+        # グリッド設定の境界値を更新 - ディリクレとノイマンの両方を設定
         self.grid_config = GridConfig(
             n_points=self.grid_config.n_points,
             h=self.grid_config.h,
-            dirichlet_bc=True,
-            bc_left=bc_left,
-            bc_right=bc_right
+            dirichlet_values=[dirichlet_left, dirichlet_right],
+            neumann_values=[neumann_left, neumann_right]
         )
         
         # ソルバーのグリッド設定も更新
@@ -183,17 +192,21 @@ class CCDMethodTester:
                 analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
                 analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
                 
-                # 境界値を取得し、グリッド設定を更新
-                bc_left = test_func.f(self.x_start)
-                bc_right = test_func.f(self.x_end)
+                # テスト関数の境界値を取得
+                # ディリクレ境界条件の値（関数値）
+                dirichlet_left = test_func.f(self.x_start)
+                dirichlet_right = test_func.f(self.x_end)
                 
-                # グリッド設定の境界値を更新
+                # ノイマン境界条件の値（微分値）
+                neumann_left = test_func.df(self.x_start)
+                neumann_right = test_func.df(self.x_end)
+                
+                # グリッド設定の境界値を更新 - ディリクレとノイマンの両方を設定
                 self.grid_config = GridConfig(
                     n_points=self.grid_config.n_points,
                     h=self.grid_config.h,
-                    dirichlet_bc=True,
-                    bc_left=bc_left,
-                    bc_right=bc_right
+                    dirichlet_values=[dirichlet_left, dirichlet_right],
+                    neumann_values=[neumann_left, neumann_right]
                 )
                 
                 # ソルバーのグリッド設定も更新
@@ -234,7 +247,7 @@ class CCDMethodTester:
         print("-" * 75)
         
         # 境界条件の情報を表示
-        print(f"\n境界条件: ディリクレ (テスト関数の境界値を使用)")
+        print(f"\n境界条件: ディリクレ + ノイマン (テスト関数の境界値を使用)")
         print(f"各テスト関数ごとに境界値を動的に設定")
         
         return results
@@ -251,8 +264,5 @@ class CCDMethodTester:
             (1, 1, 1, 0): "PSI+PSI'+PSI''"
         }
         
-        # 常にディリクレ境界条件として表示
-        dirichlet_str = " (Dirichlet)"
-        
         coeffs_tuple = tuple(self.coeffs)
-        return mode_names.get(coeffs_tuple, f"coeffs={self.coeffs}") + dirichlet_str
+        return mode_names.get(coeffs_tuple, f"coeffs={self.coeffs}")
