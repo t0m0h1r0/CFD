@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Tuple, List, Optional, Protocol
+from typing import Tuple, List, Optional, Protocol, Union, Dict
 
 
 @dataclass
@@ -10,6 +10,9 @@ class GridConfig:
 
     n_points: int  # グリッド点の数
     h: float  # グリッド幅
+    dirichlet_bc: bool = False  # ディリクレ境界条件を使用するかどうか
+    bc_left: float = 0.0  # 左端の境界条件値
+    bc_right: float = 0.0  # 右端の境界条件値
 
 
 class MatrixBuilder(Protocol):
@@ -25,7 +28,9 @@ class MatrixBuilder(Protocol):
 class VectorBuilder(Protocol):
     """ベクトルビルダーのプロトコル定義"""
 
-    def build_vector(self, values: jnp.ndarray) -> jnp.ndarray:
+    def build_vector(
+        self, grid_config: GridConfig, values: jnp.ndarray
+    ) -> jnp.ndarray:
         """ベクトルを構築するメソッド"""
         ...
 
@@ -34,7 +39,7 @@ class ResultExtractor(Protocol):
     """結果抽出のプロトコル定義"""
 
     def extract_components(
-        self, solution: jnp.ndarray
+        self, grid_config: GridConfig, solution: jnp.ndarray
     ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """解ベクトルから各成分を抽出するメソッド"""
         ...
@@ -66,12 +71,13 @@ class SystemBuilder(ABC):
 
     @abstractmethod
     def extract_results(
-        self, solution: jnp.ndarray
+        self, grid_config: GridConfig, solution: jnp.ndarray
     ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """
         解ベクトルから関数値と各階導関数を抽出する
 
         Args:
+            grid_config: グリッド設定
             solution: 線形方程式系の解
 
         Returns:
@@ -128,7 +134,7 @@ class CCDLeftHandBuilder:
         return A, B, C
 
     def _build_boundary_blocks(
-        self, coeffs: Optional[List[float]] = None
+        self, coeffs: Optional[List[float]] = None, dirichlet_bc: bool = False
     ) -> Tuple[
         jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
     ]:
@@ -136,6 +142,7 @@ class CCDLeftHandBuilder:
 
         Args:
             coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用
+            dirichlet_bc: ディリクレ境界条件を使用するかどうか
 
         Returns:
             B0: 左境界の主ブロック
@@ -150,54 +157,105 @@ class CCDLeftHandBuilder:
             coeffs = [1.0, 0.0, 0.0, 0.0]
 
         a, b, c, d = coeffs
+        
+        # 第1行を[a,b,c,d]または[0,0,0,0]に変更し、
+        # ディリクレ境界条件の場合は第4行も変更
+        
+        # 左境界 - 主ブロック B0の第1行を[a,b,c,d]に、ディリクレの場合は第4行を[1,0,0,0]に
         B0 = jnp.array(
-            [[1, 0, 0, 0], [11 / 2, 1, 0, 0], [-(51 / 2), 0, 1, 0], [387 / 4, 0, 0, 1]]
+            [
+                [a, b, c, d],  # 第1行を係数で置き換え
+                [11 / 2, 1, 0, 0],
+                [-(51 / 2), 0, 1, 0],
+                [387 / 4, 0, 0, 1]  # この行はディリクレ境界条件に応じて変更
+            ]
         )
+        
+        # ディリクレ境界条件の場合は第4行を変更
+        if dirichlet_bc:
+            # デフォルト係数 [1,0,0,0] の場合は変更不要
+            if not (coeffs[0] == 1.0 and coeffs[1] == 0.0 and coeffs[2] == 0.0 and coeffs[3] == 0.0):
+                B0 = B0.at[3].set([1, 0, 0, 0])
 
+        # 左境界 - 第2ブロック C0の第1行を[0,0,0,0]に、ディリクレの場合は第4行も[0,0,0,0]に
         C0 = jnp.array(
             [
-                [0, 0, 0, 0],
+                [0, 0, 0, 0],  # 第1行を[0,0,0,0]に
                 [24, 24, 4, 4 / 3],
                 [-264, -216, -44, -12],
-                [1644, 1236, 282, 66],
+                [1644, 1236, 282, 66]  # この行はディリクレ境界条件に応じて変更
             ]
         )
+        
+        # ディリクレ境界条件の場合は第4行を変更
+        if dirichlet_bc:
+            # デフォルト係数 [1,0,0,0] の場合は変更不要
+            if not (coeffs[0] == 1.0 and coeffs[1] == 0.0 and coeffs[2] == 0.0 and coeffs[3] == 0.0):
+                C0 = C0.at[3].set([0, 0, 0, 0])
 
+        # 左境界 - 第3ブロック D0の第1行を[0,0,0,0]に、ディリクレの場合は第4行も[0,0,0,0]に
         D0 = jnp.array(
             [
-                [0, 0, 0, 0],
+                [0, 0, 0, 0],  # 第1行を[0,0,0,0]に
                 [-(59 / 2), 10, -1, 0],
                 [579 / 2, -99, 10, 0],
-                [-(6963 / 4), 1203 / 2, -(123 / 2), 0],
+                [-(6963 / 4), 1203 / 2, -(123 / 2), 0]  # この行はディリクレ境界条件に応じて変更
             ]
         )
+        
+        # ディリクレ境界条件の場合は第4行を変更
+        if dirichlet_bc:
+            # デフォルト係数 [1,0,0,0] の場合は変更不要
+            if not (coeffs[0] == 1.0 and coeffs[1] == 0.0 and coeffs[2] == 0.0 and coeffs[3] == 0.0):
+                D0 = D0.at[3].set([0, 0, 0, 0])
 
+        # 右境界 - 主ブロック BRの第1行を[a,b,c,d]に、ディリクレの場合は第4行を[1,0,0,0]に
         BR = jnp.array(
             [
-                [1, 0, 0, 0],
+                [a, b, c, d],  # 第1行を係数で置き換え
                 [-(11 / 2), 1, 0, 0],
                 [-(51 / 2), 0, 1, 0],
-                [-(387 / 4), 0, 0, 1],
+                [-(387 / 4), 0, 0, 1]  # この行はディリクレ境界条件に応じて変更
             ]
         )
+        
+        # ディリクレ境界条件の場合は第4行を変更
+        if dirichlet_bc:
+            # デフォルト係数 [1,0,0,0] の場合は変更不要
+            if not (coeffs[0] == 1.0 and coeffs[1] == 0.0 and coeffs[2] == 0.0 and coeffs[3] == 0.0):
+                BR = BR.at[3].set([1, 0, 0, 0])
 
+        # 右境界 - 第2ブロック ARの第1行を[0,0,0,0]に、ディリクレの場合は第4行も[0,0,0,0]に
         AR = jnp.array(
             [
-                [0, 0, 0, 0],
+                [0, 0, 0, 0],  # 第1行を[0,0,0,0]に
                 [-24, 24, -4, 4 / 3],
                 [-264, 216, -44, 12],
-                [-1644, 1236, -282, 66],
+                [-1644, 1236, -282, 66]  # この行はディリクレ境界条件に応じて変更
             ]
         )
+        
+        # ディリクレ境界条件の場合は第4行を変更
+        if dirichlet_bc:
+            # デフォルト係数 [1,0,0,0] の場合は変更不要
+            if not (coeffs[0] == 1.0 and coeffs[1] == 0.0 and coeffs[2] == 0.0 and coeffs[3] == 0.0):
+                AR = AR.at[3].set([0, 0, 0, 0])
 
+        # 右境界 - 第1ブロック ZRの第1行を[0,0,0,0]に、ディリクレの場合は第4行も[0,0,0,0]に
         ZR = jnp.array(
             [
-                [0, 0, 0, 0],
+                [0, 0, 0, 0],  # 第1行を[0,0,0,0]に
                 [59 / 2, 10, 1, 0],
                 [579 / 2, 99, 10, 0],
-                [6963 / 4, 1203 / 2, 123 / 2, 0],
+                [6963 / 4, 1203 / 2, 123 / 2, 0]  # この行はディリクレ境界条件に応じて変更
             ]
         )
+        
+        # ディリクレ境界条件の場合は第4行を変更
+        if dirichlet_bc:
+            # デフォルト係数 [1,0,0,0] の場合は変更不要
+            if not (coeffs[0] == 1.0 and coeffs[1] == 0.0 and coeffs[2] == 0.0 and coeffs[3] == 0.0):
+                ZR = ZR.at[3].set([0, 0, 0, 0])
 
         return B0, C0, D0, ZR, AR, BR
 
@@ -207,17 +265,18 @@ class CCDLeftHandBuilder:
         """左辺のブロック行列全体を生成
 
         Args:
-            grid_config: グリッド設定
+            grid_config: グリッド設定（ディリクレ境界条件の設定を含む）
             coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用
 
         Returns:
             生成されたブロック行列（JAX配列）
         """
         n, h = grid_config.n_points, grid_config.h
+        dirichlet_bc = grid_config.dirichlet_bc
 
         # 係数を使用してブロック行列を生成
         A, B, C = self._build_interior_blocks(coeffs)
-        B0, C0, D0, ZR, AR, BR = self._build_boundary_blocks(coeffs)
+        B0, C0, D0, ZR, AR, BR = self._build_boundary_blocks(coeffs, dirichlet_bc)
 
         # 次数行列の定義
         DEGREE = jnp.array(
@@ -280,6 +339,9 @@ class CCDRightHandBuilder:
         """
         n = grid_config.n_points
         depth = 4
+        dirichlet_bc = grid_config.dirichlet_bc
+        bc_left = grid_config.bc_left
+        bc_right = grid_config.bc_right
 
         # 右辺ベクトルを効率的に生成
         rhs = jnp.zeros(n * depth)
@@ -287,6 +349,14 @@ class CCDRightHandBuilder:
         # 全てのインデックスを一度に更新
         indices = jnp.arange(0, n * depth, depth)
         rhs = rhs.at[indices].set(values)
+
+        # ディリクレ境界条件の場合、境界点での第4成分を設定
+        if dirichlet_bc:
+            # 左端の境界条件
+            rhs = rhs.at[3].set(bc_left)
+            
+            # 右端の境界条件
+            rhs = rhs.at[n * depth - 1].set(bc_right)
 
         return rhs
 
@@ -352,7 +422,7 @@ class CCDSystemBuilder(SystemBuilder):
         線形方程式系 Lx = b を構築する
 
         Args:
-            grid_config: グリッド設定
+            grid_config: グリッド設定（ディリクレ境界条件の設定を含む）
             values: 入力関数値
             coeffs: 微分係数 [a, b, c, d]
 
