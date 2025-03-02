@@ -9,13 +9,7 @@ import jax.numpy as jnp
 from functools import partial
 from typing import Dict, Any, Optional, List, Tuple
 
-from ccd_core import (
-    GridConfig, 
-    CCDLeftHandBuilder, 
-    CCDRightHandBuilder, 
-    CCDResultExtractor, 
-    CCDSystemBuilder
-)
+from ccd_core import GridConfig
 from ccd_solver import CCDSolver, DirectSolver
 from plugin_loader import PluginLoader
 from transformation_pipeline import TransformerFactory
@@ -34,7 +28,8 @@ class CCDCompositeSolver(CCDSolver):
         scaling_params: Optional[Dict[str, Any]] = None,
         regularization_params: Optional[Dict[str, Any]] = None,
         coeffs: Optional[List[float]] = None,
-        use_direct_solver: bool = True
+        use_direct_solver: bool = True,
+        **kwargs
     ):
         """
         初期化
@@ -47,19 +42,10 @@ class CCDCompositeSolver(CCDSolver):
             regularization_params: 正則化パラメータ
             coeffs: 微分係数 [a, b, c, d]
             use_direct_solver: 直接法を使用するかどうか
+            **kwargs: 追加のパラメータ（親クラスに渡される）
         """
         # プラグインを読み込み
         PluginLoader.load_plugins(verbose=False)
-        
-        # システムビルダーの初期化
-        self.system_builder = CCDSystemBuilder(
-            CCDLeftHandBuilder(),
-            CCDRightHandBuilder(),
-            CCDResultExtractor()
-        )
-        
-        # 係数を設定
-        self.coeffs = coeffs if coeffs is not None else [1.0, 0.0, 0.0, 0.0]
         
         # インスタンス変数を設定
         self.scaling = scaling.lower()
@@ -67,15 +53,16 @@ class CCDCompositeSolver(CCDSolver):
         self.scaling_params = scaling_params or {}
         self.regularization_params = regularization_params or {}
         
-        # グリッド設定を保存
-        self.grid_config = grid_config
+        # 親クラスのコンストラクタを呼び出し
+        # 係数やソルバー設定も適切に渡す
+        solver_kwargs = kwargs.copy()
+        solver_kwargs['use_iterative'] = not use_direct_solver
         
-        # 左辺行列の構築
-        self.L, _ = self.system_builder.build_system(grid_config, jnp.zeros(grid_config.n_points), self.coeffs)
+        super().__init__(grid_config, coeffs=coeffs, **solver_kwargs)
         
         # 変換パイプラインを初期化
         self.transformer = TransformerFactory.create_transformation_pipeline(
-            self.L,
+            self.L,  # 親クラスで作成された行列を使用
             scaling=self.scaling,
             regularization=self.regularization,
             scaling_params=self.scaling_params,
@@ -84,9 +71,6 @@ class CCDCompositeSolver(CCDSolver):
         
         # 行列を変換
         self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(self.L)
-        
-        # ソルバーを初期化
-        self.solver = DirectSolver() if use_direct_solver else None
     
     @partial(jax.jit, static_argnums=(0,))
     def solve(self, f: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -99,7 +83,7 @@ class CCDCompositeSolver(CCDSolver):
         Returns:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
-        # 右辺ベクトルを計算
+        # 右辺ベクトルを計算（親クラスのシステムビルダーを使用）
         _, rhs = self.system_builder.build_system(self.grid_config, f, self.coeffs)
         
         # 右辺ベクトルに変換を適用
@@ -152,9 +136,7 @@ class CCDCompositeSolver(CCDSolver):
         regularization: str = "none", 
         params: Optional[Dict[str, Any]] = None,
         coeffs: Optional[List[float]] = None,
-        dirichlet_bc: bool = False,
-        bc_left: float = 0.0,
-        bc_right: float = 0.0
+        **kwargs
     ) -> 'CCDCompositeSolver':
         """
         パラメータを指定してソルバーを作成するファクトリーメソッド
@@ -165,9 +147,7 @@ class CCDCompositeSolver(CCDSolver):
             regularization: 正則化戦略名
             params: パラメータの辞書
             coeffs: 微分係数 [a, b, c, d]
-            dirichlet_bc: ディリクレ境界条件を使用するかどうか
-            bc_left: 左端の境界条件値
-            bc_right: 右端の境界条件値
+            **kwargs: 追加のパラメータ
             
         Returns:
             CCDCompositeSolver インスタンス
@@ -203,22 +183,12 @@ class CCDCompositeSolver(CCDSolver):
             elif param_name in regularization_info:
                 regularization_params[param_name] = param_value
         
-        # ディリクレ境界条件がある場合、グリッド設定を更新する
-        if dirichlet_bc:
-            # 新しいGridConfigを作成（既存のn_pointsとhを維持）
-            grid_config = GridConfig(
-                n_points=grid_config.n_points,
-                h=grid_config.h,
-                dirichlet_bc=True,
-                bc_left=bc_left,
-                bc_right=bc_right
-            )
-        
         return cls(
             grid_config=grid_config,
             scaling=scaling,
             regularization=regularization,
             scaling_params=scaling_params,
             regularization_params=regularization_params,
-            coeffs=coeffs
+            coeffs=coeffs,
+            **kwargs
         )
