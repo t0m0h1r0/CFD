@@ -302,11 +302,11 @@ class CCDResultExtractor:
     ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """
         解ベクトルから関数値と各階導関数を抽出
-        
+
         Args:
             grid_config: グリッド設定
             solution: 解ベクトル
-            
+
         Returns:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
@@ -323,11 +323,11 @@ class CCDResultExtractor:
         psi1 = solution[indices1]
         psi2 = solution[indices2]
         psi3 = solution[indices3]
-        
+
         # ディリクレ境界条件が有効な場合、境界値を明示的に設定
         if grid_config.is_dirichlet and grid_config.dirichlet_values is not None:
             psi0 = psi0.at[0].set(grid_config.dirichlet_values[0])
-            psi0 = psi0.at[n-1].set(grid_config.dirichlet_values[1])
+            psi0 = psi0.at[n - 1].set(grid_config.dirichlet_values[1])
 
         return psi0, psi1, psi2, psi3
 
