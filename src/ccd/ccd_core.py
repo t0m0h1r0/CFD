@@ -149,44 +149,24 @@ class CCDLeftHandBuilder:
         # 境界条件に応じて行を更新
         # ディリクレ境界条件
         if dirichlet_enabled:
-            # 左端: 第3行に第4行の値を加算した後、第4行を上書き
-            B0 = B0.at[2].add(B0[3])  # 第3行に第4行の値を加算
-            C0 = C0.at[2].add(C0[3])
-            D0 = D0.at[2].add(D0[3])
-            
-            # 左端の第4行を上書き
+            # 左端の第4行
             B0 = B0.at[3].set([1, 0, 0, 0])
             C0 = C0.at[3].set([0, 0, 0, 0])
             D0 = D0.at[3].set([0, 0, 0, 0])
 
-            # 右端: 第3行に第4行の値を加算した後、第4行を上書き
-            BR = BR.at[2].add(BR[3])  # 第3行に第4行の値を加算
-            AR = AR.at[2].add(AR[3])
-            ZR = ZR.at[2].add(ZR[3])
-            
-            # 右端の第4行を上書き
+            # 右端の第4行
             BR = BR.at[3].set([1, 0, 0, 0])
             AR = AR.at[3].set([0, 0, 0, 0])
             ZR = ZR.at[3].set([0, 0, 0, 0])
 
         # ノイマン境界条件
         if neumann_enabled:
-            # 左端: 第3行に第2行の値を加算した後、第2行を上書き
-            B0 = B0.at[2].add(B0[1])  # 第3行に第2行の値を加算
-            C0 = C0.at[2].add(C0[1])
-            D0 = D0.at[2].add(D0[1])
-            
-            # 左端の第2行を上書き
+            # 左端の第2行
             B0 = B0.at[1].set([0, 1, 0, 0])
             C0 = C0.at[1].set([0, 0, 0, 0])
             D0 = D0.at[1].set([0, 0, 0, 0])
 
-            # 右端: 第3行に第2行の値を加算した後、第2行を上書き
-            BR = BR.at[2].add(BR[1])  # 第3行に第2行の値を加算
-            AR = AR.at[2].add(AR[1])
-            ZR = ZR.at[2].add(ZR[1])
-            
-            # 右端の第2行を上書き
+            # 右端の第2行
             BR = BR.at[1].set([0, 1, 0, 0])
             AR = AR.at[1].set([0, 0, 0, 0])
             ZR = ZR.at[1].set([0, 0, 0, 0])
@@ -304,8 +284,12 @@ class CCDRightHandBuilder:
 
         # 境界条件を設定
         if dirichlet_enabled:
-            rhs = rhs.at[left_dir_idx].set(dirichlet_values[0])
-            rhs = rhs.at[right_dir_idx].set(dirichlet_values[1])
+            # 修正: ディリクレ境界条件の設定方法を変更
+            a, b = dirichlet_values
+            # 左端の第4行に (a-b)/2 を設定
+            rhs = rhs.at[left_dir_idx].set((a - b) / 2)
+            # 右端の第4行に (-a+b)/2 を設定
+            rhs = rhs.at[right_dir_idx].set((-a + b) / 2)
 
         if neumann_enabled:
             rhs = rhs.at[left_neu_idx].set(neumann_values[0])
@@ -344,10 +328,11 @@ class CCDResultExtractor:
         psi2 = solution[indices2]
         psi3 = solution[indices3]
 
-        # ディリクレ境界条件が有効な場合、境界値を明示的に設定
+        # ディリクレ境界条件が有効な場合、平均値を加算
         if grid_config.is_dirichlet and grid_config.dirichlet_values is not None:
-            psi0 = psi0.at[0].set(grid_config.dirichlet_values[0])
-            psi0 = psi0.at[n - 1].set(grid_config.dirichlet_values[1])
+            a, b = grid_config.dirichlet_values
+            # 全てのpsi0の値に (a+b)/2 を加算
+            psi0 = psi0 + (a + b) / 2
 
         return psi0, psi1, psi2, psi3
 
