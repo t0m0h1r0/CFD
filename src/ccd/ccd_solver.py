@@ -94,47 +94,23 @@ class CCDSolver:
         """
         self.grid_config = grid_config
 
-        # 係数を設定
-        self.coeffs = coeffs if coeffs is not None else [1.0, 0.0, 0.0, 0.0]
-
-        # 境界条件の有効性を判断
-        dirichlet_enabled = False
-        neumann_enabled = False
-
-        # dirichlet_values!=None且つcoeff!=[1,0,0,0]ならdirichlet_enable=True
-        if grid_config.dirichlet_values is not None and self.coeffs != [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-        ]:
-            dirichlet_enabled = True
-
-        # neumann_values!=None且つcoeff!=[0,1,0,0]ならneumann_enable=True
-        if grid_config.neumann_values is not None and self.coeffs != [
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-        ]:
-            neumann_enabled = True
-
-        # 有効な境界条件を保存
-        self.dirichlet_enabled = dirichlet_enabled
-        self.neumann_enabled = neumann_enabled
+        # 係数を設定 - grid_configに保存
+        if coeffs is not None:
+            self.grid_config.coeffs = coeffs
+        
+        # 係数への参照を保持（後方互換性のため）
+        self.coeffs = self.grid_config.coeffs
 
         # システムビルダーの初期化
         self.system_builder = CCDSystemBuilder(
             CCDLeftHandBuilder(), CCDRightHandBuilder(), CCDResultExtractor()
         )
 
-        # 左辺行列の構築 - 判断した境界条件を使用
+        # 左辺行列の構築
         self.L, _ = self.system_builder.build_system(
             grid_config,
             jnp.zeros(grid_config.n_points),
             self.coeffs,
-            dirichlet_enabled=dirichlet_enabled,
-            neumann_enabled=neumann_enabled,
         )
 
         # 行列の特性を分析して最適なソルバーを選択
@@ -167,13 +143,11 @@ class CCDSolver:
         Returns:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
-        # 右辺ベクトルを構築 - 判断した境界条件を使用
+        # 右辺ベクトルを構築
         _, b = self.system_builder.build_system(
             self.grid_config,
             f,
             self.coeffs,
-            dirichlet_enabled=self.dirichlet_enabled,
-            neumann_enabled=self.neumann_enabled,
         )
 
         # 線形方程式を解く
