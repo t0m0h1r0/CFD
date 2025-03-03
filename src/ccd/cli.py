@@ -21,7 +21,7 @@ def parse_args():
 
     # 親パーサーを作成 - 共通オプション
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument("--n", type=int, default=256, help="グリッド点の数")
+    parent_parser.add_argument("--n", type=int, default=32, help="グリッド点の数")
     parent_parser.add_argument(
         "--xrange",
         type=float,
@@ -61,6 +61,9 @@ def parse_args():
     )
     diag_parser.add_argument("--reg", type=str, default="none", help="正則化手法")
     diag_parser.add_argument("--viz", action="store_true", help="可視化を有効化")
+    diag_parser.add_argument(
+        "--func", type=str, default="Sine", help="個別テストに使用するテスト関数の名前"
+    )
 
     # 比較コマンド - 親パーサーから引数を継承
     compare_parser = subparsers.add_parser(
@@ -132,12 +135,12 @@ def run_cli():
 
         # 診断を実行
         diagnostics = CCDSolverDiagnostics(
-            CCDCompositeSolver, grid_config, solver_kwargs
+            CCDCompositeSolver, grid_config, solver_kwargs=solver_kwargs
         )
 
         name = f"{args.scaling}_{args.reg}"
         print(f"診断実行中: {name} (coeffs={args.coeffs})")
-        diagnostics.perform_full_diagnosis(visualize=args.viz)
+        diagnostics.perform_diagnosis(visualize=args.viz, test_func_name=args.func)
 
     elif args.command == "compare":
         # 比較モードに応じて構成を設定
