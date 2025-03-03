@@ -93,20 +93,19 @@ def run_cli():
     n = args.n
     x_range = tuple(args.xrange)
     L = x_range[1] - x_range[0]
+    
+    # coeffsを設定したグリッド設定を作成
+    grid_config = GridConfig(n_points=n, h=L / (n - 1), coeffs=args.coeffs)
 
     # コマンドの実行
     if args.command == "test":
         # 出力ディレクトリの作成
         os.makedirs("results", exist_ok=True)
 
-        # 基本的なグリッド設定を作成（境界条件は後でccd_testerで設定される）
-        grid_config = GridConfig(n_points=n, h=L / (n - 1))
-
-        # ソルバー設定を準備（境界条件はccd_testerで設定されるため、ここでは指定しない）
+        # ソルバー設定を準備
         solver_kwargs = {
             "scaling": args.scaling,
             "regularization": args.reg,
-            "coeffs": args.coeffs,
         }
 
         # テストを実行
@@ -123,14 +122,10 @@ def run_cli():
         tester.run_tests(prefix=f"{name.lower()}_", visualize=not args.no_viz)
 
     elif args.command == "diagnostics":
-        # 基本的なグリッド設定を作成
-        grid_config = GridConfig(n_points=n, h=L / (n - 1))
-
         # 診断用ソルバーの作成
         solver_kwargs = {
             "scaling": args.scaling,
             "regularization": args.reg,
-            "coeffs": args.coeffs,
         }
 
         # 診断を実行
@@ -153,18 +148,16 @@ def run_cli():
             reg_methods = CCDCompositeSolver.available_regularization_methods()
             configs = [(r.capitalize(), "none", r, {}) for r in reg_methods]
 
-        # 基本的なグリッド設定を作成
-        grid_config = GridConfig(n_points=n, h=L / (n - 1))
-
         # ソルバーリストの作成
         solvers_list = []
         for name, scaling, regularization, params in configs:
             params_copy = params.copy()
-            params_copy["coeffs"] = args.coeffs
-
-            # ソルバー用のグリッド設定を作成
+            
+            # 各ソルバー用のグリッド設定を作成（coeffsを含む）
             solver_grid_config = GridConfig(
-                n_points=grid_config.n_points, h=grid_config.h
+                n_points=grid_config.n_points, 
+                h=grid_config.h,
+                coeffs=args.coeffs
             )
 
             tester = CCDMethodTester(

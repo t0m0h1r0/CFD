@@ -20,7 +20,7 @@ class CCDMethodTester:
 
     def __init__(
         self,
-        solver_class: Type[CCDSolver],  # type: ignore
+        solver_class: Type[CCDSolver],
         grid_config: GridConfig,
         x_range: Tuple[float, float],
         solver_kwargs: Optional[Dict[str, Any]] = None,

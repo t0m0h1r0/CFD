@@ -58,7 +58,7 @@ class CCDCompositeSolver(CCDSolver):
             grid_config.coeffs = coeffs
 
         # 親クラスのコンストラクタを呼び出し
-        # 係数はすでにgrid_configに設定されているため、ここでは不要
+        # 係数はすでにgrid_configに設定されているため、ここではcoeffsを指定しない
         solver_kwargs = kwargs.copy()
         solver_kwargs["use_iterative"] = not use_direct_solver
 
