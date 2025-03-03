@@ -76,8 +76,12 @@ class CCDSolverDiagnostics:
         boundary_info = {
             "has_dirichlet": has_dirichlet,
             "has_neumann": has_neumann,
-            "dirichlet_values": self.solver.grid_config.dirichlet_values if has_dirichlet else None,
-            "neumann_values": self.solver.grid_config.neumann_values if has_neumann else None,
+            "dirichlet_values": self.solver.grid_config.dirichlet_values
+            if has_dirichlet
+            else None,
+            "neumann_values": self.solver.grid_config.neumann_values
+            if has_neumann
+            else None,
         }
 
         if has_dirichlet:
@@ -110,30 +114,30 @@ class CCDSolverDiagnostics:
         # 境界条件の状態
         dirichlet_enabled = self.solver.grid_config.is_dirichlet
         neumann_enabled = self.solver.grid_config.is_neumann
-        
+
         # 内部ブロック行列を取得
         A, B, C = self.left_builder._build_interior_blocks(self.coeffs)
-        
+
         # 境界ブロック行列を取得
         B0, C0, D0, ZR, AR, BR = self.left_builder._build_boundary_blocks(
-            self.coeffs, 
-            dirichlet_enabled=dirichlet_enabled, 
-            neumann_enabled=neumann_enabled
+            self.coeffs,
+            dirichlet_enabled=dirichlet_enabled,
+            neumann_enabled=neumann_enabled,
         )
-        
+
         # 左辺行列全体の構造情報
         L_size = self.L.shape[0]
         L_nnz = jnp.count_nonzero(self.L)
         L_density = L_nnz / (L_size * L_size)
-        
+
         # 特異値分解の計算
         U, s, Vh = jnp.linalg.svd(self.L, full_matrices=False)
-        
+
         print("\n行列の基本特性:")
         print(f"サイズ: {L_size}x{L_size}")
         print(f"非ゼロ要素数: {L_nnz}")
         print(f"行列密度: {L_density:.6f}")
-        
+
         print("\n特異値分析:")
         print(f"最大特異値: {s[0]}")
         print(f"最小特異値: {s[-1]}")
@@ -159,7 +163,7 @@ class CCDSolverDiagnostics:
         print(f"  行列式: {BR_det}")
         print(f"  条件数: {BR_cond}")
         print(f"  ランク: {BR_rank}")
-        
+
         matrix_info = {
             "L_size": int(L_size),
             "L_nnz": int(L_nnz),
@@ -184,16 +188,16 @@ class CCDSolverDiagnostics:
                 "B0": {
                     "determinant": float(B0_det),
                     "condition_number": float(B0_cond),
-                    "rank": int(B0_rank)
+                    "rank": int(B0_rank),
                 },
                 "BR": {
                     "determinant": float(BR_det),
                     "condition_number": float(BR_cond),
-                    "rank": int(BR_rank)
-                }
-            }
+                    "rank": int(BR_rank),
+                },
+            },
         }
-        
+
         return matrix_info
 
     def test_with_function(self, test_func: TestFunction) -> Dict[str, Any]:
@@ -303,17 +307,15 @@ class CCDSolverDiagnostics:
             テスト結果の辞書
         """
         print("\n=== テスト関数による分析 ===")
-        
+
         results = {}
         for test_func in self.test_functions:
             results[test_func.name] = self.test_with_function(test_func)
-        
+
         return results
 
     def perform_diagnosis(
-        self, 
-        visualize: bool = False, 
-        test_func_name: str = "Sine"
+        self, visualize: bool = False, test_func_name: str = "Sine"
     ) -> Dict[str, Any]:
         """
         基本的な診断を実行
