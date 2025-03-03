@@ -33,23 +33,22 @@ class CCDSolverDiagnostics:
         self.solver_class = solver_class
         self.solver_name = solver_class.__name__
 
-        # 標準的な境界条件を持つグリッド設定を作成
-        boundary_grid_config = GridConfig(
-            n_points=grid_config.n_points,
-            h=grid_config.h,
-            dirichlet_values=[0.0, 0.0],
-            neumann_values=[0.0, 0.0],
-        )
+        # coeffsをgrid_configに設定
+        if "coeffs" in solver_kwargs:
+            grid_config.coeffs = solver_kwargs["coeffs"]
+            # solver_kwargsからcoeffsを削除（二重設定を避けるため）
+            self.coeffs = solver_kwargs.pop("coeffs")
+        else:
+            # grid_configからcoeffsを参照
+            self.coeffs = grid_config.coeffs
 
         # ソルバーを初期化
-        self.solver = solver_class(boundary_grid_config, **solver_kwargs)
+        self.solver = solver_class(grid_config, **solver_kwargs)
         self.left_builder = CCDLeftHandBuilder()
         self.right_builder = CCDRightHandBuilder()
 
         # 左辺行列を計算
-        coeffs = solver_kwargs.get("coeffs", None)
-        self.coeffs = coeffs
-        self.L = self.left_builder.build_matrix(boundary_grid_config, coeffs)
+        self.L = self.left_builder.build_matrix(grid_config)
 
         # テスト関数の読み込み
         self.test_functions = TestFunctionFactory.create_standard_functions()
@@ -81,17 +80,13 @@ class CCDSolverDiagnostics:
             )
 
         # 係数の情報
-        if hasattr(self.solver, "coeffs"):
-            print(f"係数 [a, b, c, d]: {self.solver.coeffs}")
+        print(f"係数 [a, b, c, d]: {self.solver.grid_config.coeffs}")
 
         # 右辺ベクトルを作成（ゼロ関数の場合）
         zero_f = jnp.zeros(self.grid_config.n_points)
         right_hand = self.right_builder.build_vector(
             self.solver.grid_config,
             zero_f,
-            self.coeffs,
-            dirichlet_enabled=has_dirichlet,
-            neumann_enabled=has_neumann,
         )
 
         # 各要素のインデックス
@@ -114,9 +109,6 @@ class CCDSolverDiagnostics:
         # 左辺行列の行を分析
         L_test = self.left_builder.build_matrix(
             self.solver.grid_config,
-            self.coeffs,
-            dirichlet_enabled=has_dirichlet,
-            neumann_enabled=has_neumann,
         )
 
         # 対応する左辺行列の行の表示
@@ -185,10 +177,11 @@ class CCDSolverDiagnostics:
                 h=h,
                 dirichlet_values=dirichlet_values,
                 neumann_values=neumann_values,
+                coeffs=self.coeffs,  # 係数も設定
             )
 
             # 右辺ベクトルを構築
-            a, b, c, d = self.coeffs if self.coeffs else [1.0, 0.0, 0.0, 0.0]
+            a, b, c, d = self.coeffs
 
             # 設定された係数に基づいて右辺関数値を計算
             rhs_values = a * f_values + b * df_values + c * d2f_values + d * d3f_values
@@ -197,17 +190,11 @@ class CCDSolverDiagnostics:
             rhs = self.right_builder.build_vector(
                 test_grid_config,
                 rhs_values,
-                self.coeffs,
-                dirichlet_enabled=True,
-                neumann_enabled=True,
             )
 
             # 左辺行列を構築
             L_test = self.left_builder.build_matrix(
                 test_grid_config,
-                self.coeffs,
-                dirichlet_enabled=True,
-                neumann_enabled=True,
             )
 
             # 境界条件に関連するインデックス
@@ -339,6 +326,7 @@ class CCDSolverDiagnostics:
             h=h,
             dirichlet_values=dirichlet_values,
             neumann_values=neumann_values,
+            coeffs=self.coeffs,  # 係数も設定
         )
 
         print(f"テスト関数: {test_func.name}")
@@ -347,11 +335,11 @@ class CCDSolverDiagnostics:
         )
 
         # 係数に基づいて右辺関数値を計算
-        a, b, c, d = self.coeffs if self.coeffs else [1.0, 0.0, 0.0, 0.0]
+        a, b, c, d = self.coeffs
         rhs_values = a * f_values + b * df_values + c * d2f_values + d * d3f_values
 
         # ソルバーを初期化
-        solver_params = {"coeffs": self.coeffs} if self.coeffs else {}
+        solver_params = {}  # coeffsはgrid_configに含まれているため不要
         solver = self.solver_class(test_grid_config, **solver_params)
 
         # 解を計算
@@ -440,8 +428,7 @@ class CCDSolverDiagnostics:
         print(
             f"境界条件: {'ディリクレ' if has_dirichlet else ''}{'と' if has_dirichlet and has_neumann else ''}{'ノイマン' if has_neumann else ''}"
         )
-        if hasattr(self.solver, "coeffs"):
-            print(f"係数: {self.solver.coeffs}")
+        print(f"係数: {self.solver.grid_config.coeffs}")
 
         # 境界条件の分析
         print("\n境界条件の分析")

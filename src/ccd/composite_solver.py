@@ -53,12 +53,16 @@ class CCDCompositeSolver(CCDSolver):
         self.scaling_params = scaling_params or {}
         self.regularization_params = regularization_params or {}
 
+        # 係数が指定されている場合はgrid_configに設定
+        if coeffs is not None:
+            grid_config.coeffs = coeffs
+
         # 親クラスのコンストラクタを呼び出し
-        # 係数やソルバー設定も適切に渡す
+        # 係数はすでにgrid_configに設定されているため、ここではcoeffsを指定しない
         solver_kwargs = kwargs.copy()
         solver_kwargs["use_iterative"] = not use_direct_solver
 
-        super().__init__(grid_config, coeffs=coeffs, **solver_kwargs)
+        super().__init__(grid_config, **solver_kwargs)
 
         # 変換パイプラインを初期化
         self.transformer = TransformerFactory.create_transformation_pipeline(

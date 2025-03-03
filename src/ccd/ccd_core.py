@@ -13,9 +13,16 @@ class GridConfig:
     # 境界条件の設定
     dirichlet_values: Optional[List[float]] = None  # ディリクレ境界条件値 [左端, 右端]
     neumann_values: Optional[List[float]] = None  # ノイマン境界条件値 [左端, 右端]
+    
+    # 係数の設定
+    coeffs: Optional[List[float]] = None  # [a, b, c, d] 係数リスト
 
     def __post_init__(self):
-        """初期化後の処理 - 単一値からリストへの変換のみ行う"""
+        """初期化後の処理 - 係数設定と境界条件設定の処理"""
+        # デフォルト係数の設定
+        if self.coeffs is None:
+            self.coeffs = [1.0, 0.0, 0.0, 0.0]
+            
         # 単一値が指定された場合にリストに変換
         if self.dirichlet_values is not None and not isinstance(
             self.dirichlet_values, (list, tuple)
@@ -29,13 +36,33 @@ class GridConfig:
 
     @property
     def is_dirichlet(self) -> bool:
-        """ディリクレ境界条件が有効かどうかを返す"""
-        return self.dirichlet_values is not None
+        """
+        ディリクレ境界条件が有効かどうかを返す
+        coeffs=[1,0,0,0]の場合は常にFalse
+        """
+        if self.dirichlet_values is None:
+            return False
+        
+        # coeffs=[1,0,0,0]の場合はFalse
+        if self.coeffs == [1.0, 0.0, 0.0, 0.0]:
+            return False
+            
+        return True
 
     @property
     def is_neumann(self) -> bool:
-        """ノイマン境界条件が有効かどうかを返す"""
-        return self.neumann_values is not None
+        """
+        ノイマン境界条件が有効かどうかを返す
+        coeffs=[0,1,0,0]の場合は常にFalse
+        """
+        if self.neumann_values is None:
+            return False
+            
+        # coeffs=[0,1,0,0]の場合はFalse
+        if self.coeffs == [0.0, 1.0, 0.0, 0.0]:
+            return False
+            
+        return True
 
 
 class CCDLeftHandBuilder:
@@ -183,6 +210,10 @@ class CCDLeftHandBuilder:
         """左辺のブロック行列全体を生成"""
         n, h = grid_config.n_points, grid_config.h
 
+        # coeffsが指定されていない場合はgrid_configから取得
+        if coeffs is None:
+            coeffs = grid_config.coeffs
+
         # 境界条件の状態を決定
         if dirichlet_enabled is None:
             dirichlet_enabled = grid_config.is_dirichlet
@@ -254,12 +285,19 @@ class CCDRightHandBuilder:
         neumann_enabled: bool = None,
     ) -> jnp.ndarray:
         """関数値から右辺ベクトルを生成"""
-        # デフォルト係数
+        # coeffsが指定されていない場合はgrid_configから取得
         if coeffs is None:
-            coeffs = [1.0, 0.0, 0.0, 0.0]
+            coeffs = grid_config.coeffs
 
         n = grid_config.n_points
         depth = 4
+
+        # 境界条件の状態を決定
+        if dirichlet_enabled is None:
+            dirichlet_enabled = grid_config.is_dirichlet
+
+        if neumann_enabled is None:
+            neumann_enabled = grid_config.is_neumann
 
         # 境界値
         dirichlet_values = (
@@ -355,6 +393,10 @@ class CCDSystemBuilder:
         neumann_enabled: bool = None,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """線形方程式系 Lx = b を構築する"""
+        # coeffsが指定されていない場合はgrid_configから取得
+        if coeffs is None:
+            coeffs = grid_config.coeffs
+            
         # 境界条件の状態を決定
         if dirichlet_enabled is None:
             dirichlet_enabled = grid_config.is_dirichlet

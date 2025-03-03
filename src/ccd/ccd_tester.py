@@ -20,7 +20,7 @@ class CCDMethodTester:
 
     def __init__(
         self,
-        solver_class: Type[CCDSolver],  # type: ignore
+        solver_class: Type[CCDSolver],
         grid_config: GridConfig,
         x_range: Tuple[float, float],
         solver_kwargs: Optional[Dict[str, Any]] = None,
@@ -60,10 +60,11 @@ class CCDMethodTester:
         # ディリクレ境界条件とノイマン境界条件の両方に対応
         boundary_grid_config = self._create_boundary_grid_config(first_test_func)
 
-        # ソルバーの初期化
+        # ソルバーの初期化（coeffsはgrid_configに含まれるため、別途指定しない）
         solver_kwargs_copy = self.solver_kwargs.copy()
-        if "coeffs" not in solver_kwargs_copy and self.coeffs is not None:
-            solver_kwargs_copy["coeffs"] = self.coeffs
+        if "coeffs" in solver_kwargs_copy:
+            # solver_kwargsにcoeffsが指定されている場合は削除（grid_configに設定済み）
+            del solver_kwargs_copy["coeffs"]
 
         self.solver = solver_class(boundary_grid_config, **solver_kwargs_copy)
         self.solver_name = solver_class.__name__
@@ -92,6 +93,7 @@ class CCDMethodTester:
             h=self.original_grid_config.h,
             dirichlet_values=[dirichlet_left, dirichlet_right],
             neumann_values=[neumann_left, neumann_right],
+            coeffs=self.coeffs  # 係数も設定
         )
 
     def compute_errors(
@@ -120,15 +122,15 @@ class CCDMethodTester:
         analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
         analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
 
-        # ソルバーのグリッド設定も更新（新しいソルバーを作成）
+        # ソルバーの初期化（coeffsはすでにgrid_configに含まれている）
         solver_kwargs_copy = self.solver_kwargs.copy()
-        if "coeffs" not in solver_kwargs_copy and self.coeffs is not None:
-            solver_kwargs_copy["coeffs"] = self.coeffs
+        if "coeffs" in solver_kwargs_copy:
+            del solver_kwargs_copy["coeffs"]
 
         self.solver = self.solver_class(boundary_grid_config, **solver_kwargs_copy)
 
         # 係数に基づいて入力関数値を計算
-        a, b, c, d = self.coeffs
+        a, b, c, d = boundary_grid_config.coeffs
         f_values = (
             a * analytical_psi
             + b * analytical_df
@@ -214,7 +216,7 @@ class CCDMethodTester:
                 analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
 
                 # 係数に基づいて入力関数値を計算
-                a, b, c, d = self.coeffs
+                a, b, c, d = boundary_grid_config.coeffs
                 f_values = (
                     a * analytical_psi
                     + b * analytical_df
