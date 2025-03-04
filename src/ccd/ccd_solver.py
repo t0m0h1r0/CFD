@@ -2,6 +2,7 @@
 CCD法ソルバーモジュール
 
 結合コンパクト差分法による微分計算クラスを提供します。
+GridConfigの拡張境界条件管理を利用します。
 """
 
 import jax.numpy as jnp
@@ -85,6 +86,7 @@ class CCDSolver:
         use_iterative: bool = False,
         solver_kwargs: Optional[dict] = None,
         system_builder: Optional[CCDSystemBuilder] = None,
+        enable_boundary_correction: bool = None,
     ):
         """
         CCDソルバーの初期化
@@ -95,12 +97,17 @@ class CCDSolver:
             use_iterative: 反復法を使用するかどうか
             solver_kwargs: 線形ソルバーのパラメータ
             system_builder: CCDSystemBuilderのインスタンス。Noneの場合は新規作成
+            enable_boundary_correction: 境界補正を有効にするかどうか
         """
         self.grid_config = grid_config
 
         # 係数を設定 - grid_configに保存
         if coeffs is not None:
             self.grid_config.coeffs = coeffs
+        
+        # 境界補正の設定
+        if enable_boundary_correction is not None:
+            self.grid_config.enable_boundary_correction = enable_boundary_correction
         
         # 係数への参照を保持（後方互換性のため）
         self.coeffs = self.grid_config.coeffs

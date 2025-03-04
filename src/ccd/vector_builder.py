@@ -2,6 +2,7 @@
 ベクトルビルダーモジュール
 
 CCD法の右辺ベクトルを生成するクラスを提供します。
+GridConfigの拡張された境界条件管理を利用します。
 """
 
 import jax.numpy as jnp
@@ -36,14 +37,6 @@ class CCDRightHandBuilder:
         if neumann_enabled is None:
             neumann_enabled = grid_config.is_neumann
 
-        # 境界値
-        dirichlet_values = (
-            grid_config.dirichlet_values if grid_config.is_dirichlet else [0.0, 0.0]
-        )
-        neumann_values = (
-            grid_config.neumann_values if grid_config.is_neumann else [0.0, 0.0]
-        )
-
         # 右辺ベクトルを生成
         rhs = jnp.zeros(n * depth)
 
@@ -59,11 +52,15 @@ class CCDRightHandBuilder:
 
         # 境界条件を設定
         if dirichlet_enabled:
-            rhs = rhs.at[left_dir_idx].set(dirichlet_values[0])
-            rhs = rhs.at[right_dir_idx].set(dirichlet_values[1])
+            # GridConfigから最適化された境界値を取得
+            left_value, right_value = grid_config.get_dirichlet_boundary_values()
+            rhs = rhs.at[left_dir_idx].set(left_value)
+            rhs = rhs.at[right_dir_idx].set(right_value)
 
         if neumann_enabled:
-            rhs = rhs.at[left_neu_idx].set(neumann_values[0])
-            rhs = rhs.at[right_neu_idx].set(neumann_values[1])
+            # GridConfigからノイマン境界値を取得
+            left_value, right_value = grid_config.get_neumann_boundary_values()
+            rhs = rhs.at[left_neu_idx].set(left_value)
+            rhs = rhs.at[right_neu_idx].set(right_value)
 
         return rhs

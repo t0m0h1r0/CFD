@@ -2,6 +2,7 @@
 結果抽出モジュール
 
 CCD法の解ベクトルから各成分を抽出するクラスを提供します。
+境界条件による補正を実装します。
 """
 
 import jax.numpy as jnp
@@ -42,7 +43,12 @@ class CCDResultExtractor:
 
         # ディリクレ境界条件が有効な場合、境界値を明示的に設定
         if grid_config.is_dirichlet and grid_config.dirichlet_values is not None:
-            psi0 = psi0.at[0].set(grid_config.dirichlet_values[0])
-            psi0 = psi0.at[n - 1].set(grid_config.dirichlet_values[1])
+            # 境界条件による補正を適用
+            psi0 = grid_config.apply_boundary_correction(psi0)
+            
+            # 補正後、境界値を厳密に設定する場合
+            if grid_config.enable_boundary_correction:
+                psi0 = psi0.at[0].set(grid_config.dirichlet_values[0])
+                psi0 = psi0.at[n - 1].set(grid_config.dirichlet_values[1])
 
         return psi0, psi1, psi2, psi3

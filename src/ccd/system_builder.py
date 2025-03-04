@@ -2,6 +2,7 @@
 システムビルダーモジュール
 
 CCD法の方程式系全体の構築を担当するクラスを提供します。
+GridConfigの境界条件管理機能を利用します。
 """
 
 import jax.numpy as jnp

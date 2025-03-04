@@ -2,6 +2,7 @@
 統合CCDソルバー
 
 スケーリングと正則化を組み合わせたCCDソルバーを提供します。
+GridConfigの拡張境界条件管理を利用します。
 """
 
 import jax
@@ -29,6 +30,7 @@ class CCDCompositeSolver(CCDSolver):
         regularization_params: Optional[Dict[str, Any]] = None,
         coeffs: Optional[List[float]] = None,
         use_direct_solver: bool = True,
+        enable_boundary_correction: bool = None,
         **kwargs,
     ):
         """
@@ -42,6 +44,7 @@ class CCDCompositeSolver(CCDSolver):
             regularization_params: 正則化パラメータ
             coeffs: 微分係数 [a, b, c, d]
             use_direct_solver: 直接法を使用するかどうか
+            enable_boundary_correction: 境界補正を有効にするかどうか
             **kwargs: 追加のパラメータ（親クラスに渡される）
         """
         # プラグインを読み込み
@@ -56,6 +59,10 @@ class CCDCompositeSolver(CCDSolver):
         # 係数が指定されている場合はgrid_configに設定
         if coeffs is not None:
             grid_config.coeffs = coeffs
+            
+        # 境界補正の設定
+        if enable_boundary_correction is not None:
+            grid_config.enable_boundary_correction = enable_boundary_correction
 
         # 親クラスのコンストラクタを呼び出し
         # 係数はすでにgrid_configに設定されているため、ここではcoeffsを指定しない
@@ -144,6 +151,7 @@ class CCDCompositeSolver(CCDSolver):
         regularization: str = "none",
         params: Optional[Dict[str, Any]] = None,
         coeffs: Optional[List[float]] = None,
+        enable_boundary_correction: bool = None,
         **kwargs,
     ) -> "CCDCompositeSolver":
         """
@@ -155,6 +163,7 @@ class CCDCompositeSolver(CCDSolver):
             regularization: 正則化戦略名
             params: パラメータの辞書
             coeffs: 微分係数 [a, b, c, d]
+            enable_boundary_correction: 境界補正を有効にするかどうか
             **kwargs: 追加のパラメータ
 
         Returns:
@@ -198,5 +207,6 @@ class CCDCompositeSolver(CCDSolver):
             scaling_params=scaling_params,
             regularization_params=regularization_params,
             coeffs=coeffs,
+            enable_boundary_correction=enable_boundary_correction,
             **kwargs,
         )
