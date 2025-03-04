@@ -7,7 +7,7 @@ CCD法ソルバーモジュール
 import jax.numpy as jnp
 import jax
 from functools import partial
-from typing import Tuple, List, Optional, Protocol
+from typing import Tuple, List, Optional, Protocol, Dict, Any
 import jax.scipy.sparse.linalg as jspl
 
 from grid_config import GridConfig
@@ -64,7 +64,7 @@ class IterativeSolver:
 
     def solve(self, L: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
         """GMRES法で線形方程式を解く"""
-        solution, info = jspl.gmres(
+        solution, _ = jspl.gmres(
             L,
             b,
             tol=self.tol,
@@ -81,56 +81,57 @@ class CCDSolver:
     def __init__(
         self,
         grid_config: GridConfig,
-        coeffs: Optional[List[float]] = None,
         use_iterative: bool = False,
-        solver_kwargs: Optional[dict] = None,
+        enable_boundary_correction: bool = None,
+        solver_kwargs: Optional[Dict[str, Any]] = None,
         system_builder: Optional[CCDSystemBuilder] = None,
+        coeffs: Optional[List[float]] = None,
     ):
         """
         CCDソルバーの初期化
 
         Args:
             grid_config: グリッド設定
-            coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用 (f = psi)
             use_iterative: 反復法を使用するかどうか
+            enable_boundary_correction: 境界補正を有効にするかどうか
             solver_kwargs: 線形ソルバーのパラメータ
-            system_builder: CCDSystemBuilderのインスタンス。Noneの場合は新規作成
+            system_builder: CCDSystemBuilderのインスタンス
+            coeffs: 係数 [a, b, c, d]
         """
         self.grid_config = grid_config
 
-        # 係数を設定 - grid_configに保存
+        # 係数とフラグの設定
         if coeffs is not None:
             self.grid_config.coeffs = coeffs
         
-        # 係数への参照を保持（後方互換性のため）
+        if enable_boundary_correction is not None:
+            self.grid_config.enable_boundary_correction = enable_boundary_correction
+        
+        # 係数への参照（アクセスしやすさのため）
         self.coeffs = self.grid_config.coeffs
 
-        # システムビルダーの初期化または使用
+        # システムビルダーの初期化
         self.system_builder = system_builder if system_builder else create_system_builder()
 
-        # 左辺行列の構築
+        # 左辺行列の構築（初期化時に一度だけ）
         self.L, _ = self.system_builder.build_system(
             grid_config,
             jnp.zeros(grid_config.n_points),
-            self.coeffs,
         )
 
         # 行列の特性を分析して最適なソルバーを選択
         self._select_solver(use_iterative, solver_kwargs or {})
 
-    def _select_solver(self, use_iterative: bool, solver_kwargs: dict):
-        """ソルバーの選択
-
+    def _select_solver(self, use_iterative: bool, solver_kwargs: Dict[str, Any]) -> None:
+        """
+        適切なソルバーを選択
+        
         Args:
             use_iterative: 反復法を使用するかどうか
             solver_kwargs: ソルバーのパラメータ
         """
         self.use_iterative = use_iterative
-
-        if use_iterative:
-            self.solver = IterativeSolver(**solver_kwargs)
-        else:
-            self.solver = DirectSolver()
+        self.solver = IterativeSolver(**solver_kwargs) if use_iterative else DirectSolver()
 
     @partial(jax.jit, static_argnums=(0,))
     def solve(
@@ -146,11 +147,7 @@ class CCDSolver:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
         # 右辺ベクトルを構築
-        _, b = self.system_builder.build_system(
-            self.grid_config,
-            f,
-            self.coeffs,
-        )
+        _, b = self.system_builder.build_system(self.grid_config, f)
 
         # 線形方程式を解く
         solution = self.solver.solve(self.L, b)
@@ -159,7 +156,6 @@ class CCDSolver:
         return self.system_builder.extract_results(self.grid_config, solution)
 
 
-# ベクトル化対応版のCCDSolverクラス
 class VectorizedCCDSolver(CCDSolver):
     """複数の関数に同時に適用可能なCCDソルバー"""
 
@@ -176,12 +172,5 @@ class VectorizedCCDSolver(CCDSolver):
         Returns:
             (ψs, ψ's, ψ''s, ψ'''s) 各要素は (batch_size, n_points) の形状
         """
-        # バッチサイズとグリッド点数を取得
-        batch_size, n_points = fs.shape
-
-        # 各バッチについて個別に計算する関数を定義
-        def solve_one(f):
-            return self.solve(f)
-
-        # バッチ全体に対して適用 (vmap)
-        return jax.vmap(solve_one)(fs)
+        # vmap: 関数をバッチ処理可能にする
+        return jax.vmap(self.solve)(fs)
