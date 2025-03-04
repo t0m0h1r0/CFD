@@ -2,7 +2,6 @@
 ベクトルビルダーモジュール
 
 CCD法の右辺ベクトルを生成するクラスを提供します。
-GridConfigの拡張された境界条件管理を利用します。
 """
 
 import jax.numpy as jnp
@@ -22,20 +21,25 @@ class CCDRightHandBuilder:
         dirichlet_enabled: bool = None,
         neumann_enabled: bool = None,
     ) -> jnp.ndarray:
-        """関数値から右辺ベクトルを生成"""
-        # coeffsが指定されていない場合はgrid_configから取得
-        if coeffs is None:
-            coeffs = grid_config.coeffs
-
+        """
+        関数値から右辺ベクトルを生成
+        
+        Args:
+            grid_config: グリッド設定
+            values: 関数値
+            coeffs: 係数（省略時はgrid_configから取得）
+            dirichlet_enabled: ディリクレ境界条件の有効/無効（省略時はgrid_configから判断）
+            neumann_enabled: ノイマン境界条件の有効/無効（省略時はgrid_configから判断）
+            
+        Returns:
+            右辺ベクトル
+        """
+        # 境界条件と係数の状態を決定
+        use_dirichlet = grid_config.is_dirichlet if dirichlet_enabled is None else dirichlet_enabled
+        use_neumann = grid_config.is_neumann if neumann_enabled is None else neumann_enabled
+        
         n = grid_config.n_points
         depth = 4
-
-        # 境界条件の状態を決定
-        if dirichlet_enabled is None:
-            dirichlet_enabled = grid_config.is_dirichlet
-
-        if neumann_enabled is None:
-            neumann_enabled = grid_config.is_neumann
 
         # 右辺ベクトルを生成
         rhs = jnp.zeros(n * depth)
@@ -45,20 +49,18 @@ class CCDRightHandBuilder:
         rhs = rhs.at[indices].set(values)
 
         # 境界条件インデックス
-        left_neu_idx = 1  # 左端ノイマン条件
-        left_dir_idx = 3  # 左端ディリクレ条件
-        right_neu_idx = (n - 1) * depth + 1  # 右端ノイマン条件
-        right_dir_idx = n * depth - 1  # 右端ディリクレ条件
+        left_neu_idx = 1
+        left_dir_idx = 3
+        right_neu_idx = (n - 1) * depth + 1
+        right_dir_idx = n * depth - 1
 
         # 境界条件を設定
-        if dirichlet_enabled:
-            # GridConfigから最適化された境界値を取得
+        if use_dirichlet:
             left_value, right_value = grid_config.get_dirichlet_boundary_values()
             rhs = rhs.at[left_dir_idx].set(left_value)
             rhs = rhs.at[right_dir_idx].set(right_value)
 
-        if neumann_enabled:
-            # GridConfigからノイマン境界値を取得
+        if use_neumann:
             left_value, right_value = grid_config.get_neumann_boundary_values()
             rhs = rhs.at[left_neu_idx].set(left_value)
             rhs = rhs.at[right_neu_idx].set(right_value)

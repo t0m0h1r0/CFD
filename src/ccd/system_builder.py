@@ -2,7 +2,6 @@
 システムビルダーモジュール
 
 CCD法の方程式系全体の構築を担当するクラスを提供します。
-GridConfigの境界条件管理機能を利用します。
 """
 
 import jax.numpy as jnp
@@ -23,7 +22,14 @@ class CCDSystemBuilder:
         vector_builder: CCDRightHandBuilder,
         result_extractor: CCDResultExtractor,
     ):
-        """コンポーネントの初期化"""
+        """
+        コンポーネントの初期化
+        
+        Args:
+            matrix_builder: 左辺行列ビルダー
+            vector_builder: 右辺ベクトルビルダー
+            result_extractor: 結果抽出器
+        """
         self.matrix_builder = matrix_builder
         self.vector_builder = vector_builder
         self.result_extractor = result_extractor
@@ -36,33 +42,38 @@ class CCDSystemBuilder:
         dirichlet_enabled: bool = None,
         neumann_enabled: bool = None,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """線形方程式系 Lx = b を構築する"""
-        # coeffsが指定されていない場合はgrid_configから取得
-        if coeffs is None:
-            coeffs = grid_config.coeffs
+        """
+        線形方程式系 Lx = b を構築する
+        
+        Args:
+            grid_config: グリッド設定
+            values: 関数値
+            coeffs: 係数（省略時はgrid_configから取得）
+            dirichlet_enabled: ディリクレ境界条件の有効/無効（省略時はgrid_configから判断）
+            neumann_enabled: ノイマン境界条件の有効/無効（省略時はgrid_configから判断）
             
-        # 境界条件の状態を決定
-        if dirichlet_enabled is None:
-            dirichlet_enabled = grid_config.is_dirichlet
+        Returns:
+            (左辺行列, 右辺ベクトル)のタプル
+        """
+        # 境界条件と係数の状態を決定
+        use_dirichlet = grid_config.is_dirichlet if dirichlet_enabled is None else dirichlet_enabled
+        use_neumann = grid_config.is_neumann if neumann_enabled is None else neumann_enabled
+        use_coeffs = grid_config.coeffs if coeffs is None else coeffs
 
-        if neumann_enabled is None:
-            neumann_enabled = grid_config.is_neumann
-
-        # 左辺行列の構築
+        # 左辺行列と右辺ベクトルを構築
         L = self.matrix_builder.build_matrix(
-            grid_config,
-            coeffs,
-            dirichlet_enabled=dirichlet_enabled,
-            neumann_enabled=neumann_enabled,
+            grid_config, 
+            use_coeffs,
+            dirichlet_enabled=use_dirichlet,
+            neumann_enabled=use_neumann,
         )
 
-        # 右辺ベクトルの構築
         b = self.vector_builder.build_vector(
             grid_config,
             values,
-            coeffs,
-            dirichlet_enabled=dirichlet_enabled,
-            neumann_enabled=neumann_enabled,
+            use_coeffs,
+            dirichlet_enabled=use_dirichlet,
+            neumann_enabled=use_neumann,
         )
 
         return L, b
@@ -70,5 +81,14 @@ class CCDSystemBuilder:
     def extract_results(
         self, grid_config: GridConfig, solution: jnp.ndarray
     ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        """解ベクトルから関数値と各階導関数を抽出する"""
+        """
+        解ベクトルから関数値と各階導関数を抽出する
+        
+        Args:
+            grid_config: グリッド設定
+            solution: 解ベクトル
+            
+        Returns:
+            (ψ, ψ', ψ'', ψ''')のタプル
+        """
         return self.result_extractor.extract_components(grid_config, solution)
