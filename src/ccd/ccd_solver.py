@@ -1,16 +1,18 @@
+"""
+CCD法ソルバーモジュール
+
+結合コンパクト差分法による微分計算クラスを提供します。
+"""
+
 import jax.numpy as jnp
 import jax
 from functools import partial
 from typing import Tuple, List, Optional, Protocol
 import jax.scipy.sparse.linalg as jspl
 
-from ccd_core import (
-    GridConfig,
-    CCDLeftHandBuilder,
-    CCDRightHandBuilder,
-    CCDResultExtractor,
-    CCDSystemBuilder,
-)
+from grid_config import GridConfig
+from system_builder import CCDSystemBuilder
+from ccd_core import create_system_builder
 
 
 class LinearSolver(Protocol):
@@ -82,6 +84,7 @@ class CCDSolver:
         coeffs: Optional[List[float]] = None,
         use_iterative: bool = False,
         solver_kwargs: Optional[dict] = None,
+        system_builder: Optional[CCDSystemBuilder] = None,
     ):
         """
         CCDソルバーの初期化
@@ -91,6 +94,7 @@ class CCDSolver:
             coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用 (f = psi)
             use_iterative: 反復法を使用するかどうか
             solver_kwargs: 線形ソルバーのパラメータ
+            system_builder: CCDSystemBuilderのインスタンス。Noneの場合は新規作成
         """
         self.grid_config = grid_config
 
@@ -101,10 +105,8 @@ class CCDSolver:
         # 係数への参照を保持（後方互換性のため）
         self.coeffs = self.grid_config.coeffs
 
-        # システムビルダーの初期化
-        self.system_builder = CCDSystemBuilder(
-            CCDLeftHandBuilder(), CCDRightHandBuilder(), CCDResultExtractor()
-        )
+        # システムビルダーの初期化または使用
+        self.system_builder = system_builder if system_builder else create_system_builder()
 
         # 左辺行列の構築
         self.L, _ = self.system_builder.build_system(
