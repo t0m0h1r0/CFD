@@ -93,7 +93,7 @@ class CCDMethodTester:
             h=self.original_grid_config.h,
             dirichlet_values=[dirichlet_left, dirichlet_right],
             neumann_values=[neumann_left, neumann_right],
-            coeffs=self.coeffs  # 係数も設定
+            coeffs=self.coeffs,  # 係数も設定
         )
 
     def compute_errors(

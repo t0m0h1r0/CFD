@@ -23,21 +23,25 @@ class CCDRightHandBuilder:
     ) -> cp.ndarray:
         """
         関数値から右辺ベクトルを生成
-        
+
         Args:
             grid_config: グリッド設定
             values: 関数値
             coeffs: 係数（省略時はgrid_configから取得）
             dirichlet_enabled: ディリクレ境界条件の有効/無効（省略時はgrid_configから判断）
             neumann_enabled: ノイマン境界条件の有効/無効（省略時はgrid_configから判断）
-            
+
         Returns:
             右辺ベクトル
         """
         # 境界条件と係数の状態を決定
-        use_dirichlet = grid_config.is_dirichlet if dirichlet_enabled is None else dirichlet_enabled
-        use_neumann = grid_config.is_neumann if neumann_enabled is None else neumann_enabled
-        
+        use_dirichlet = (
+            grid_config.is_dirichlet if dirichlet_enabled is None else dirichlet_enabled
+        )
+        use_neumann = (
+            grid_config.is_neumann if neumann_enabled is None else neumann_enabled
+        )
+
         n = grid_config.n_points
         depth = 4
 

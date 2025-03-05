@@ -5,7 +5,6 @@
 """
 
 import cupy as cp
-from functools import partial
 from typing import Dict, Any, Optional, List, Tuple
 
 from grid_config import GridConfig
@@ -57,7 +56,7 @@ class CCDCompositeSolver(CCDSolver):
         # 係数と境界補正の設定
         if coeffs is not None:
             grid_config.coeffs = coeffs
-            
+
         if enable_boundary_correction is not None:
             grid_config.enable_boundary_correction = enable_boundary_correction
 
@@ -77,7 +76,9 @@ class CCDCompositeSolver(CCDSolver):
         )
 
         # 行列を変換
-        self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(self.L)
+        self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(
+            self.L
+        )
 
     def solve(
         self, f: cp.ndarray

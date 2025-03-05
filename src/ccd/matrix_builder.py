@@ -53,9 +53,7 @@ class CCDLeftHandBuilder:
         coeffs: Optional[List[float]] = None,
         dirichlet_enabled: bool = True,
         neumann_enabled: bool = False,
-    ) -> Tuple[
-        cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray
-    ]:
+    ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """境界点のブロック行列を生成"""
         # デフォルト係数
         if coeffs is None:
@@ -203,7 +201,7 @@ class CCDLeftHandBuilder:
         B0, C0, D0, ZR, AR, BR = self._build_boundary_blocks(
             coeffs, dirichlet_enabled=dirichlet_enabled, neumann_enabled=neumann_enabled
         )
-        
+
         # 次数行列
         DEGREE = cp.array(
             [
@@ -232,20 +230,22 @@ class CCDLeftHandBuilder:
 
         # 左境界
         L[:depth, :depth] = B0
-        L[:depth, depth:2*depth] = C0
-        L[:depth, 2*depth:3*depth] = D0
+        L[:depth, depth : 2 * depth] = C0
+        L[:depth, 2 * depth : 3 * depth] = D0
 
         # 内部点
         for i in range(1, n - 1):
             row_start = depth * i
-            L[row_start:row_start + depth, row_start - depth:row_start] = A
-            L[row_start:row_start + depth, row_start:row_start + depth] = B
-            L[row_start:row_start + depth, row_start + depth:row_start + 2 * depth] = C
+            L[row_start : row_start + depth, row_start - depth : row_start] = A
+            L[row_start : row_start + depth, row_start : row_start + depth] = B
+            L[
+                row_start : row_start + depth, row_start + depth : row_start + 2 * depth
+            ] = C
 
         # 右境界
         row_start = depth * (n - 1)
-        L[row_start:row_start + depth, row_start - 2 * depth:row_start - depth] = ZR
-        L[row_start:row_start + depth, row_start - depth:row_start] = AR
-        L[row_start:row_start + depth, row_start:row_start + depth] = BR
+        L[row_start : row_start + depth, row_start - 2 * depth : row_start - depth] = ZR
+        L[row_start : row_start + depth, row_start - depth : row_start] = AR
+        L[row_start : row_start + depth, row_start : row_start + depth] = BR
 
         return L

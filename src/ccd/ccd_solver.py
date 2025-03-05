@@ -7,8 +7,7 @@ CuPy対応結合コンパクト差分法ソルバーモジュール
 import cupy as cp
 import cupyx.scipy.sparse.linalg as cpx_spla
 import cupyx.scipy.sparse as cpx_sparse
-from functools import partial
-from typing import Tuple, List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any
 
 from grid_config import GridConfig
 from system_builder import CCDSystemBuilder
@@ -23,7 +22,7 @@ class DirectSolver:
         # 密行列を疎行列に変換
         if not isinstance(L, cpx_sparse.spmatrix):
             L = cpx_sparse.csr_matrix(L)
-        
+
         return cpx_spla.spsolve(L, b)
 
 
@@ -39,7 +38,7 @@ class IterativeSolver:
     ):
         """
         初期化パラメータ
-        
+
         Args:
             tol: 相対許容誤差
             atol: 絶対許容誤差
@@ -56,14 +55,14 @@ class IterativeSolver:
         # 密行列を疎行列に変換
         if not isinstance(L, cpx_sparse.spmatrix):
             L = cpx_sparse.csr_matrix(L)
-        
+
         solution, _ = cpx_spla.gmres(
-            L, 
-            b, 
-            tol=self.tol, 
-            atol=self.atol, 
-            restart=self.restart, 
-            maxiter=self.maxiter
+            L,
+            b,
+            tol=self.tol,
+            atol=self.atol,
+            restart=self.restart,
+            maxiter=self.maxiter,
         )
         return solution
 
@@ -99,29 +98,31 @@ class CCDSolver:
         # 係数とフラグの設定
         if coeffs is not None:
             self.grid_config.coeffs = coeffs
-        
+
         if enable_boundary_correction is not None:
             self.grid_config.enable_boundary_correction = enable_boundary_correction
-        
+
         # 係数への参照
         self.coeffs = self.grid_config.coeffs
 
         # システムビルダーの初期化
-        self.system_builder = system_builder if system_builder else create_system_builder()
+        self.system_builder = (
+            system_builder if system_builder else create_system_builder()
+        )
 
         # 左辺行列の構築（CuPy配列に変換）
         # デフォルトの零ベクトルもCuPyに変換
         zero_vector = cp.zeros(grid_config.n_points)
-        
+
         # システムビルダーを使用して行列を作成
         self.L, _ = self.system_builder.build_system(grid_config, zero_vector)
 
         # ソルバーの選択（CuPy対応）
         solver_kwargs = solver_kwargs or {}
         self.use_iterative = use_iterative
-        self.solver = (IterativeSolver(**solver_kwargs) 
-                       if use_iterative 
-                       else DirectSolver())
+        self.solver = (
+            IterativeSolver(**solver_kwargs) if use_iterative else DirectSolver()
+        )
 
     def solve(self, f):
         """

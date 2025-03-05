@@ -24,7 +24,7 @@ class CCDSystemBuilder:
     ):
         """
         コンポーネントの初期化
-        
+
         Args:
             matrix_builder: 左辺行列ビルダー
             vector_builder: 右辺ベクトルビルダー
@@ -44,25 +44,29 @@ class CCDSystemBuilder:
     ) -> Tuple[cp.ndarray, cp.ndarray]:
         """
         線形方程式系 Lx = b を構築する
-        
+
         Args:
             grid_config: グリッド設定
             values: 関数値
             coeffs: 係数（省略時はgrid_configから取得）
             dirichlet_enabled: ディリクレ境界条件の有効/無効（省略時はgrid_configから判断）
             neumann_enabled: ノイマン境界条件の有効/無効（省略時はgrid_configから判断）
-            
+
         Returns:
             (左辺行列, 右辺ベクトル)のタプル
         """
         # 境界条件と係数の状態を決定
-        use_dirichlet = grid_config.is_dirichlet if dirichlet_enabled is None else dirichlet_enabled
-        use_neumann = grid_config.is_neumann if neumann_enabled is None else neumann_enabled
+        use_dirichlet = (
+            grid_config.is_dirichlet if dirichlet_enabled is None else dirichlet_enabled
+        )
+        use_neumann = (
+            grid_config.is_neumann if neumann_enabled is None else neumann_enabled
+        )
         use_coeffs = grid_config.coeffs if coeffs is None else coeffs
 
         # 左辺行列と右辺ベクトルを構築
         L = self.matrix_builder.build_matrix(
-            grid_config, 
+            grid_config,
             use_coeffs,
             dirichlet_enabled=use_dirichlet,
             neumann_enabled=use_neumann,
@@ -83,11 +87,11 @@ class CCDSystemBuilder:
     ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
         解ベクトルから関数値と各階導関数を抽出する
-        
+
         Args:
             grid_config: グリッド設定
             solution: 解ベクトル
-            
+
         Returns:
             (ψ, ψ', ψ'', ψ''')のタプル
         """

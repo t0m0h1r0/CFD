@@ -13,7 +13,7 @@ from ccd_solver import CCDSolver, VectorizedCCDSolver
 
 class CCDSolverFactory:
     """CCD法ソルバーを生成するファクトリークラス"""
-    
+
     @staticmethod
     def create_solver(
         grid_config: GridConfig,
@@ -25,7 +25,7 @@ class CCDSolverFactory:
     ) -> CCDSolver:
         """
         適切なCCDソルバーインスタンスを生成
-        
+
         Args:
             grid_config: グリッド設定
             solver_type: ソルバーの種類 ("standard" または "vectorized")
@@ -33,15 +33,15 @@ class CCDSolverFactory:
             coeffs: 係数 [a, b, c, d]
             solver_kwargs: ソルバーのパラメータ
             system_builder: システムビルダーのインスタンス
-            
+
         Returns:
             設定されたCCDソルバーインスタンス
-            
+
         Raises:
             ValueError: サポートされていないソルバータイプの場合
         """
         solver_kwargs = solver_kwargs or {}
-        
+
         # ソルバーの種類に基づいてクラスを選択
         if solver_type.lower() == "standard":
             solver_class = CCDSolver
@@ -49,21 +49,21 @@ class CCDSolverFactory:
             solver_class = VectorizedCCDSolver
         else:
             raise ValueError(f"サポートされていないソルバータイプ: {solver_type}")
-        
+
         # ソルバーのインスタンスを作成
         return solver_class(
             grid_config=grid_config,
             coeffs=coeffs,
             use_iterative=use_iterative,
             solver_kwargs=solver_kwargs,
-            system_builder=system_builder
+            system_builder=system_builder,
         )
-    
+
     @staticmethod
     def get_available_solver_types() -> List[str]:
         """
         利用可能なソルバータイプのリストを返す
-        
+
         Returns:
             ソルバータイプのリスト
         """

@@ -54,9 +54,7 @@ class SparseCCDLeftHandBuilder:
         coeffs: Optional[List[float]] = None,
         dirichlet_enabled: bool = True,
         neumann_enabled: bool = False,
-    ) -> Tuple[
-        cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray
-    ]:
+    ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """境界点のブロック行列を生成（CuPy対応）"""
         # デフォルト係数
         if coeffs is None:
@@ -124,7 +122,9 @@ class SparseCCDLeftHandBuilder:
         def update_block(block, row_index, new_row):
             """指定された行を更新"""
             result = block.copy()
-            result[row_index] = cp.array(new_row)  # ここでPythonのリストをCuPy配列に変換
+            result[row_index] = cp.array(
+                new_row
+            )  # ここでPythonのリストをCuPy配列に変換
             return result
 
         # ディリクレ境界条件
@@ -162,13 +162,13 @@ class SparseCCDLeftHandBuilder:
     ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, Tuple[int, int]]:
         """
         COO形式の疎行列データを生成（CuPy対応）
-        
+
         Args:
             grid_config: グリッド設定
             coeffs: 係数
             dirichlet_enabled: ディリクレ境界条件の有効/無効
             neumann_enabled: ノイマン境界条件の有効/無効
-        
+
         Returns:
             (行インデックス, 列インデックス, 値, 行列形状)
         """
@@ -190,7 +190,7 @@ class SparseCCDLeftHandBuilder:
         B0, C0, D0, ZR, AR, BR = self._build_boundary_blocks(
             coeffs, dirichlet_enabled=dirichlet_enabled, neumann_enabled=neumann_enabled
         )
-        
+
         # スケーリングを適用
         DEGREE = cp.array(
             [
@@ -200,7 +200,7 @@ class SparseCCDLeftHandBuilder:
                 [h**-3, h**-2, h**1, h**0],
             ]
         )
-        
+
         A *= DEGREE
         B *= DEGREE
         C *= DEGREE
@@ -214,12 +214,12 @@ class SparseCCDLeftHandBuilder:
         # 全体の行列サイズと深さ
         depth = 4
         matrix_size = depth * n
-        
+
         # COO形式のデータを格納するための配列
         row_indices = []
         col_indices = []
         values = []
-        
+
         # 左境界
         for i in range(depth):
             for j in range(depth):
@@ -228,26 +228,26 @@ class SparseCCDLeftHandBuilder:
                     row_indices.append(i)
                     col_indices.append(j)
                     values.append(B0[i, j])
-                
+
                 # C0ブロック
                 if C0[i, j] != 0:
                     row_indices.append(i)
                     col_indices.append(depth + j)
                     values.append(C0[i, j])
-                
+
                 # D0ブロック
                 if D0[i, j] != 0:
                     row_indices.append(i)
                     col_indices.append(2 * depth + j)
                     values.append(D0[i, j])
-        
+
         # 内部点
         for point_idx in range(1, n - 1):
             row_offset = depth * point_idx
             col_offset_left = depth * (point_idx - 1)
             col_offset_middle = depth * point_idx
             col_offset_right = depth * (point_idx + 1)
-            
+
             for i in range(depth):
                 for j in range(depth):
                     # Aブロック
@@ -255,25 +255,25 @@ class SparseCCDLeftHandBuilder:
                         row_indices.append(row_offset + i)
                         col_indices.append(col_offset_left + j)
                         values.append(A[i, j])
-                    
+
                     # Bブロック
                     if B[i, j] != 0:
                         row_indices.append(row_offset + i)
                         col_indices.append(col_offset_middle + j)
                         values.append(B[i, j])
-                    
+
                     # Cブロック
                     if C[i, j] != 0:
                         row_indices.append(row_offset + i)
                         col_indices.append(col_offset_right + j)
                         values.append(C[i, j])
-        
+
         # 右境界
         row_offset = depth * (n - 1)
         col_offset_left2 = depth * (n - 3)
         col_offset_left = depth * (n - 2)
         col_offset_right = depth * (n - 1)
-        
+
         for i in range(depth):
             for j in range(depth):
                 # ZRブロック
@@ -281,24 +281,24 @@ class SparseCCDLeftHandBuilder:
                     row_indices.append(row_offset + i)
                     col_indices.append(col_offset_left2 + j)
                     values.append(ZR[i, j])
-                
+
                 # ARブロック
                 if AR[i, j] != 0:
                     row_indices.append(row_offset + i)
                     col_indices.append(col_offset_left + j)
                     values.append(AR[i, j])
-                
+
                 # BRブロック
                 if BR[i, j] != 0:
                     row_indices.append(row_offset + i)
                     col_indices.append(col_offset_right + j)
                     values.append(BR[i, j])
-        
+
         # CuPy配列に変換
         row_indices = cp.array(row_indices, dtype=cp.int32)
         col_indices = cp.array(col_indices, dtype=cp.int32)
         values = cp.array(values, dtype=cp.float32)
-        
+
         return row_indices, col_indices, values, (matrix_size, matrix_size)
 
     def build_sparse_matrix(
@@ -310,13 +310,13 @@ class SparseCCDLeftHandBuilder:
     ):
         """
         CuPy BCOO疎行列を構築
-        
+
         Args:
             grid_config: グリッド設定
             coeffs: 行列の係数
             dirichlet_enabled: ディリクレ境界条件の有効/無効
             neumann_enabled: ノイマン境界条件の有効/無効
-        
+
         Returns:
             CuPyのBCOO疎行列
         """
@@ -324,7 +324,8 @@ class SparseCCDLeftHandBuilder:
         row_indices, col_indices, values, shape = self.build_matrix_coo_data(
             grid_config, coeffs, dirichlet_enabled, neumann_enabled
         )
-        
+
         # CuPyのBCOO行列を作成
         indices = cp.column_stack([row_indices, col_indices])
-        return cpx_sparse.bcoo_matrix((values, indices), shape=shape)
+
+        return cpx_sparse.coo_matrix((values, (row_indices, col_indices)), shape=shape)

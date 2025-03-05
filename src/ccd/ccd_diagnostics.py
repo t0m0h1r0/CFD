@@ -123,9 +123,7 @@ class CCDSolverDiagnostics:
         print("\n右端の境界条件に対応する左辺行列の行:")
         for i in right_idx:
             start_idx = max(0, i - 8)
-            print(
-                f"  行 {i}: ...{cp.around(L_test[i, start_idx : i + 1], decimals=3)}"
-            )
+            print(f"  行 {i}: ...{cp.around(L_test[i, start_idx : i + 1], decimals=3)}")
 
         return {
             "has_dirichlet": has_dirichlet,

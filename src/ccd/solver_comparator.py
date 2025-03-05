@@ -7,7 +7,6 @@
 from typing import List, Tuple, Dict, Optional
 import json
 import os
-import cupy as cp
 
 from grid_config import GridConfig
 from test_functions import TestFunction, TestFunctionFactory

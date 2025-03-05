@@ -14,7 +14,7 @@ from sparse_matrix_builder import SparseCCDLeftHandBuilder
 from vector_builder import CCDRightHandBuilder
 from result_extractor import CCDResultExtractor
 from plugin_loader import PluginLoader
-from transformation_pipeline import TransformationPipeline, TransformerFactory
+from transformation_pipeline import TransformerFactory
 
 
 class SparseCCDSolver:
@@ -30,7 +30,7 @@ class SparseCCDSolver:
     ):
         """
         スパースCCDソルバーの初期化
-        
+
         Args:
             grid_config: グリッド設定
             use_iterative: 反復法を使用するかどうか
@@ -46,37 +46,38 @@ class SparseCCDSolver:
         # 係数とフラグの設定
         if coeffs is not None:
             self.grid_config.coeffs = coeffs
-        
+
         if enable_boundary_correction is not None:
             self.grid_config.enable_boundary_correction = enable_boundary_correction
-        
+
         # ビルダーの初期化
         self.matrix_builder = SparseCCDLeftHandBuilder()
         self.vector_builder = CCDRightHandBuilder()
         self.result_extractor = CCDResultExtractor()
-        
+
         # 左辺行列の構築
-        row_indices, col_indices, values, matrix_shape = \
+        row_indices, col_indices, values, matrix_shape = (
             self.matrix_builder.build_matrix_coo_data(
                 grid_config,
                 dirichlet_enabled=grid_config.is_dirichlet,
-                neumann_enabled=grid_config.is_neumann
+                neumann_enabled=grid_config.is_neumann,
             )
-        
-        # CuPyのスパース行列に変換
-        indices = cp.column_stack([row_indices, col_indices])
-        self.L_sparse = cpx_sparse.bcoo_matrix((cp.asarray(values), indices), 
-                                                shape=matrix_shape)
-        
+        )
+
+        # With this:
+        self.L_sparse = cpx_sparse.coo_matrix(
+            (cp.asarray(values), (row_indices, col_indices)), shape=matrix_shape
+        )
+
         # ソルバーパラメータ
         solver_kwargs = solver_kwargs or {}
         self.use_iterative = use_iterative
-        
+
         # ソルバーパラメータ
-        self.tol = solver_kwargs.get('tol', 1e-10)
-        self.atol = solver_kwargs.get('atol', 1e-10)
-        self.maxiter = solver_kwargs.get('maxiter', 1000)
-        self.restart = solver_kwargs.get('restart', 50)
+        self.tol = solver_kwargs.get("tol", 1e-10)
+        self.atol = solver_kwargs.get("atol", 1e-10)
+        self.maxiter = solver_kwargs.get("maxiter", 1000)
+        self.restart = solver_kwargs.get("restart", 50)
 
     def solve(self, f):
         """
@@ -96,19 +97,19 @@ class SparseCCDSolver:
             self.grid_config,
             f_cupy,
             dirichlet_enabled=self.grid_config.is_dirichlet,
-            neumann_enabled=self.grid_config.is_neumann
+            neumann_enabled=self.grid_config.is_neumann,
         )
-        
+
         # 反復法で解く
         solution, info = cpx_spla.gmres(
-            self.L_sparse, 
-            b, 
-            tol=self.tol, 
-            atol=self.atol, 
-            restart=self.restart, 
-            maxiter=self.maxiter
+            self.L_sparse,
+            b,
+            tol=self.tol,
+            atol=self.atol,
+            restart=self.restart,
+            maxiter=self.maxiter,
         )
-        
+
         # 結果を抽出
         result = self.result_extractor.extract_components(self.grid_config, solution)
 
@@ -158,7 +159,9 @@ class SparseCompositeSolver(SparseCCDSolver):
         )
 
         # 行列の変換
-        self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(self.L_sparse)
+        self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(
+            self.L_sparse
+        )
 
     def solve(self, f):
         # 親クラスの solve メソッドを呼び出し
