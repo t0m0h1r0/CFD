@@ -1,110 +1,143 @@
+#!/usr/bin/env python3
 """
-疎行列対応CCDメソッドテスターモジュール
-
-疎行列を使用したCCDソルバー実装のテスト機能を提供します。
+密行列と疎行列のCCDソルバーを詳細に比較するスクリプト
 """
 
-import os
-from typing import Tuple, List, Type, Dict, Any, Optional
-
+import numpy as np
+import cupy as cp
 from grid_config import GridConfig
-from sparse_ccd_solver import SparseCCDSolver
-from test_functions import TestFunction
-from ccd_tester import CCDMethodTester
+from composite_solver import CCDCompositeSolver
+from sparse_ccd_solver import SparseCompositeSolver
+from test_functions import TestFunctionFactory
 
-
-class SparseCCDMethodTester(CCDMethodTester):
+def compare_solvers(
+    n_points=64, 
+    x_range=(-1.0, 1.0), 
+    coeffs=None,
+    test_func_name='Sine'
+):
     """
-    疎行列を使用したCCD法のテストを実行するクラス
-
-    CCDMethodTesterを継承し、疎行列ソルバーに対応させます。
-    基本的な機能はCCDMethodTesterと同じですが、
-    疎行列ソルバーの特性に最適化されています。
+    密行列と疎行列のソルバーを詳細に比較
+    
+    Args:
+        n_points: グリッド点の数
+        x_range: x軸の範囲
+        coeffs: 係数リスト [a, b, c, d]
+        test_func_name: テスト関数名
     """
+    # デフォルト係数
+    if coeffs is None:
+        coeffs = [1.0, 0.0, 0.0, 0.0]
+    
+    # テスト関数の選択
+    test_functions = TestFunctionFactory.create_standard_functions()
+    test_func = next((f for f in test_functions if f.name == test_func_name), test_functions[0])
+    
+    # グリッド設定
+    L = x_range[1] - x_range[0]
+    grid_config = GridConfig(n_points=n_points, h=L / (n_points - 1), coeffs=coeffs)
+    
+    # グリッド点の計算
+    x_points = cp.array([x_range[0] + i * grid_config.h for i in range(n_points)])
+    
+    # 関数値と導関数を計算
+    f_values = cp.array([test_func.f(x) for x in x_points])
+    df_values = cp.array([test_func.df(x) for x in x_points])
+    d2f_values = cp.array([test_func.d2f(x) for x in x_points])
+    d3f_values = cp.array([test_func.d3f(x) for x in x_points])
+    
+    # 係数に基づいて入力関数値を計算
+    a, b, c, d = coeffs
+    rhs_values = a * f_values + b * df_values + c * d2f_values + d * d3f_values
+    
+    # ディリクレ境界条件の設定
+    dirichlet_values = [f_values[0], f_values[-1]]
+    
+    # 密行列ソルバーの設定
+    dense_solver = CCDCompositeSolver(
+        grid_config,
+        scaling='none',
+        regularization='none'
+    )
+    
+    # 疎行列ソルバーの設定
+    sparse_solver = SparseCompositeSolver(
+        grid_config,
+        scaling='none',
+        regularization='none'
+    )
+    
+    # 密行列ソルバーで解を計算
+    dense_psi, dense_psi_prime, dense_psi_second, dense_psi_third = dense_solver.solve(rhs_values)
+    
+    # 疎行列ソルバーで解を計算
+    sparse_psi, sparse_psi_prime, sparse_psi_second, sparse_psi_third = sparse_solver.solve(rhs_values)
+    
+    # 結果の比較
+    print(f"\n===== {test_func_name} 関数での密行列と疎行列の比較 =====")
+    print(f"係数: {coeffs}")
+    print("\n--- ψ (関数値) ---")
+    print_comparison(dense_psi, sparse_psi, "関数値")
+    
+    print("\n--- ψ' (1階微分) ---")
+    print_comparison(dense_psi_prime, sparse_psi_prime, "1階微分")
+    
+    print("\n--- ψ'' (2階微分) ---")
+    print_comparison(dense_psi_second, sparse_psi_second, "2階微分")
+    
+    print("\n--- ψ''' (3階微分) ---")
+    print_comparison(dense_psi_third, sparse_psi_third, "3階微分")
 
-    def __init__(
-        self,
-        solver_class: Type[SparseCCDSolver],
-        grid_config: GridConfig,
-        x_range: Tuple[float, float],
-        solver_kwargs: Optional[Dict[str, Any]] = None,
-        test_functions: Optional[List[TestFunction]] = None,
-        coeffs: Optional[List[float]] = None,
-    ):
-        """
-        Args:
-            solver_class: テスト対象の疎行列CCDソルバークラス
-            grid_config: グリッド設定
-            x_range: x軸の範囲 (開始位置, 終了位置)
-            solver_kwargs: ソルバーの初期化パラメータ
-            test_functions: テスト関数のリスト (Noneの場合は標準関数セットを使用)
-            coeffs: [a, b, c, d] 係数リスト。Noneの場合は[1, 0, 0, 0]を使用 (f = psi)
-        """
-        # CCDMethodTesterと同様の初期化
-        super().__init__(
-            solver_class, grid_config, x_range, solver_kwargs, test_functions, coeffs
+def print_comparison(dense_result, sparse_result, label):
+    """
+    密行列と疎行列の結果を比較して表示
+    
+    Args:
+        dense_result: 密行列の計算結果
+        sparse_result: 疎行列の計算結果
+        label: 比較対象の説明ラベル
+    """
+    # NumPy配列に変換
+    dense_array = dense_result.get()
+    sparse_array = sparse_result.get()
+    
+    # 絶対誤差を計算
+    abs_error = np.abs(dense_array - sparse_array)
+    
+    # 相対誤差を計算（0除算を防ぐため）
+    relative_error = np.abs(abs_error / (np.abs(dense_array) + 1e-10))
+    
+    print(f"{label}:")
+    print(f"  最大絶対誤差: {np.max(abs_error):.2e}")
+    print(f"  最大相対誤差: {np.max(relative_error):.2e}")
+    print(f"  平均絶対誤差: {np.mean(abs_error):.2e}")
+    print(f"  平均相対誤差: {np.mean(relative_error):.2e}")
+
+def main():
+    """
+    各種係数と関数で比較を実行
+    """
+    # テスト関数と係数の組み合わせ
+    test_cases = [
+        # 関数名, 係数
+        ('Sine', [1.0, 0.0, 0.0, 0.0]),     # f = ψ
+        ('Sine', [0.0, 1.0, 0.0, 0.0]),     # f = ψ'
+        ('Sine', [0.0, 0.0, 1.0, 0.0]),     # f = ψ''
+        ('Sine', [1.0, 1.0, 0.0, 0.0]),     # f = ψ + ψ'
+        ('QuadPoly', [1.0, 0.0, 1.0, 0.0]), # より複雑な関数と係数
+        ('Cosine', [1.0, 0.0, 0.0, 0.0]),   # 別の三角関数
+    ]
+    
+    for test_func_name, coeffs in test_cases:
+        print("\n" + "="*50)
+        print(f"テストケース: {test_func_name}, 係数: {coeffs}")
+        print("="*50)
+        compare_solvers(
+            n_points=64, 
+            x_range=(-1.0, 1.0), 
+            coeffs=coeffs,
+            test_func_name=test_func_name
         )
 
-        # メモリ使用量のレポートを追加
-        self.report_memory_usage = True
-
-        # 明示的にgrid_configを設定
-        self.grid_config = grid_config
-
-    def run_tests(
-        self, prefix: str = "", visualize: bool = True
-    ) -> Dict[str, Tuple[List[float], float]]:
-        """
-        すべてのテスト関数に対してテストを実行
-
-        Args:
-            prefix: 出力ファイルの接頭辞
-            visualize: 可視化を行うかどうか
-
-        Returns:
-            テスト結果の辞書 {関数名: ([1階誤差, 2階誤差, 3階誤差], 計算時間)}
-        """
-        # 出力ディレクトリの作成
-        os.makedirs("results", exist_ok=True)
-
-        # 疎行列ソルバーであることを表示
-        solver_name = self.solver_class.__name__
-        print(f"疎行列ソルバー {solver_name} を使用したテストを実行します")
-
-        # 親クラスのrun_testsメソッドを呼び出し
-        results = super().run_tests(prefix, visualize)
-
-        # 疎行列特有の情報を表示
-        if hasattr(self.solver, "L_sparse"):
-            matrix_size = self.grid_config.n_points * 4
-            # 理論的な疎行列の非ゼロ要素数の推定
-            estimated_nnz = (3 * 4 * 4) * 2 + (3 * 4 * 4) * (
-                self.grid_config.n_points - 2
-            )
-            density = estimated_nnz / (matrix_size * matrix_size)
-
-            print("\n===== 疎行列情報 =====")
-            print(f"行列サイズ: {matrix_size}x{matrix_size}")
-            print(f"推定非ゼロ要素数: {estimated_nnz}")
-            print(f"推定密度: {density:.2e}")
-            print(f"メモリ削減率（推定）: {1.0 - density:.2%}")
-
-        return results
-
-
-# テスト用コード
 if __name__ == "__main__":
-    from sparse_ccd_solver import SparseCompositeSolver
-
-    # グリッド設定
-    grid_config = GridConfig(n_points=64, h=1.0 / 63, coeffs=[1.0, 0.0, 0.0, 0.0])
-
-    # スパーステスターの実行
-    tester = SparseCCDMethodTester(
-        SparseCompositeSolver,
-        grid_config,
-        (-1.0, 1.0),
-        solver_kwargs={"scaling": "none", "regularization": "none"},
-    )
-
-    tester.run_tests(prefix="sparse_test_", visualize=True)
+    main()
