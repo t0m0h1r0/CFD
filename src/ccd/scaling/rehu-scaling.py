@@ -4,7 +4,7 @@ Rehu スケーリング戦略
 行と列の最大絶対値によるスケーリングを提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from scaling_strategy import ScalingStrategy, scaling_registry

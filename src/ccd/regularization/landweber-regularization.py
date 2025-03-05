@@ -4,7 +4,7 @@ Landweber反復法による正則化戦略
 反復法に基づく正則化手法を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategy import RegularizationStrategy, regularization_registry

@@ -4,7 +4,7 @@
 対角要素が1になるようスケーリングする手法を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 from typing import Tuple, Dict, Any, Callable
 
 from scaling_strategy import ScalingStrategy, scaling_registry
@@ -27,7 +27,7 @@ class DiagonalDominanceScaling(ScalingStrategy):
         """
         return {}
 
-    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    def apply_scaling(self) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         対角優位スケーリングを適用
 
@@ -38,13 +38,13 @@ class DiagonalDominanceScaling(ScalingStrategy):
             (スケーリングされた行列, 逆変換関数)
         """
         n = self.matrix.shape[0]
-        diag_elements = jnp.diag(self.matrix)
+        diag_elements = cp.diag(self.matrix)
 
         # 対角要素が0の場合に備えて小さな値を加える
-        diag_elements = jnp.where(jnp.abs(diag_elements) < 1e-10, 1e-10, diag_elements)
+        diag_elements = cp.where(cp.abs(diag_elements) < 1e-10, 1e-10, diag_elements)
 
         # スケーリング行列を作成
-        D = jnp.diag(1.0 / diag_elements)
+        D = cp.diag(1.0 / diag_elements)
 
         # 行と列のスケーリング行列として同じ行列を使用
         self.scaling_matrix_row = D
@@ -59,7 +59,7 @@ class DiagonalDominanceScaling(ScalingStrategy):
 
         return L_scaled, inverse_scaling
 
-    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+    def transform_rhs(self, rhs: cp.ndarray) -> cp.ndarray:
         """
         右辺ベクトルにスケーリングを適用
 

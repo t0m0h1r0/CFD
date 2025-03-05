@@ -4,7 +4,7 @@ SVD正則化戦略
 特異値分解に基づく正則化戦略を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategy import RegularizationStrategy, regularization_registry
