@@ -4,7 +4,7 @@ L1正則化戦略（LASSO）
 解のL1ノルムに対するペナルティを課すL1正則化を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategy import RegularizationStrategy, regularization_registry
