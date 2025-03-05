@@ -5,6 +5,7 @@
 """
 
 import cupy as cp
+import numpy as np
 import cupyx.scipy.sparse as cpx_sparse
 from typing import Union, Tuple, Optional
 
@@ -167,43 +168,43 @@ def apply_boundary_conditions(matrix: cpx_sparse.spmatrix,
     if not isinstance(matrix, cpx_sparse.csr_matrix):
         matrix = cpx_sparse.csr_matrix(matrix)
     
-    # CuPyではtolil()が実装されていないため、COO形式を使用
+    # COO形式に変換
     matrix_coo = matrix.tocoo()
     
-    # 行、列、データの配列を取得
-    rows = matrix_coo.row
-    cols = matrix_coo.col
-    data = matrix_coo.data
+    # 行、列、データの配列をNumPy配列に変換（ハッシュ可能にするため）
+    rows = cp.asnumpy(matrix_coo.row)
+    cols = cp.asnumpy(matrix_coo.col)
+    data = cp.asnumpy(matrix_coo.data)
     
     # 新しい行列データを構築するためのリスト
     new_rows = []
     new_cols = []
     new_data = []
     
-    # 境界インデックスの計算
-    x_left_indices = [i * ny for i in range(nx)]  # 左端 (i=0, j=all)
-    x_right_indices = [(i + 1) * ny - 1 for i in range(nx)]  # 右端 (i=nx-1, j=all)
-    y_bottom_indices = list(range(ny))  # 下端 (i=all, j=0)
-    y_top_indices = list(range((nx - 1) * ny, nx * ny))  # 上端 (i=all, j=ny-1)
+    # 境界インデックスの計算とNumPy配列に変換
+    x_left_indices = np.array([i * ny for i in range(nx)])  # 左端
+    x_right_indices = np.array([(i + 1) * ny - 1 for i in range(nx)])  # 右端
+    y_bottom_indices = np.array(list(range(ny)))  # 下端
+    y_top_indices = np.array(list(range((nx - 1) * ny, nx * ny)))  # 上端
     
-    # 境界インデックスの集合
+    # 境界インデックスをセットとして保存（整数に変換）
     boundary_indices = set()
     
     # x方向のディリクレ境界条件
     if dirichlet_x:
-        boundary_indices.update(x_left_indices)
-        boundary_indices.update(x_right_indices)
+        boundary_indices.update(x_left_indices.tolist())
+        boundary_indices.update(x_right_indices.tolist())
     
     # y方向のディリクレ境界条件
     if dirichlet_y:
-        boundary_indices.update(y_bottom_indices)
-        boundary_indices.update(y_top_indices)
+        boundary_indices.update(y_bottom_indices.tolist())
+        boundary_indices.update(y_top_indices.tolist())
     
     # 既存の要素を処理
     for i in range(len(rows)):
-        row_idx = rows[i]
-        col_idx = cols[i]
-        val = data[i]
+        row_idx = int(rows[i])  # 整数に変換
+        col_idx = int(cols[i])  # 整数に変換
+        val = float(data[i])    # 浮動小数点数に変換
         
         # 境界行かどうかをチェック
         if row_idx in boundary_indices:
@@ -226,9 +227,19 @@ def apply_boundary_conditions(matrix: cpx_sparse.spmatrix,
             new_cols.append(idx)
             new_data.append(1.0)
     
+    # リストをNumPy配列に変換
+    new_rows_np = np.array(new_rows, dtype=np.int64)
+    new_cols_np = np.array(new_cols, dtype=np.int64)
+    new_data_np = np.array(new_data, dtype=np.float64)
+    
+    # NumPy配列をCuPy配列に変換
+    new_rows_cp = cp.array(new_rows_np)
+    new_cols_cp = cp.array(new_cols_np)
+    new_data_cp = cp.array(new_data_np)
+    
     # 新しい行列を構築
     shape = matrix.shape
-    matrix_new = cpx_sparse.coo_matrix((new_data, (new_rows, new_cols)), shape=shape)
+    matrix_new = cpx_sparse.coo_matrix((new_data_cp, (new_rows_cp, new_cols_cp)), shape=shape)
     
     # CSR形式に変換して返す
     return matrix_new.tocsr()

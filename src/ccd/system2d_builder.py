@@ -117,13 +117,7 @@ class CCD2DSystemBuilder:
                 ...
             }
         """
+        # result_extractorを使用して結果を抽出
+        # すべての成分（混合微分を含む）は既にextract_componentsに含まれている
         components = self.result_extractor.extract_components(grid_config, solution)
-        
-        # 必要に応じて混合微分も抽出
-        mixed_derivatives = self.result_extractor.extract_mixed_derivatives(grid_config, solution)
-        
-        # 辞書を結合
-        for key, value in mixed_derivatives.items():
-            components[key] = value
-            
         return components

@@ -37,37 +37,95 @@ class CCD2DResultExtractor:
         x_order = grid_config.x_deriv_order
         y_order = grid_config.y_deriv_order
         
-        # 1グリッドあたりの未知数数
-        vars_per_point = x_order + y_order + 1  # 関数値は1つだけカウント
+        # 1グリッドあたりの未知数
+        vars_per_point = (x_order + 1) * (y_order + 1)  # フルシステム
         
         # 結果格納用の辞書
         results = {}
         
-        # 関数値
+        # 関数値 (f)
         f = cp.zeros((nx, ny))
+        f_x = cp.zeros((nx, ny))  # x方向1階微分
+        f_y = cp.zeros((nx, ny))  # y方向1階微分
+        f_xx = cp.zeros((nx, ny))  # x方向2階微分
+        f_yy = cp.zeros((nx, ny))  # y方向2階微分
+        f_xy = cp.zeros((nx, ny))  # 混合微分
+        
         for i in range(nx):
             for j in range(ny):
-                idx = self._compute_vector_index(grid_config, i, j, 0)
-                f[i, j] = solution[idx]
+                # 関数値
+                idx_f = self._compute_vector_index(grid_config, i, j, 0)
+                if idx_f < solution.size:
+                    f[i, j] = solution[idx_f]
+                
+                # x方向1階微分 (f_x)
+                if x_order >= 1:
+                    idx_fx = self._compute_vector_index(grid_config, i, j, 1)
+                    if idx_fx < solution.size:
+                        f_x[i, j] = solution[idx_fx]
+                
+                # y方向1階微分 (f_y)
+                if y_order >= 1:
+                    idx_fy = self._compute_vector_index(grid_config, i, j, x_order + 1)
+                    if idx_fy < solution.size:
+                        f_y[i, j] = solution[idx_fy]
+                
+                # x方向2階微分 (f_xx)
+                if x_order >= 2:
+                    idx_fxx = self._compute_vector_index(grid_config, i, j, 2)
+                    if idx_fxx < solution.size:
+                        f_xx[i, j] = solution[idx_fxx]
+                
+                # y方向2階微分 (f_yy)
+                if y_order >= 2:
+                    idx_fyy = self._compute_vector_index(grid_config, i, j, x_order + 2)
+                    if idx_fyy < solution.size:
+                        f_yy[i, j] = solution[idx_fyy]
+                
+                # 混合微分 (f_xy) - 変数の配置に依存
+                if x_order >= 1 and y_order >= 1:
+                    # 変数の配置方法によって適切なインデックスを設定
+                    idx_fxy = self._compute_vector_index(grid_config, i, j, (x_order + 1) + (y_order + 1))
+                    if idx_fxy < solution.size:
+                        try:
+                            f_xy[i, j] = solution[idx_fxy]
+                        except IndexError:
+                            # インデックスが範囲外の場合は警告を出して続行
+                            if i == 0 and j == 0:  # 最初の要素でのみ警告を出す
+                                print(f"警告: 混合微分のインデックスが範囲外です: {idx_fxy} >= {solution.size}")
+        
+        # 結果辞書に格納
         results["f"] = f
         
-        # x方向の導関数
-        for d in range(1, x_order + 1):
-            f_x = cp.zeros((nx, ny))
-            for i in range(nx):
-                for j in range(ny):
-                    idx = self._compute_vector_index(grid_config, i, j, d)
-                    f_x[i, j] = solution[idx]
-            results[f"f_{'x' * d}"] = f_x
+        if x_order >= 1:
+            results["f_x"] = f_x
+        if y_order >= 1:
+            results["f_y"] = f_y
+        if x_order >= 2:
+            results["f_xx"] = f_xx
+        if y_order >= 2:
+            results["f_yy"] = f_yy
+        if x_order >= 1 and y_order >= 1:
+            results["f_xy"] = f_xy
         
-        # y方向の導関数
-        for d in range(1, y_order + 1):
-            f_y = cp.zeros((nx, ny))
+        # 3階導関数 (オプション)
+        if x_order >= 3:
+            f_xxx = cp.zeros((nx, ny))
             for i in range(nx):
                 for j in range(ny):
-                    idx = self._compute_vector_index(grid_config, i, j, x_order + d)
-                    f_y[i, j] = solution[idx]
-            results[f"f_{'y' * d}"] = f_y
+                    idx = self._compute_vector_index(grid_config, i, j, 3)
+                    if idx < solution.size:
+                        f_xxx[i, j] = solution[idx]
+            results["f_xxx"] = f_xxx
+        
+        if y_order >= 3:
+            f_yyy = cp.zeros((nx, ny))
+            for i in range(nx):
+                for j in range(ny):
+                    idx = self._compute_vector_index(grid_config, i, j, x_order + 3)
+                    if idx < solution.size:
+                        f_yyy[i, j] = solution[idx]
+            results["f_yyy"] = f_yyy
         
         # ディリクレ境界条件が有効な場合、境界補正を適用
         if grid_config.is_dirichlet_x or grid_config.is_dirichlet_y:
@@ -86,7 +144,7 @@ class CCD2DResultExtractor:
             grid_config: 2次元グリッド設定
             i: x方向のインデックス
             j: y方向のインデックス
-            var_idx: 変数のインデックス（0: 関数値, 1: x方向1階微分, ...）
+            var_idx: 変数のインデックス
 
         Returns:
             ベクトル内のインデックス
@@ -95,8 +153,8 @@ class CCD2DResultExtractor:
         x_order = grid_config.x_deriv_order
         y_order = grid_config.y_deriv_order
         
-        # 1グリッドあたりの未知数数
-        vars_per_point = x_order + y_order + 1  # 関数値は1つだけカウント
+        # フルシステムの場合
+        vars_per_point = (x_order + 1) * (y_order + 1)
         
         # グリッド点のフラット化インデックス
         flat_idx = i * ny + j
@@ -119,9 +177,6 @@ class CCD2DResultExtractor:
             2次元配列
         """
         nx, ny = grid_config.nx, grid_config.ny
-        x_order = grid_config.x_deriv_order
-        y_order = grid_config.y_deriv_order
-        vars_per_point = x_order + y_order + 1
         
         result = cp.zeros((nx, ny))
         for i in range(nx):
@@ -131,47 +186,3 @@ class CCD2DResultExtractor:
                     result[i, j] = vector[idx]
         
         return result
-
-    def extract_mixed_derivatives(
-        self, grid_config: Grid2DConfig, solution: cp.ndarray
-    ) -> Dict[str, cp.ndarray]:
-        """
-        解ベクトルから混合微分を抽出
-        
-        Args:
-            grid_config: 2次元グリッド設定
-            solution: 解ベクトル
-            
-        Returns:
-            混合微分を含む辞書
-            {
-                "f_xy": 混合1階微分(nx, ny),
-                "f_xxy": 混合2階x,1階y微分(nx, ny),
-                ...
-            }
-        """
-        # 混合微分の実装は、全ての混合微分変数が解ベクトルに含まれていることを前提としています
-        # より一般的な実装では、利用可能な変数に基づいて動的に処理する必要があります
-        nx, ny = grid_config.nx, grid_config.ny
-        x_order = grid_config.x_deriv_order
-        y_order = grid_config.y_deriv_order
-        
-        results = {}
-        
-        # 基本変数の後に混合微分を配置すると仮定
-        base_vars = 1 + x_order + y_order  # 関数値 + x方向導関数 + y方向導関数
-        
-        # f_xy (1階x, 1階y)
-        if x_order >= 1 and y_order >= 1:
-            f_xy = cp.zeros((nx, ny))
-            for i in range(nx):
-                for j in range(ny):
-                    idx = self._compute_vector_index(grid_config, i, j, base_vars)
-                    if idx < solution.size:
-                        f_xy[i, j] = solution[idx]
-            results["f_xy"] = f_xy
-        
-        # 必要に応じて他の混合微分も抽出
-        # 混合微分の格納位置に応じて適切なインデックス計算が必要
-        
-        return results

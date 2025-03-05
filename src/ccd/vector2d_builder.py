@@ -56,17 +56,17 @@ class CCD2DRightHandBuilder:
         x_order = grid_config.x_deriv_order
         y_order = grid_config.y_deriv_order
 
-        # 1グリッドあたりの未知数数
-        x_vars = x_order + 1  # x方向の変数: f, f_x, f_xx, f_xxx, ...
-        y_vars = y_order + 1  # y方向の変数: f, f_y, f_yy, f_yyy, ...
+        # 1グリッドあたりの未知数の計算
+        # パターン1: 関数値 + 各方向の導関数（混合導関数を含まない簡略版）
+        # vars_per_point = 1 + x_order + y_order
         
-        # 混合微分を考慮した総変数数
-        # この実装は簡略化していて、全ての混合微分を含んでいません
-        # 実際の実装では、必要な混合微分の変数を追加する必要があります
-        vars_per_point = x_vars + y_vars - 1  # 関数値は重複するので1つ減らす
+        # パターン2: 関数値 + x方向導関数 + y方向導関数 + 混合導関数
+        # フルシステムでは関数値、x方向の導関数、y方向の導関数、混合導関数を含む
+        vars_per_point = (x_order + 1) * (y_order + 1)  # フルシステム
         
         # 右辺ベクトルを生成（CuPy配列）
-        rhs = cp.zeros(nx * ny * vars_per_point)
+        total_size = nx * ny * vars_per_point
+        rhs = cp.zeros(total_size)
 
         # 関数値を設定
         # values が2次元配列と仮定
@@ -75,7 +75,8 @@ class CCD2DRightHandBuilder:
                 for j in range(ny):
                     # グリッド点 (i,j) に対応する配列内の位置を計算
                     idx = self._compute_vector_index(grid_config, i, j, 0)
-                    rhs[idx] = values[i, j]
+                    if idx < total_size:  # 配列の範囲内であることを確認
+                        rhs[idx] = values[i, j]
         else:
             # valuesが平坦化されている場合、またはサイズが異なる場合の処理
             if values.size == nx * ny:
@@ -83,14 +84,15 @@ class CCD2DRightHandBuilder:
                 for i in range(nx):
                     for j in range(ny):
                         idx = self._compute_vector_index(grid_config, i, j, 0)
-                        rhs[idx] = values_reshaped[i, j]
+                        if idx < total_size:  # 配列の範囲内であることを確認
+                            rhs[idx] = values_reshaped[i, j]
             else:
                 # その他のケースはエラーまたは特別な処理が必要
                 raise ValueError(f"関数値の形状が期待と異なります: {values.shape} vs 期待 ({nx}, {ny})")
 
         # 境界条件を設定
         self._apply_boundary_conditions(
-            grid_config, rhs, use_dirichlet_x, use_dirichlet_y, use_neumann_x, use_neumann_y
+            grid_config, rhs, total_size, use_dirichlet_x, use_dirichlet_y, use_neumann_x, use_neumann_y
         )
 
         return rhs
@@ -114,19 +116,20 @@ class CCD2DRightHandBuilder:
         x_order = grid_config.x_deriv_order
         y_order = grid_config.y_deriv_order
         
-        # 1グリッドあたりの未知数数
-        vars_per_point = x_order + y_order + 1  # 関数値は1つだけカウント
+        # フルシステムでは関数値、x方向の導関数、y方向の導関数、混合導関数を含む
+        vars_per_point = (x_order + 1) * (y_order + 1)
         
         # グリッド点のフラット化インデックス
         flat_idx = i * ny + j
         
-        # 変数のオフセット
+        # 変数のオフセット（フルシステム用）
         return flat_idx * vars_per_point + var_idx
 
     def _apply_boundary_conditions(
         self,
         grid_config: Grid2DConfig,
         rhs: cp.ndarray,
+        total_size: int,
         use_dirichlet_x: bool,
         use_dirichlet_y: bool,
         use_neumann_x: bool,
@@ -138,6 +141,7 @@ class CCD2DRightHandBuilder:
         Args:
             grid_config: 2次元グリッド設定
             rhs: 右辺ベクトル
+            total_size: ベクトルの総サイズ
             use_dirichlet_x: x方向ディリクレ境界条件の有効/無効
             use_dirichlet_y: y方向ディリクレ境界条件の有効/無効
             use_neumann_x: x方向ノイマン境界条件の有効/無効
@@ -146,7 +150,7 @@ class CCD2DRightHandBuilder:
         nx, ny = grid_config.nx, grid_config.ny
         x_order = grid_config.x_deriv_order
         y_order = grid_config.y_deriv_order
-        vars_per_point = x_order + y_order + 1  # 関数値は1つだけカウント
+        vars_per_point = (x_order + 1) * (y_order + 1)  # フルシステム
 
         # x方向ディリクレ境界条件
         if use_dirichlet_x:
@@ -156,12 +160,14 @@ class CCD2DRightHandBuilder:
             for j in range(ny):
                 # 関数値のインデックス
                 idx = self._compute_vector_index(grid_config, 0, j, 0)
-                rhs[idx] = left_val
+                if idx < total_size:  # 配列の範囲内であることを確認
+                    rhs[idx] = left_val
                 
             # 右境界 (i=nx-1, j=all)
             for j in range(ny):
                 idx = self._compute_vector_index(grid_config, nx-1, j, 0)
-                rhs[idx] = right_val
+                if idx < total_size:  # 配列の範囲内であることを確認
+                    rhs[idx] = right_val
 
         # y方向ディリクレ境界条件
         if use_dirichlet_y:
@@ -170,12 +176,14 @@ class CCD2DRightHandBuilder:
             # 下境界 (i=all, j=0)
             for i in range(nx):
                 idx = self._compute_vector_index(grid_config, i, 0, 0)
-                rhs[idx] = bottom_val
+                if idx < total_size:  # 配列の範囲内であることを確認
+                    rhs[idx] = bottom_val
                 
             # 上境界 (i=all, j=ny-1)
             for i in range(nx):
                 idx = self._compute_vector_index(grid_config, i, ny-1, 0)
-                rhs[idx] = top_val
+                if idx < total_size:  # 配列の範囲内であることを確認
+                    rhs[idx] = top_val
 
         # x方向ノイマン境界条件
         if use_neumann_x:
@@ -183,14 +191,17 @@ class CCD2DRightHandBuilder:
             
             # 左境界 (i=0, j=all)
             for j in range(ny):
-                # x方向1階微分のインデックス
-                idx = self._compute_vector_index(grid_config, 0, j, 1)
-                rhs[idx] = left_deriv
+                # x方向1階微分のインデックス（変数配置に依存）
+                x_deriv_idx = 1  # 1階微分を表す変数のインデックス
+                idx = self._compute_vector_index(grid_config, 0, j, x_deriv_idx)
+                if idx < total_size:  # 配列の範囲内であることを確認
+                    rhs[idx] = left_deriv
                 
             # 右境界 (i=nx-1, j=all)
             for j in range(ny):
-                idx = self._compute_vector_index(grid_config, nx-1, j, 1)
-                rhs[idx] = right_deriv
+                idx = self._compute_vector_index(grid_config, nx-1, j, x_deriv_idx)
+                if idx < total_size:  # 配列の範囲内であることを確認
+                    rhs[idx] = right_deriv
 
         # y方向ノイマン境界条件
         if use_neumann_y:
@@ -198,11 +209,14 @@ class CCD2DRightHandBuilder:
             
             # 下境界 (i=all, j=0)
             for i in range(nx):
-                # y方向1階微分のインデックス (x順変数の後に配置)
-                idx = self._compute_vector_index(grid_config, i, 0, x_order + 1)
-                rhs[idx] = bottom_deriv
+                # y方向1階微分のインデックス（変数配置に依存）
+                y_deriv_idx = x_order + 1  # y方向1階微分を表す変数のインデックス
+                idx = self._compute_vector_index(grid_config, i, 0, y_deriv_idx)
+                if idx < total_size:  # 配列の範囲内であることを確認
+                    rhs[idx] = bottom_deriv
                 
             # 上境界 (i=all, j=ny-1)
             for i in range(nx):
-                idx = self._compute_vector_index(grid_config, i, ny-1, x_order + 1)
-                rhs[idx] = top_deriv
+                idx = self._compute_vector_index(grid_config, i, ny-1, y_deriv_idx)
+                if idx < total_size:  # 配列の範囲内であることを確認
+                    rhs[idx] = top_deriv
