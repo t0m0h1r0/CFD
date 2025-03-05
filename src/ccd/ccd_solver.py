@@ -7,7 +7,7 @@ CuPy対応結合コンパクト差分法ソルバーモジュール
 import cupy as cp
 import cupyx.scipy.sparse.linalg as cpx_spla
 import cupyx.scipy.sparse as cpx_sparse
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple, Union
 
 from grid_config import GridConfig
 from system_builder import CCDSystemBuilder
@@ -17,13 +17,27 @@ from ccd_core import create_system_builder
 class DirectSolver:
     """直接法による線形ソルバー（CuPy疎行列対応）"""
 
-    def solve(self, L, b):
+    def solve(self, L: cpx_sparse.spmatrix, b: cp.ndarray) -> cp.ndarray:
         """直接法で線形方程式を解く"""
-        # 密行列を疎行列に変換
-        if not isinstance(L, cpx_sparse.spmatrix):
+        # 行列が疎行列でない場合は変換
+        if not cpx_sparse.issparse(L):
             L = cpx_sparse.csr_matrix(L)
 
-        return cpx_spla.spsolve(L, b)
+        # プリコンディショナーの設定
+        if L.shape[0] > 1000:  # 大きなサイズの行列の場合
+            try:
+                # 不完全LU分解によるプリコンディショナー
+                precond = cpx_sparse.linalg.spilu(L)
+                M = cpx_sparse.linalg.LinearOperator(
+                    L.shape, lambda x: precond.solve(x)
+                )
+                return cpx_spla.spsolve(L, b)
+            except:
+                # エラーの場合はプリコンディショナーなしで解く
+                return cpx_spla.spsolve(L, b)
+        else:
+            # 小さいサイズの場合は直接解く
+            return cpx_spla.spsolve(L, b)
 
 
 class IterativeSolver:
@@ -35,6 +49,7 @@ class IterativeSolver:
         atol: float = 1e-10,
         restart: int = 50,
         maxiter: int = 1000,
+        use_precond: bool = True,
     ):
         """
         初期化パラメータ
@@ -44,26 +59,50 @@ class IterativeSolver:
             atol: 絶対許容誤差
             restart: GMRESの再起動パラメータ
             maxiter: 最大反復回数
+            use_precond: プリコンディショナーを使用するかどうか
         """
         self.tol = tol
         self.atol = atol
         self.restart = restart
         self.maxiter = maxiter
+        self.use_precond = use_precond
 
-    def solve(self, L, b):
+    def solve(self, L: cpx_sparse.spmatrix, b: cp.ndarray) -> cp.ndarray:
         """GMRES法で線形方程式を解く"""
-        # 密行列を疎行列に変換
-        if not isinstance(L, cpx_sparse.spmatrix):
+        # 行列が疎行列でない場合は変換
+        if not cpx_sparse.issparse(L):
             L = cpx_sparse.csr_matrix(L)
 
-        solution, _ = cpx_spla.gmres(
+        # プリコンディショナーの準備
+        M = None
+        if self.use_precond:
+            try:
+                # 対角成分によるプリコンディショナー
+                diag = L.diagonal()
+                if cp.all(cp.abs(diag) > 1e-10):
+                    D_inv = cpx_sparse.diags(1.0 / diag)
+                    M = cpx_sparse.linalg.LinearOperator(
+                        L.shape, lambda x: D_inv.dot(x)
+                    )
+            except:
+                # エラーの場合はプリコンディショナーなしで実行
+                pass
+
+        solution, info = cpx_spla.gmres(
             L,
             b,
             tol=self.tol,
             atol=self.atol,
             restart=self.restart,
             maxiter=self.maxiter,
+            M=M,
         )
+        
+        # 収束しない場合は直接法で解く
+        if info > 0:
+            print(f"GMRES did not converge: info={info}. Falling back to direct solver.")
+            return cpx_spla.spsolve(L, b)
+            
         return solution
 
 
@@ -117,6 +156,17 @@ class CCDSolver:
         # システムビルダーを使用して行列を作成
         self.L, _ = self.system_builder.build_system(grid_config, zero_vector)
 
+        # 左辺行列が疎行列でない場合は変換
+        if not cpx_sparse.issparse(self.L):
+            self.L = cpx_sparse.csr_matrix(self.L)
+
+        # 行列の疎性を調査して出力
+        nnz = self.L.nnz
+        size = self.L.shape[0] * self.L.shape[1]
+        density = nnz / size
+        # デバッグ情報を表示しない（必要に応じてコメントアウト解除）
+        # print(f"Matrix size: {self.L.shape}, NNZ: {nnz}, Density: {density:.6f}")
+
         # ソルバーの選択（CuPy対応）
         solver_kwargs = solver_kwargs or {}
         self.use_iterative = use_iterative
@@ -124,7 +174,7 @@ class CCDSolver:
             IterativeSolver(**solver_kwargs) if use_iterative else DirectSolver()
         )
 
-    def solve(self, f):
+    def solve(self, f: Union[cp.ndarray, List[float]]) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
         関数値fに対するCCD方程式系を解き、ψとその各階微分を返す
 
@@ -156,7 +206,7 @@ class CCDSolver:
 class VectorizedCCDSolver(CCDSolver):
     """複数の関数に同時に適用可能なCCDソルバー（CuPy対応）"""
 
-    def solve_batch(self, fs):
+    def solve_batch(self, fs: Union[cp.ndarray, List[List[float]]]) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
         複数の関数値セットに対してCCD方程式系を一度に解く
 

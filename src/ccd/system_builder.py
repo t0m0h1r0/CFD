@@ -5,7 +5,8 @@ CCD法の方程式系全体の構築を担当するクラス
 """
 
 import cupy as cp
-from typing import List, Optional, Tuple
+import cupyx.scipy.sparse as cpx_sparse
+from typing import List, Optional, Tuple, Union
 
 from grid_config import GridConfig
 from matrix_builder import CCDLeftHandBuilder
@@ -14,7 +15,7 @@ from result_extractor import CCDResultExtractor
 
 
 class CCDSystemBuilder:
-    """CCD方程式系全体の構築を担当するクラス（CuPy対応）"""
+    """CCD方程式系全体の構築を担当するクラス（CuPy疎行列対応）"""
 
     def __init__(
         self,
@@ -41,7 +42,7 @@ class CCDSystemBuilder:
         coeffs: Optional[List[float]] = None,
         dirichlet_enabled: bool = None,
         neumann_enabled: bool = None,
-    ) -> Tuple[cp.ndarray, cp.ndarray]:
+    ) -> Tuple[Union[cp.ndarray, cpx_sparse.spmatrix], cp.ndarray]:
         """
         線形方程式系 Lx = b を構築する
 
