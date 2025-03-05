@@ -4,7 +4,7 @@
 異なる種類のCCDソルバーを生成するためのファクトリークラスを提供します。
 """
 
-from typing import Optional, Dict, Any, List, Type
+from typing import Optional, Dict, Any, List
 
 from grid_config import GridConfig
 from system_builder import CCDSystemBuilder

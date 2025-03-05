@@ -2,21 +2,21 @@
 更新された簡素化されたソルバー比較モジュール
 
 異なるCCDソルバー間での性能比較を行う機能を提供します。
-リファクタリングされたCCDソルバー実装に対応しています。
 """
 
 from typing import List, Tuple, Dict, Optional
 import json
 import os
+import cupy as cp
 
-from ccd_core import GridConfig
+from grid_config import GridConfig
 from test_functions import TestFunction, TestFunctionFactory
 from ccd_tester import CCDMethodTester
 from visualization import visualize_error_comparison
 
 
 class SolverComparator:
-    """複数のソルバーを比較するクラス"""
+    """複数のソルバーを比較するクラス（CuPy対応）"""
 
     def __init__(
         self,

@@ -1,10 +1,10 @@
 """
 スケーリング戦略モジュール
 
-行列のスケーリングに関する戦略を定義します。
+CuPy対応の行列のスケーリングに関する戦略を定義します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 from typing import Tuple, Callable
 
 from strategy_interface import TransformationStrategy
@@ -15,12 +15,12 @@ class ScalingStrategy(TransformationStrategy):
     """
     スケーリング戦略の基底クラス
 
-    行列のスケーリングを行うための共通インターフェース
+    行列のスケーリングを行うための共通インターフェース（CuPy対応）
     """
 
     def transform_matrix(
         self, matrix=None
-    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         スケーリングを適用し、逆変換関数を返す
 
@@ -31,10 +31,10 @@ class ScalingStrategy(TransformationStrategy):
             (スケーリングされた行列, 逆スケーリング関数)
         """
         if matrix is not None:
-            self.matrix = matrix
+            self.matrix = cp.asarray(matrix)
         return self.apply_scaling()
 
-    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    def apply_scaling(self) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         スケーリングを適用する具体的な実装
 
@@ -49,10 +49,10 @@ class NoneScaling(ScalingStrategy):
     """
     スケーリングなし
 
-    元の行列をそのまま返す
+    元の行列をそのまま返す（CuPy対応）
     """
 
-    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    def apply_scaling(self) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         スケーリングを適用しない
 

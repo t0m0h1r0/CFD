@@ -4,12 +4,12 @@
 CCDソルバー実装のテスト機能を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 import time
 import os
 from typing import Tuple, List, Type, Dict, Any, Optional
 
-from ccd_core import GridConfig
+from grid_config import GridConfig
 from ccd_solver import CCDSolver
 from test_functions import TestFunction, TestFunctionFactory
 from visualization import visualize_derivative_results
@@ -116,11 +116,11 @@ class CCDMethodTester:
         x_start = self.x_range[0]
 
         # グリッド点でのx座標と解析解を計算
-        x_points = jnp.array([x_start + i * h for i in range(n)])
-        analytical_psi = jnp.array([test_func.f(x) for x in x_points])
-        analytical_df = jnp.array([test_func.df(x) for x in x_points])
-        analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
-        analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
+        x_points = cp.array([x_start + i * h for i in range(n)])
+        analytical_psi = cp.array([test_func.f(x) for x in x_points])
+        analytical_df = cp.array([test_func.df(x) for x in x_points])
+        analytical_d2f = cp.array([test_func.d2f(x) for x in x_points])
+        analytical_d3f = cp.array([test_func.d3f(x) for x in x_points])
 
         # ソルバーの初期化（coeffsはすでにgrid_configに含まれている）
         solver_kwargs_copy = self.solver_kwargs.copy()
@@ -148,9 +148,9 @@ class CCDMethodTester:
         elapsed_time = time.time() - start_time
 
         # 誤差の計算 (L2ノルム)
-        error_df = jnp.sqrt(jnp.mean((psi_prime - analytical_df) ** 2))
-        error_d2f = jnp.sqrt(jnp.mean((psi_second - analytical_d2f) ** 2))
-        error_d3f = jnp.sqrt(jnp.mean((psi_third - analytical_d3f) ** 2))
+        error_df = cp.sqrt(cp.mean((psi_prime - analytical_df) ** 2))
+        error_d2f = cp.sqrt(cp.mean((psi_second - analytical_d2f) ** 2))
+        error_d3f = cp.sqrt(cp.mean((psi_third - analytical_d3f) ** 2))
 
         return float(error_df), float(error_d2f), float(error_d3f), elapsed_time
 
@@ -207,13 +207,13 @@ class CCDMethodTester:
                 n = boundary_grid_config.n_points
                 h = boundary_grid_config.h
                 x_start = self.x_range[0]
-                x_points = jnp.array([x_start + i * h for i in range(n)])
+                x_points = cp.array([x_start + i * h for i in range(n)])
 
                 # 解析解と入力関数値を計算
-                analytical_psi = jnp.array([test_func.f(x) for x in x_points])
-                analytical_df = jnp.array([test_func.df(x) for x in x_points])
-                analytical_d2f = jnp.array([test_func.d2f(x) for x in x_points])
-                analytical_d3f = jnp.array([test_func.d3f(x) for x in x_points])
+                analytical_psi = cp.array([test_func.f(x) for x in x_points])
+                analytical_df = cp.array([test_func.df(x) for x in x_points])
+                analytical_d2f = cp.array([test_func.d2f(x) for x in x_points])
+                analytical_d3f = cp.array([test_func.d3f(x) for x in x_points])
 
                 # 係数に基づいて入力関数値を計算
                 a, b, c, d = boundary_grid_config.coeffs

@@ -4,8 +4,7 @@
 スケーリングと正則化を組み合わせたCCDソルバーを提供します。
 """
 
-import jax
-import jax.numpy as jnp
+import cupy as cp
 from functools import partial
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -17,7 +16,7 @@ from transformation_pipeline import TransformerFactory
 
 class CCDCompositeSolver(CCDSolver):
     """
-    スケーリングと正則化を組み合わせた統合ソルバー
+    スケーリングと正則化を組み合わせた統合ソルバー（CuPy対応）
     """
 
     def __init__(
@@ -80,10 +79,9 @@ class CCDCompositeSolver(CCDSolver):
         # 行列を変換
         self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(self.L)
 
-    @partial(jax.jit, static_argnums=(0,))
     def solve(
-        self, f: jnp.ndarray
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        self, f: cp.ndarray
+    ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
         導関数を計算
 

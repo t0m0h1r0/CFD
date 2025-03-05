@@ -9,7 +9,7 @@ import argparse
 import os
 
 from grid_config import GridConfig
-from sparse_ccd_solver import SparseCCDSolver, SparseCompositeSolver
+from sparse_ccd_solver import SparseCompositeSolver
 from ccd_tester import CCDMethodTester
 from sparse_ccd_tester import SparseCCDMethodTester
 from ccd_diagnostics import CCDSolverDiagnostics
@@ -137,7 +137,7 @@ def run_cli():
         )
 
         name = f"{args.scaling}_{args.reg}"
-        prefix = f"sparse_" if args.sparse else ""
+        prefix = "sparse_" if args.sparse else ""
         print(f"テスト実行中: {prefix}{name} (coeffs={args.coeffs})")
         tester.run_tests(prefix=f"{prefix}{name.lower()}_", visualize=not args.no_viz)
 
@@ -206,7 +206,7 @@ def run_cli():
             ]
 
             # 比較実行
-            print(f"密行列と疎行列の比較実行中")
+            print("密行列と疎行列の比較実行中")
             comparator = SolverComparator(solvers_list, grid_config, x_range)
             comparator.run_comparison(
                 save_results=True, visualize=not args.no_viz, prefix="dense_vs_sparse_"

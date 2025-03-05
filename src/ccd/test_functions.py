@@ -1,10 +1,10 @@
 """
-テスト関数の定義モジュール - 修正版
+テスト関数の定義モジュール
 
-このモジュールでは、CCD法の評価に使用するテスト関数とその導関数を定義します。
+CCDソルバーの評価に使用するテスト関数とその導関数を定義します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 from dataclasses import dataclass
 from typing import Callable, List
 
@@ -25,7 +25,7 @@ class TestFunctionFactory:
 
     @staticmethod
     def create_standard_functions() -> List[TestFunction]:
-        """標準的なテスト関数セットを生成"""
+        """標準的なテスト関数セットを生成（CuPy対応）"""
         return [
             TestFunction(
                 name="Zero",
@@ -50,24 +50,24 @@ class TestFunctionFactory:
             ),
             TestFunction(
                 name="Sine",
-                f=lambda x: jnp.sin(jnp.pi * x),  # 両端でゼロ
-                df=lambda x: jnp.pi * jnp.cos(jnp.pi * x),
-                d2f=lambda x: -(jnp.pi**2) * jnp.sin(jnp.pi * x),
-                d3f=lambda x: -(jnp.pi**3) * jnp.cos(jnp.pi * x),
+                f=lambda x: cp.sin(cp.pi * x),  # 両端でゼロ
+                df=lambda x: cp.pi * cp.cos(cp.pi * x),
+                d2f=lambda x: -(cp.pi**2) * cp.sin(cp.pi * x),
+                d3f=lambda x: -(cp.pi**3) * cp.cos(cp.pi * x),
             ),
             TestFunction(
                 name="Cosine",
-                f=lambda x: jnp.cos(2 * jnp.pi * x),  # 平行移動で両端でゼロ
-                df=lambda x: -2 * jnp.pi * jnp.sin(2 * jnp.pi * x),
-                d2f=lambda x: -4 * (jnp.pi**2) * jnp.cos(2 * jnp.pi * x),
-                d3f=lambda x: 8 * jnp.pi**3 * jnp.sin(2 * jnp.pi * x),
+                f=lambda x: cp.cos(2 * cp.pi * x),  # 平行移動で両端でゼロ
+                df=lambda x: -2 * cp.pi * cp.sin(2 * cp.pi * x),
+                d2f=lambda x: -4 * (cp.pi**2) * cp.cos(2 * cp.pi * x),
+                d3f=lambda x: 8 * cp.pi**3 * cp.sin(2 * cp.pi * x),
             ),
             TestFunction(
                 name="ExpMod",
-                f=lambda x: jnp.exp(-(x**2)) - jnp.exp(-1),  # 平行移動で両端でゼロ
-                df=lambda x: -2 * x * jnp.exp(-(x**2)),
-                d2f=lambda x: (-2 + 4 * x**2) * jnp.exp(-(x**2)),
-                d3f=lambda x: (12 * x - 8 * x**3) * jnp.exp(-(x**2)),
+                f=lambda x: cp.exp(-(x**2)) - cp.exp(-1),  # 平行移動で両端でゼロ
+                df=lambda x: -2 * x * cp.exp(-(x**2)),
+                d2f=lambda x: (-2 + 4 * x**2) * cp.exp(-(x**2)),
+                d3f=lambda x: (12 * x - 8 * x**3) * cp.exp(-(x**2)),
             ),
             TestFunction(
                 name="HigherPoly",
@@ -93,16 +93,16 @@ class TestFunctionFactory:
             ),
             TestFunction(
                 name="ModifiedExp",
-                f=lambda x: jnp.exp(-10 * jnp.abs(x)),  # 指数関数 (0で導関数が不連続)
-                df=lambda x: -10 * jnp.sign(x) * jnp.exp(-10 * jnp.abs(x)),
-                d2f=lambda x: 100 * jnp.exp(-10 * jnp.abs(x)),
-                d3f=lambda x: -1000 * jnp.sign(x) * jnp.exp(-10 * jnp.abs(x)),
+                f=lambda x: cp.exp(-10 * cp.abs(x)),  # 指数関数 (0で導関数が不連続)
+                df=lambda x: -10 * cp.sign(x) * cp.exp(-10 * cp.abs(x)),
+                d2f=lambda x: 100 * cp.exp(-10 * cp.abs(x)),
+                d3f=lambda x: -1000 * cp.sign(x) * cp.exp(-10 * cp.abs(x)),
             ),
             TestFunction(
                 name="HighFreqSine",
-                f=lambda x: jnp.sin(20 * jnp.pi * x),  # 高周波正弦波
-                df=lambda x: 20 * jnp.pi * jnp.cos(20 * jnp.pi * x),
-                d2f=lambda x: -((20 * jnp.pi) ** 2) * jnp.sin(20 * jnp.pi * x),
-                d3f=lambda x: -((20 * jnp.pi) ** 3) * jnp.cos(20 * jnp.pi * x),
+                f=lambda x: cp.sin(20 * cp.pi * x),  # 高周波正弦波
+                df=lambda x: 20 * cp.pi * cp.cos(20 * cp.pi * x),
+                d2f=lambda x: -((20 * cp.pi) ** 2) * cp.sin(20 * cp.pi * x),
+                d3f=lambda x: -((20 * cp.pi) ** 3) * cp.cos(20 * cp.pi * x),
             ),
         ]

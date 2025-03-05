@@ -6,7 +6,6 @@ CCD法の中核モジュール
 """
 
 # 後方互換性のためのインポート
-from grid_config import GridConfig
 from matrix_builder import CCDLeftHandBuilder
 from vector_builder import CCDRightHandBuilder
 from result_extractor import CCDResultExtractor

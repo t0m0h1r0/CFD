@@ -8,7 +8,7 @@
 import argparse
 import os
 
-from ccd_core import GridConfig
+from grid_config import GridConfig
 from composite_solver import CCDCompositeSolver
 from ccd_tester import CCDMethodTester
 from ccd_diagnostics import CCDSolverDiagnostics

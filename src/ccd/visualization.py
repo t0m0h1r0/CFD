@@ -4,27 +4,27 @@
 CCDソルバーの結果を視覚化するためのユーティリティ関数を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 import matplotlib.pyplot as plt
 import os
 from typing import Tuple, Dict
 
 from test_functions import TestFunction
-from ccd_core import GridConfig
+from grid_config import GridConfig
 
 
 def visualize_derivative_results(
     test_func: TestFunction,
-    f_values: jnp.ndarray,
-    numerical_derivatives: Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
-    analytical_derivatives: Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+    f_values: cp.ndarray,
+    numerical_derivatives: Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray],
+    analytical_derivatives: Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray],
     grid_config: GridConfig,
     x_range: Tuple[float, float],
     solver_name: str,
     save_path: str = None,
 ):
     """
-    導関数の計算結果を可視化
+    導関数の計算結果を可視化（CuPy対応）
 
     Args:
         test_func: テスト関数
@@ -40,21 +40,15 @@ def visualize_derivative_results(
     h = grid_config.h
     x_start = x_range[0]
 
-    # 導関数のアンパック
-    psi, psi_prime, psi_second, psi_third = numerical_derivatives
-    analytical_psi, analytical_df, analytical_d2f, analytical_d3f = (
-        analytical_derivatives
-    )
-
     # グリッド点の計算
-    x_points = jnp.array([x_start + i * h for i in range(n)])
+    x_points = cp.array([x_start + i * h for i in range(n)])
 
     # 高解像度の点での解析解（スムーズなグラフ表示用）
-    x_fine = jnp.linspace(x_range[0], x_range[1], 200)
-    fine_analytical_psi = jnp.array([test_func.f(x) for x in x_fine])
-    fine_analytical_df = jnp.array([test_func.df(x) for x in x_fine])
-    fine_analytical_d2f = jnp.array([test_func.d2f(x) for x in x_fine])
-    fine_analytical_d3f = jnp.array([test_func.d3f(x) for x in x_fine])
+    x_fine = cp.linspace(x_range[0], x_range[1], 200)
+    fine_analytical_psi = cp.array([test_func.f(x.item()) for x in x_fine])
+    fine_analytical_df = cp.array([test_func.df(x.item()) for x in x_fine])
+    fine_analytical_d2f = cp.array([test_func.d2f(x.item()) for x in x_fine])
+    fine_analytical_d3f = cp.array([test_func.d3f(x.item()) for x in x_fine])
 
     # 色の定義
     analytical_color = "blue"  # 解析解は青
@@ -67,60 +61,61 @@ def visualize_derivative_results(
 
     # 入力関数値 (左上)
     axes[0, 0].plot(
-        x_points, f_values, color=input_color, linestyle="-", label="Input f Values"
+        x_points.get(), f_values.get(), color=input_color, linestyle="-", label="Input f Values"
     )
     axes[0, 0].set_title("Input Function Values")
     axes[0, 0].legend()
     axes[0, 0].grid(True)
 
+    # CuPy配列からNumPy配列に変換して描画
     # 元関数 (右上)
     axes[0, 1].plot(
-        x_fine,
-        fine_analytical_psi,
+        x_fine.get(),
+        fine_analytical_psi.get(),
         color=analytical_color,
         linestyle="-",
         label="ψ Analytical",
     )
-    axes[0, 1].plot(x_points, psi, color=numerical_color, label="Computed ψ")
+    axes[0, 1].plot(x_points.get(), numerical_derivatives[0].get(), color=numerical_color, label="Computed ψ")
     axes[0, 1].set_title("Function Values (ψ)")
     axes[0, 1].legend()
     axes[0, 1].grid(True)
 
     # 1階導関数 (中央左)
     axes[1, 0].plot(
-        x_fine,
-        fine_analytical_df,
+        x_fine.get(),
+        fine_analytical_df.get(),
         color=analytical_color,
         linestyle="-",
         label="ψ' Analytical",
     )
-    axes[1, 0].plot(x_points, psi_prime, color=numerical_color, label="Computed ψ'")
+    axes[1, 0].plot(x_points.get(), numerical_derivatives[1].get(), color=numerical_color, label="Computed ψ'")
     axes[1, 0].set_title("First Derivative (ψ')")
     axes[1, 0].legend()
     axes[1, 0].grid(True)
 
     # 2階導関数 (中央右)
     axes[1, 1].plot(
-        x_fine,
-        fine_analytical_d2f,
+        x_fine.get(),
+        fine_analytical_d2f.get(),
         color=analytical_color,
         linestyle="-",
         label="ψ'' Analytical",
     )
-    axes[1, 1].plot(x_points, psi_second, color=numerical_color, label="Computed ψ''")
+    axes[1, 1].plot(x_points.get(), numerical_derivatives[2].get(), color=numerical_color, label="Computed ψ''")
     axes[1, 1].set_title("Second Derivative (ψ'')")
     axes[1, 1].legend()
     axes[1, 1].grid(True)
 
     # 3階導関数 (左下)
     axes[2, 0].plot(
-        x_fine,
-        fine_analytical_d3f,
+        x_fine.get(),
+        fine_analytical_d3f.get(),
         color=analytical_color,
         linestyle="-",
         label="ψ''' Analytical",
     )
-    axes[2, 0].plot(x_points, psi_third, color=numerical_color, label="Computed ψ'''")
+    axes[2, 0].plot(x_points.get(), numerical_derivatives[3].get(), color=numerical_color, label="Computed ψ'''")
     axes[2, 0].set_title("Third Derivative (ψ''')")
     axes[2, 0].legend()
     axes[2, 0].grid(True)
@@ -142,7 +137,7 @@ def visualize_error_comparison(
     save_path: str = None,
 ):
     """
-    異なるソルバー間の誤差比較をプロット
+    異なるソルバー間の誤差比較をプロット（CuPy対応）
 
     Args:
         results: ソルバー名 -> {関数名 -> [1階誤差, 2階誤差, 3階誤差]} の辞書
@@ -154,7 +149,7 @@ def visualize_error_comparison(
 
     # バープロット用のデータ準備
     bar_width = 0.25
-    indexes = jnp.arange(len(solver_names))
+    indexes = cp.arange(len(solver_names))
 
     # 誤差データと計算時間を抽出
     errors_1st = [results[name][test_func_name][0] for name in solver_names]
@@ -170,17 +165,17 @@ def visualize_error_comparison(
 
     # 誤差のプロット
     ax1.bar(
-        indexes - bar_width,
+        indexes.get() - bar_width,
         errors_1st,
         bar_width,
         label="1st Derivative (ψ')",
         color=colors[0],
     )
     ax1.bar(
-        indexes, errors_2nd, bar_width, label="2nd Derivative (ψ'')", color=colors[1]
+        indexes.get(), errors_2nd, bar_width, label="2nd Derivative (ψ'')", color=colors[1]
     )
     ax1.bar(
-        indexes + bar_width,
+        indexes.get() + bar_width,
         errors_3rd,
         bar_width,
         label="3rd Derivative (ψ''')",
@@ -190,17 +185,17 @@ def visualize_error_comparison(
     ax1.set_xlabel("Solver / Diff Mode")
     ax1.set_ylabel("Error (L2 norm)")
     ax1.set_title(f"Error Comparison for {test_func_name} Function")
-    ax1.set_xticks(indexes)
+    ax1.set_xticks(indexes.get())
     ax1.set_xticklabels(solver_names, rotation=45, ha="right")
     ax1.legend()
     ax1.set_yscale("log")  # 対数スケールで表示
 
     # 計算時間のプロット
-    ax2.bar(indexes, times, color="green")
+    ax2.bar(indexes.get(), times, color="green")
     ax2.set_xlabel("Solver / Diff Mode")
     ax2.set_ylabel("Time (seconds)")
     ax2.set_title("Computation Time")
-    ax2.set_xticks(indexes)
+    ax2.set_xticks(indexes.get())
     ax2.set_xticklabels(solver_names, rotation=45, ha="right")
 
     plt.tight_layout()
@@ -211,37 +206,4 @@ def visualize_error_comparison(
         save_path = f"results/comparison_{test_func_name.lower()}.png"
 
     plt.savefig(save_path)
-    plt.close()
-
-
-def visualize_matrix_properties(L: jnp.ndarray, title: str, save_path: str = None):
-    """
-    行列の特性を可視化
-
-    Args:
-        L: 対象の行列
-        title: プロットのタイトル
-        save_path: 保存先のパス (Noneの場合は保存しない)
-    """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-
-    # スパイパターンのヒートマップ
-    im1 = ax1.imshow(jnp.abs(L), cmap="viridis", norm="log")
-    ax1.set_title("Matrix Sparsity Pattern (log scale)")
-    plt.colorbar(im1, ax=ax1)
-
-    # 特異値分布
-    s = jnp.linalg.svd(L, compute_uv=False)
-    ax2.semilogy(range(1, len(s) + 1), s, "r-")
-    ax2.set_title("Singular Value Distribution")
-    ax2.set_xlabel("Index")
-    ax2.set_ylabel("Singular Value (log scale)")
-    ax2.grid(True)
-
-    plt.suptitle(title)
-    plt.tight_layout()
-
-    if save_path:
-        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
-        plt.savefig(save_path)
     plt.close()

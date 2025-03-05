@@ -331,7 +331,7 @@ def analyze_and_visualize_matrix(matrix: sp.spmatrix, output_dir: str = "matrix_
     
     # 1. スパース構造の可視化
     pattern_path = os.path.join(output_dir, f"{prefix}_sparsity_{matrix_size_str}.png")
-    visualize_sparsity_pattern(matrix, title=f"Sparsity Pattern", 
+    visualize_sparsity_pattern(matrix, title="Sparsity Pattern", 
                               save_path=pattern_path, dpi=dpi)
     
     # 2. ブロック構造の可視化
@@ -344,12 +344,12 @@ def analyze_and_visualize_matrix(matrix: sp.spmatrix, output_dir: str = "matrix_
     if max(m, n) <= 2000:
         values_path = os.path.join(output_dir, f"{prefix}_values_{matrix_size_str}.png")
         visualize_matrix_values(matrix, max_size=1000,
-                               title=f"Matrix Values", 
+                               title="Matrix Values", 
                                save_path=values_path, dpi=dpi)
     
     # 4. 行列の統計情報
     stats_path = os.path.join(output_dir, f"{prefix}_stats_{matrix_size_str}.png")
-    visualize_matrix_properties(matrix, title=f"Matrix Properties",
+    visualize_matrix_properties(matrix, title="Matrix Properties",
                                save_path=stats_path, dpi=dpi)
     
     print(f"\n行列分析が完了しました。結果は {output_dir} に保存されています。")

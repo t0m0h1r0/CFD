@@ -6,19 +6,19 @@
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple, Callable, Protocol, Optional
-import jax.numpy as jnp
+import cupy as cp
 
 
 class MatrixTransformer(Protocol):
     """
     行列変換プロトコル
 
-    行列と右辺ベクトルの変換に関する共通インターフェース
+    行列と右辺ベクトルの変換に関する共通インターフェース（CuPy対応）
     """
 
     def transform_matrix(
-        self, matrix: Optional[jnp.ndarray] = None
-    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+        self, matrix: Optional[cp.ndarray] = None
+    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         行列を変換し、逆変換関数を返す
 
@@ -30,7 +30,7 @@ class MatrixTransformer(Protocol):
         """
         ...
 
-    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+    def transform_rhs(self, rhs: cp.ndarray) -> cp.ndarray:
         """
         右辺ベクトルを変換する
 
@@ -47,10 +47,10 @@ class TransformationStrategy(ABC):
     """
     変換戦略の抽象基底クラス
 
-    スケーリングと正則化の両方に使用される基本機能を提供します
+    スケーリングと正則化の両方に使用される基本機能を提供します（CuPy対応）
     """
 
-    def __init__(self, matrix: jnp.ndarray, **kwargs):
+    def __init__(self, matrix: cp.ndarray, **kwargs):
         """
         初期化
 
@@ -58,7 +58,7 @@ class TransformationStrategy(ABC):
             matrix: 変換する行列
             **kwargs: 戦略固有のパラメータ
         """
-        self.matrix = matrix
+        self.matrix = cp.asarray(matrix)
         self._init_params(**kwargs)
 
     def _init_params(self, **kwargs):
@@ -84,7 +84,7 @@ class TransformationStrategy(ABC):
     @abstractmethod
     def transform_matrix(
         self,
-    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         行列を変換し、逆変換関数を返す
 
@@ -93,7 +93,7 @@ class TransformationStrategy(ABC):
         """
         pass
 
-    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+    def transform_rhs(self, rhs: cp.ndarray) -> cp.ndarray:
         """
         右辺ベクトルを変換する
 
@@ -109,12 +109,12 @@ class TransformationStrategy(ABC):
 
 class NoneTransformation(TransformationStrategy):
     """
-    変換なし - 恒等変換
+    変換なし - 恒等変換（CuPy対応）
     """
 
     def transform_matrix(
         self,
-    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         行列をそのまま返し、恒等関数を逆変換として返す
 
