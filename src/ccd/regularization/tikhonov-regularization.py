@@ -74,20 +74,27 @@ class TikhonovRegularization(RegularizationStrategy):
         
         # 疎行列の場合は効率的に単位行列を加算
         if self.is_sparse:
-            # 疎行列に対する対角成分の加算
-            # 各対角要素にalpha_scaledを加算
-            if isinstance(L_scaled, cpx_sparse.csr_matrix) or isinstance(L_scaled, cpx_sparse.csc_matrix):
-                # 対角要素のインデックスを取得
-                diag_indices = cp.arange(n)
-                # 対角要素にアクセスするための行列
-                eye = cpx_sparse.eye(n, format=L_scaled.format, dtype=L_scaled.dtype)
-                # 正則化された行列 = 元の行列 + alpha * 単位行列
+            try:
+                # 疎行列に対する対角成分の加算
+                # 単位行列を生成して加算
+                eye = cpx_sparse.eye(n, format='csr', dtype=L_scaled.dtype)
                 L_reg = L_scaled + alpha_scaled * eye
-            else:
-                # その他の形式の場合はCSRに変換
-                L_scaled_csr = L_scaled.tocsr()
-                eye = cpx_sparse.eye(n, format='csr', dtype=L_scaled_csr.dtype)
-                L_reg = L_scaled_csr + alpha_scaled * eye
+            except Exception as e:
+                print(f"Error adding identity matrix to sparse matrix: {e}")
+                # エラーが発生した場合は密行列に変換
+                if cpx_sparse.issparse(L_scaled):
+                    L_scaled_dense = L_scaled.toarray()
+                else:
+                    L_scaled_dense = L_scaled
+                
+                # 密行列で処理
+                I = cp.eye(n)
+                L_reg = L_scaled_dense + alpha_scaled * I
+                
+                # 疎行列に戻す
+                sparse_threshold = 1e-12
+                L_reg_sparse = cp.where(cp.abs(L_reg) > sparse_threshold, L_reg, 0)
+                L_reg = cpx_sparse.csr_matrix(L_reg_sparse)
         else:
             # 密行列の場合は単位行列を生成して加算
             I = cp.eye(n)

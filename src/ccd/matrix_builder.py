@@ -227,9 +227,13 @@ class CCDLeftHandBuilder:
         # COO形式で疎行列を構築するための準備
         depth = 4
         matrix_size = depth * n
+        
+        # 行と列と値のデータを格納するリスト
         rows = []
         cols = []
         data = []
+        
+        # 注: Pythonのリストには予約容量の概念がないので、単純に初期化
 
         # ヘルパー関数：ブロックを COO データに追加
         def add_block_to_coo(block_matrix, row_offset, col_offset):
@@ -258,9 +262,14 @@ class CCDLeftHandBuilder:
         add_block_to_coo(AR, row_start, row_start - depth)
         add_block_to_coo(BR, row_start, row_start)
 
+        # Pythonリストを1次元CuPy配列に変換
+        data_array = cp.array(data, dtype=cp.float64)
+        rows_array = cp.array(rows, dtype=cp.int32)
+        cols_array = cp.array(cols, dtype=cp.int32)
+
         # COO形式で疎行列を構築
         coo_matrix = cpx_sparse.coo_matrix(
-            (data, (rows, cols)), shape=(matrix_size, matrix_size)
+            (data_array, (rows_array, cols_array)), shape=(matrix_size, matrix_size)
         )
 
         # CSR形式に変換して返す（計算効率が良い）

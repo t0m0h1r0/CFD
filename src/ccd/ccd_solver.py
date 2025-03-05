@@ -23,21 +23,26 @@ class DirectSolver:
         if not cpx_sparse.issparse(L):
             L = cpx_sparse.csr_matrix(L)
 
-        # プリコンディショナーの設定
-        if L.shape[0] > 1000:  # 大きなサイズの行列の場合
-            try:
-                # 不完全LU分解によるプリコンディショナー
-                precond = cpx_sparse.linalg.spilu(L)
-                M = cpx_sparse.linalg.LinearOperator(
-                    L.shape, lambda x: precond.solve(x)
-                )
-                return cpx_spla.spsolve(L, b)
-            except:
-                # エラーの場合はプリコンディショナーなしで解く
-                return cpx_spla.spsolve(L, b)
-        else:
-            # 小さいサイズの場合は直接解く
+        # 右辺ベクトルが1次元ではない場合は変換
+        if b.ndim != 1:
+            b = b.ravel()
+
+        # CuPyの直接ソルバーを使用
+        try:
             return cpx_spla.spsolve(L, b)
+        except Exception as e:
+            print(f"Error in direct solver: {e}")
+            # エラーが発生した場合、別の方法を試す
+            print("Attempting to solve using alternative method...")
+            # LUまたはQRなどの別の方法を試みる
+            # LUを試す
+            try:
+                # スパース行列をデンス行列に変換
+                L_dense = L.toarray()
+                return cp.linalg.solve(L_dense, b)
+            except Exception as e2:
+                print(f"Alternative solver also failed: {e2}")
+                raise
 
 
 class IterativeSolver:
@@ -73,37 +78,53 @@ class IterativeSolver:
         if not cpx_sparse.issparse(L):
             L = cpx_sparse.csr_matrix(L)
 
+        # 右辺ベクトルが1次元ではない場合は変換
+        if b.ndim != 1:
+            b = b.ravel()
+
         # プリコンディショナーの準備
         M = None
         if self.use_precond:
             try:
                 # 対角成分によるプリコンディショナー
                 diag = L.diagonal()
-                if cp.all(cp.abs(diag) > 1e-10):
-                    D_inv = cpx_sparse.diags(1.0 / diag)
-                    M = cpx_sparse.linalg.LinearOperator(
-                        L.shape, lambda x: D_inv.dot(x)
-                    )
-            except:
+                # ゼロ要素がないことを確認
+                diag_abs = cp.abs(diag)
+                if cp.all(diag_abs > 1e-10):
+                    # CuPyの配列で逆数を計算
+                    diag_inv = 1.0 / diag
+                    D_inv = cpx_sparse.diags(diag_inv)
+                    
+                    # LinearOperatorを使用する代わりに直接対角行列を使用
+                    M = D_inv
+            except Exception as e:
+                print(f"Warning: Could not create preconditioner: {e}")
                 # エラーの場合はプリコンディショナーなしで実行
                 pass
 
-        solution, info = cpx_spla.gmres(
-            L,
-            b,
-            tol=self.tol,
-            atol=self.atol,
-            restart=self.restart,
-            maxiter=self.maxiter,
-            M=M,
-        )
-        
-        # 収束しない場合は直接法で解く
-        if info > 0:
-            print(f"GMRES did not converge: info={info}. Falling back to direct solver.")
-            return cpx_spla.spsolve(L, b)
+        try:
+            solution, info = cpx_spla.gmres(
+                L,
+                b,
+                tol=self.tol,
+                atol=self.atol,
+                restart=self.restart,
+                maxiter=self.maxiter,
+                M=M,
+            )
             
-        return solution
+            # 収束しない場合は直接法で解く
+            if info > 0:
+                print(f"GMRES did not converge: info={info}. Falling back to direct solver.")
+                return cpx_spla.spsolve(L, b)
+                
+            return solution
+            
+        except Exception as e:
+            print(f"Error in GMRES solver: {e}")
+            print("Falling back to direct solver.")
+            # GMRESが失敗した場合、直接法を試す
+            return cpx_spla.spsolve(L, b)
 
 
 class CCDSolver:
@@ -149,12 +170,15 @@ class CCDSolver:
             system_builder if system_builder else create_system_builder()
         )
 
-        # 左辺行列の構築（CuPy配列に変換）
-        # デフォルトの零ベクトルもCuPyに変換
-        zero_vector = cp.zeros(grid_config.n_points)
+        # デフォルトの零ベクトルをCuPyに変換
+        zero_vector = cp.zeros(grid_config.n_points, dtype=cp.float64)
 
         # システムビルダーを使用して行列を作成
-        self.L, _ = self.system_builder.build_system(grid_config, zero_vector)
+        try:
+            self.L, _ = self.system_builder.build_system(grid_config, zero_vector)
+        except Exception as e:
+            print(f"Error building system: {e}")
+            raise
 
         # 左辺行列が疎行列でない場合は変換
         if not cpx_sparse.issparse(self.L):

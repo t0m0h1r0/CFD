@@ -192,10 +192,17 @@ class TransformerFactory:
             # スケーリング後の行列がある場合はそれを使う
             if pipeline.transformers:
                 # スケーリング変換を実行して、その結果を正則化に渡す
-                scaled_matrix, _ = pipeline.transformers[0].transform_matrix(matrix)
-                regularization_strategy = TransformerFactory.create_regularization_strategy(
-                    regularization, scaled_matrix, regularization_params
-                )
+                try:
+                    scaled_matrix, _ = pipeline.transformers[0].transform_matrix(matrix)
+                    regularization_strategy = TransformerFactory.create_regularization_strategy(
+                        regularization, scaled_matrix, regularization_params
+                    )
+                except Exception as e:
+                    print(f"Error applying scaling before regularization: {e}")
+                    print("Falling back to applying regularization directly.")
+                    regularization_strategy = TransformerFactory.create_regularization_strategy(
+                        regularization, matrix, regularization_params
+                    )
             else:
                 # スケーリングがない場合は元の行列を使う
                 regularization_strategy = TransformerFactory.create_regularization_strategy(
