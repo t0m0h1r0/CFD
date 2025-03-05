@@ -6,7 +6,7 @@ CuPy対応のスケーリングと正則化を順に適用するパイプライ�
 
 import cupy as cp
 import cupyx.scipy.sparse as cpx_sparse
-from typing import Optional, Tuple, Callable, Dict, Any, List
+from typing import Optional, Tuple, Callable, Dict, Any, List, Union
 
 from strategy_interface import MatrixTransformer
 
@@ -15,7 +15,7 @@ class TransformationPipeline:
     """
     変換パイプライン
 
-    複数の変換を順次適用して、結果を結合します（CuPy対応）
+    複数の変換を順次適用して、結果を結合します（CuPy疎行列対応）
     """
 
     def __init__(self, transformers: Optional[List[MatrixTransformer]] = None):
@@ -29,10 +29,11 @@ class TransformationPipeline:
         self.original_matrix = None
         self.transformed_matrix = None
         self.transformation_history = []
+        self.is_sparse = False
 
     def transform_matrix(
-        self, matrix
-    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
+        self, matrix: Union[cp.ndarray, cpx_sparse.spmatrix]
+    ) -> Tuple[Union[cp.ndarray, cpx_sparse.spmatrix], Callable[[cp.ndarray], cp.ndarray]]:
         """
         全変換を順に適用
 
@@ -42,11 +43,9 @@ class TransformationPipeline:
         Returns:
             (変換された行列, 逆変換関数)
         """
-        # スパース行列の場合、密行列に変換
-        if cpx_sparse.issparse(matrix):
-            self.original_matrix = matrix.toarray()
-        else:
-            self.original_matrix = cp.asarray(matrix)
+        # 疎行列かどうかを判断
+        self.is_sparse = cpx_sparse.issparse(matrix)
+        self.original_matrix = matrix
 
         transformed = self.original_matrix
         inverse_funcs = []
@@ -101,12 +100,14 @@ class TransformerFactory:
     """
     変換のファクトリークラス
 
-    スケーリングと正則化の戦略を生成します（CuPy対応）
+    スケーリングと正則化の戦略を生成します（CuPy疎行列対応）
     """
 
     @staticmethod
     def create_scaling_strategy(
-        name: str, matrix, params: Optional[Dict[str, Any]] = None
+        name: str, 
+        matrix: Union[cp.ndarray, cpx_sparse.spmatrix], 
+        params: Optional[Dict[str, Any]] = None
     ) -> MatrixTransformer:
         """
         スケーリング戦略を作成
@@ -126,18 +127,14 @@ class TransformerFactory:
 
         params = params or {}
 
-        # スパース行列の場合は密行列に変換
-        import cupyx.scipy.sparse as cpx_sparse
-
-        if cpx_sparse.issparse(matrix):
-            matrix = matrix.toarray()
-
         strategy_class = scaling_registry.get(name)
         return strategy_class(matrix, **params)
 
     @staticmethod
     def create_regularization_strategy(
-        name: str, matrix, params: Optional[Dict[str, Any]] = None
+        name: str, 
+        matrix: Union[cp.ndarray, cpx_sparse.spmatrix], 
+        params: Optional[Dict[str, Any]] = None
     ) -> MatrixTransformer:
         """
         正則化戦略を作成
@@ -157,18 +154,12 @@ class TransformerFactory:
 
         params = params or {}
 
-        # スパース行列の場合は密行列に変換
-        import cupyx.scipy.sparse as cpx_sparse
-
-        if cpx_sparse.issparse(matrix):
-            matrix = matrix.toarray()
-
         strategy_class = regularization_registry.get(name)
         return strategy_class(matrix, **params)
 
     @staticmethod
     def create_transformation_pipeline(
-        matrix,
+        matrix: Union[cp.ndarray, cpx_sparse.spmatrix],
         scaling: str = "none",
         regularization: str = "none",
         scaling_params: Optional[Dict[str, Any]] = None,
@@ -198,9 +189,25 @@ class TransformerFactory:
 
         # 正則化を追加
         if regularization.lower() != "none":
-            regularization_strategy = TransformerFactory.create_regularization_strategy(
-                regularization, matrix, regularization_params
-            )
+            # スケーリング後の行列がある場合はそれを使う
+            if pipeline.transformers:
+                # スケーリング変換を実行して、その結果を正則化に渡す
+                try:
+                    scaled_matrix, _ = pipeline.transformers[0].transform_matrix(matrix)
+                    regularization_strategy = TransformerFactory.create_regularization_strategy(
+                        regularization, scaled_matrix, regularization_params
+                    )
+                except Exception as e:
+                    print(f"Error applying scaling before regularization: {e}")
+                    print("Falling back to applying regularization directly.")
+                    regularization_strategy = TransformerFactory.create_regularization_strategy(
+                        regularization, matrix, regularization_params
+                    )
+            else:
+                # スケーリングがない場合は元の行列を使う
+                regularization_strategy = TransformerFactory.create_regularization_strategy(
+                    regularization, matrix, regularization_params
+                )
             pipeline.add_transformer(regularization_strategy)
 
         return pipeline

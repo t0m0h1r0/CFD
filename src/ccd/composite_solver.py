@@ -5,7 +5,8 @@
 """
 
 import cupy as cp
-from typing import Dict, Any, Optional, List, Tuple
+import cupyx.scipy.sparse as cpx_sparse
+from typing import Dict, Any, Optional, List, Tuple, Union
 
 from grid_config import GridConfig
 from ccd_solver import CCDSolver
@@ -15,7 +16,7 @@ from transformation_pipeline import TransformerFactory
 
 class CCDCompositeSolver(CCDSolver):
     """
-    スケーリングと正則化を組み合わせた統合ソルバー（CuPy対応）
+    スケーリングと正則化を組み合わせた統合ソルバー（CuPy疎行列対応）
     """
 
     def __init__(
@@ -67,21 +68,27 @@ class CCDCompositeSolver(CCDSolver):
         super().__init__(grid_config, **solver_kwargs)
 
         # 変換パイプラインを初期化
-        self.transformer = TransformerFactory.create_transformation_pipeline(
-            self.L,
-            scaling=self.scaling,
-            regularization=self.regularization,
-            scaling_params=self.scaling_params,
-            regularization_params=self.regularization_params,
-        )
+        try:
+            self.transformer = TransformerFactory.create_transformation_pipeline(
+                self.L,
+                scaling=self.scaling,
+                regularization=self.regularization,
+                scaling_params=self.scaling_params,
+                regularization_params=self.regularization_params,
+            )
 
-        # 行列を変換
-        self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(
-            self.L
-        )
+            # 行列を変換
+            self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(
+                self.L
+            )
+        except Exception as e:
+            print(f"Warning: Error during transformation setup: {e}")
+            print("Falling back to no transformation")
+            self.L_transformed = self.L
+            self.inverse_transform = lambda x: x
 
     def solve(
-        self, f: cp.ndarray
+        self, f: Union[cp.ndarray, List[float]]
     ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
         導関数を計算
@@ -92,17 +99,34 @@ class CCDCompositeSolver(CCDSolver):
         Returns:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
+        # 入力をCuPy配列に変換
+        try:
+            f_cupy = cp.asarray(f, dtype=cp.float64)
+        except Exception as e:
+            print(f"Error converting input to CuPy array: {e}")
+            # NumPy配列に変換してからCuPyに変換
+            import numpy as np
+            f_numpy = np.asarray(f, dtype=np.float64)
+            f_cupy = cp.array(f_numpy)
+        
         # 右辺ベクトルを計算
-        _, rhs = self.system_builder.build_system(self.grid_config, f)
+        try:
+            _, rhs = self.system_builder.build_system(self.grid_config, f_cupy)
 
-        # 右辺ベクトルに変換を適用
-        rhs_transformed = self.transformer.transform_rhs(rhs)
+            # 右辺ベクトルに変換を適用
+            rhs_transformed = self.transformer.transform_rhs(rhs)
 
-        # 線形方程式を解く
-        solution_transformed = self.solver.solve(self.L_transformed, rhs_transformed)
+            # 線形方程式を解く
+            solution_transformed = self.solver.solve(self.L_transformed, rhs_transformed)
 
-        # 逆変換を適用
-        solution = self.inverse_transform(solution_transformed)
+            # 逆変換を適用
+            solution = self.inverse_transform(solution_transformed)
+        except Exception as e:
+            print(f"Error in composite solver: {e}")
+            # 変換なしで直接解く
+            print("Attempting to solve without transformations")
+            _, rhs = self.system_builder.build_system(self.grid_config, f_cupy)
+            solution = self.solver.solve(self.L, rhs)
 
         # 解ベクトルから各成分を抽出
         return self.system_builder.extract_results(self.grid_config, solution)
