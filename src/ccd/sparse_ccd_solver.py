@@ -13,6 +13,8 @@ from grid_config import GridConfig
 from sparse_matrix_builder import SparseCCDLeftHandBuilder
 from vector_builder import CCDRightHandBuilder
 from result_extractor import CCDResultExtractor
+from plugin_loader import PluginLoader
+from transformation_pipeline import TransformationPipeline, TransformerFactory
 
 
 class SparseCCDSolver:
@@ -115,3 +117,79 @@ class SparseCCDSolver:
         cp.get_default_memory_pool().free_all_blocks()
 
         return result
+
+
+class SparseCompositeSolver(SparseCCDSolver):
+    """
+    スケーリングと正則化を組み合わせた疎行列ソルバー
+    """
+
+    def __init__(
+        self,
+        grid_config: GridConfig,
+        scaling: str = "none",
+        regularization: str = "none",
+        scaling_params: Optional[Dict[str, Any]] = None,
+        regularization_params: Optional[Dict[str, Any]] = None,
+        use_direct_solver: bool = False,  # 疎行列ソルバーではデフォルトで反復法を使用
+        enable_boundary_correction: bool = None,
+        coeffs: Optional[List[float]] = None,
+        **kwargs,
+    ):
+        # プラグインの読み込み
+        PluginLoader.load_plugins(verbose=False)
+
+        # 親クラスの初期化
+        super().__init__(
+            grid_config,
+            use_iterative=not use_direct_solver,
+            enable_boundary_correction=enable_boundary_correction,
+            solver_kwargs=kwargs,
+            coeffs=coeffs,
+        )
+
+        # 変換パイプラインの初期化
+        self.transformer = TransformerFactory.create_transformation_pipeline(
+            self.L_sparse,
+            scaling=scaling,
+            regularization=regularization,
+            scaling_params=scaling_params,
+            regularization_params=regularization_params,
+        )
+
+        # 行列の変換
+        self.L_transformed, self.inverse_transform = self.transformer.transform_matrix(self.L_sparse)
+
+    def solve(self, f):
+        # 親クラスの solve メソッドを呼び出し
+        return super().solve(f)
+
+    @classmethod
+    def load_plugins(cls, silent: bool = True) -> None:
+        """
+        プラグインを読み込む
+
+        Args:
+            silent: ログを抑制するかどうか
+        """
+        PluginLoader.load_plugins(verbose=not silent)
+
+    @classmethod
+    def available_scaling_methods(cls) -> List[str]:
+        """
+        利用可能なスケーリング手法のリストを返す
+
+        Returns:
+            スケーリング手法名のリスト
+        """
+        return PluginLoader.available_scaling_methods()
+
+    @classmethod
+    def available_regularization_methods(cls) -> List[str]:
+        """
+        利用可能な正則化手法のリストを返す
+
+        Returns:
+            正則化手法名のリスト
+        """
+        return PluginLoader.available_regularization_methods()
