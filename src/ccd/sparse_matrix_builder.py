@@ -124,7 +124,7 @@ class SparseCCDLeftHandBuilder:
         def update_block(block, row_index, new_row):
             """指定された行を更新"""
             result = block.copy()
-            result[row_index] = new_row
+            result[row_index] = cp.array(new_row)  # ここでPythonのリストをCuPy配列に変換
             return result
 
         # ディリクレ境界条件
