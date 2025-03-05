@@ -4,7 +4,7 @@
 各行と列の要素の二乗和が等しくなるようスケーリングする手法を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from scaling_strategy import ScalingStrategy, scaling_registry

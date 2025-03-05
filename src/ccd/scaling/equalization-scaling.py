@@ -4,7 +4,7 @@
 各行と列の最大絶対値を1にスケーリングする手法を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 from typing import Tuple, Dict, Any, Callable
 
 from scaling_strategy import ScalingStrategy, scaling_registry
@@ -27,7 +27,7 @@ class EqualizationScaling(ScalingStrategy):
         """
         return {}
 
-    def apply_scaling(self) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    def apply_scaling(self) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         均等化スケーリングを適用
 
@@ -38,17 +38,17 @@ class EqualizationScaling(ScalingStrategy):
             (スケーリングされた行列, 逆変換関数)
         """
         # 1. 行の均等化
-        row_max = jnp.max(jnp.abs(self.matrix), axis=1)
+        row_max = cp.max(cp.abs(self.matrix), axis=1)
         # 0除算を防ぐため、非常に小さい値をクリップ
-        row_max = jnp.maximum(row_max, 1e-10)
-        D_row = jnp.diag(1.0 / row_max)
+        row_max = cp.maximum(row_max, 1e-10)
+        D_row = cp.diag(1.0 / row_max)
         L_row_eq = D_row @ self.matrix
 
         # 2. 列の均等化
-        col_max = jnp.max(jnp.abs(L_row_eq), axis=0)
+        col_max = cp.max(cp.abs(L_row_eq), axis=0)
         # 0除算を防ぐため、非常に小さい値をクリップ
-        col_max = jnp.maximum(col_max, 1e-10)
-        D_col = jnp.diag(1.0 / col_max)
+        col_max = cp.maximum(col_max, 1e-10)
+        D_col = cp.diag(1.0 / col_max)
 
         # 3. スケーリングを適用
         L_scaled = L_row_eq @ D_col
@@ -63,7 +63,7 @@ class EqualizationScaling(ScalingStrategy):
 
         return L_scaled, inverse_scaling
 
-    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+    def transform_rhs(self, rhs: cp.ndarray) -> cp.ndarray:
         """
         右辺ベクトルにスケーリングを適用
 

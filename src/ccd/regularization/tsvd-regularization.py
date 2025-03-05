@@ -4,7 +4,7 @@
 特定のランク以上の特異値を完全に切り捨てる正則化戦略を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategy import RegularizationStrategy, regularization_registry

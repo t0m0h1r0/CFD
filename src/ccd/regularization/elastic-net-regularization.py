@@ -4,7 +4,7 @@ Elastic Net 正則化戦略
 L1正則化とL2正則化を組み合わせた手法を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategy import RegularizationStrategy, regularization_registry
@@ -46,7 +46,7 @@ class ElasticNetRegularization(RegularizationStrategy):
 
     def apply_regularization(
         self,
-    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         Elastic Net 正則化を適用
 
@@ -57,7 +57,7 @@ class ElasticNetRegularization(RegularizationStrategy):
             (正則化された行列, 逆変換関数)
         """
         # 行列のスケールを確認
-        matrix_norm = jnp.linalg.norm(self.matrix, ord=2)
+        matrix_norm = cp.linalg.norm(self.matrix, ord=2)
 
         # 行列のスケールが大きい場合はスケーリング
         if matrix_norm > 1.0:
@@ -75,7 +75,7 @@ class ElasticNetRegularization(RegularizationStrategy):
 
         # L2正則化を適用した行列を計算
         n = L_scaled.shape[1]
-        L_reg = L_scaled + alpha_l2 * jnp.eye(n)
+        L_reg = L_scaled + alpha_l2 * cp.eye(n)
 
         # 逆変換関数
         def inverse_transform(x_reg):

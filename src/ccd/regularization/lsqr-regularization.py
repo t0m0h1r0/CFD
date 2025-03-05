@@ -4,7 +4,7 @@ LSQR法による正則化戦略
 Lanczos双共役勾配法に基づく反復法による正則化を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategy import RegularizationStrategy, regularization_registry

@@ -4,7 +4,7 @@ Total Variation 正則化戦略
 解の微分に対するペナルティを課す全変動正則化を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategy import RegularizationStrategy, regularization_registry

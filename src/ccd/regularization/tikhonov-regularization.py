@@ -4,7 +4,7 @@
 Tikhonov正則化（L2正則化）の実装を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from regularization_strategy import RegularizationStrategy, regularization_registry

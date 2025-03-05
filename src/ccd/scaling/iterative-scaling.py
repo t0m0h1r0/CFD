@@ -4,7 +4,7 @@
 Sinkhorn-Knopp法による反復的スケーリングを提供します。
 """
 
-import jax.numpy as jnp
+import cupy as jnp
 from typing import Tuple, Dict, Any, Callable
 
 from scaling_strategy import ScalingStrategy, scaling_registry
