@@ -65,23 +65,30 @@ class CCDSystemBuilder:
         )
         use_coeffs = grid_config.coeffs if coeffs is None else coeffs
 
-        # 左辺行列と右辺ベクトルを構築
-        L = self.matrix_builder.build_matrix(
-            grid_config,
-            use_coeffs,
-            dirichlet_enabled=use_dirichlet,
-            neumann_enabled=use_neumann,
-        )
+        try:
+            # 左辺行列と右辺ベクトルを構築
+            L = self.matrix_builder.build_matrix(
+                grid_config,
+                use_coeffs,
+                dirichlet_enabled=use_dirichlet,
+                neumann_enabled=use_neumann,
+            )
 
-        b = self.vector_builder.build_vector(
-            grid_config,
-            values,
-            use_coeffs,
-            dirichlet_enabled=use_dirichlet,
-            neumann_enabled=use_neumann,
-        )
+            b = self.vector_builder.build_vector(
+                grid_config,
+                values,
+                use_coeffs,
+                dirichlet_enabled=use_dirichlet,
+                neumann_enabled=use_neumann,
+            )
 
-        return L, b
+            return L, b
+            
+        except Exception as e:
+            # エラー情報をより詳細に出力
+            print(f"Error in build_system: {e}")
+            # エラーを再送出して呼び出し元に伝播
+            raise
 
     def extract_results(
         self, grid_config: GridConfig, solution: cp.ndarray
