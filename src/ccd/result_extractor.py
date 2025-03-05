@@ -18,11 +18,11 @@ class CCDResultExtractor:
     ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
         解ベクトルから関数値と各階導関数を抽出
-        
+
         Args:
             grid_config: グリッド設定
             solution: 解ベクトル
-            
+
         Returns:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
@@ -40,10 +40,12 @@ class CCDResultExtractor:
         if grid_config.is_dirichlet:
             # 境界条件による補正を適用
             psi0 = grid_config.apply_boundary_correction(psi0)
-            
+
             # 補正後、境界値を厳密に設定
-            if (grid_config.enable_boundary_correction and 
-                grid_config.dirichlet_values is not None):
+            if (
+                grid_config.enable_boundary_correction
+                and grid_config.dirichlet_values is not None
+            ):
                 psi0[0] = grid_config.dirichlet_values[0]
                 psi0[n - 1] = grid_config.dirichlet_values[1]
 

@@ -16,7 +16,7 @@ from ccd_tester import CCDMethodTester
 class SparseCCDMethodTester(CCDMethodTester):
     """
     疎行列を使用したCCD法のテストを実行するクラス
-    
+
     CCDMethodTesterを継承し、疎行列ソルバーに対応させます。
     基本的な機能はCCDMethodTesterと同じですが、
     疎行列ソルバーの特性に最適化されています。
@@ -42,33 +42,15 @@ class SparseCCDMethodTester(CCDMethodTester):
         """
         # CCDMethodTesterと同様の初期化
         super().__init__(
-            solver_class, 
-            grid_config, 
-            x_range, 
-            solver_kwargs, 
-            test_functions, 
-            coeffs
+            solver_class, grid_config, x_range, solver_kwargs, test_functions, coeffs
         )
-        
+
         # メモリ使用量のレポートを追加
         self.report_memory_usage = True
-    
-    def compute_errors(
-        self, test_func: TestFunction
-    ) -> Tuple[float, float, float, float]:
-        """
-        各導関数の誤差を計算 - メモリ使用量計測を追加
-        
-        Args:
-            test_func: テスト関数
 
-        Returns:
-            (psi'の誤差, psi''の誤差, psi'''の誤差, 計算時間)
-        """
-        # 親クラスのcompute_errorsメソッドを呼び出し
-        result = super().compute_errors(test_func)
-        return result
-    
+        # 明示的にgrid_configを設定
+        self.grid_config = grid_config
+
     def run_tests(
         self, prefix: str = "", visualize: bool = True
     ) -> Dict[str, Tuple[List[float], float]]:
@@ -84,41 +66,39 @@ class SparseCCDMethodTester(CCDMethodTester):
         """
         # 出力ディレクトリの作成
         os.makedirs("results", exist_ok=True)
-        
+
         # 疎行列ソルバーであることを表示
         solver_name = self.solver_class.__name__
         print(f"疎行列ソルバー {solver_name} を使用したテストを実行します")
-        
+
         # 親クラスのrun_testsメソッドを呼び出し
         results = super().run_tests(prefix, visualize)
-        
+
         # 疎行列特有の情報を表示
-        if hasattr(self.solver, 'L_sparse'):
+        if hasattr(self.solver, "L_sparse"):
             matrix_size = self.grid_config.n_points * 4
             # 理論的な疎行列の非ゼロ要素数の推定
-            estimated_nnz = (3 * 4 * 4) * 2 + (3 * 4 * 4) * (self.grid_config.n_points - 2)
+            estimated_nnz = (3 * 4 * 4) * 2 + (3 * 4 * 4) * (
+                self.grid_config.n_points - 2
+            )
             density = estimated_nnz / (matrix_size * matrix_size)
-            
+
             print("\n===== 疎行列情報 =====")
             print(f"行列サイズ: {matrix_size}x{matrix_size}")
             print(f"推定非ゼロ要素数: {estimated_nnz}")
             print(f"推定密度: {density:.2e}")
             print(f"メモリ削減率（推定）: {1.0 - density:.2%}")
-        
+
         return results
 
 
 # テスト用コード
 if __name__ == "__main__":
     from sparse_ccd_solver import SparseCompositeSolver
-    
+
     # グリッド設定
-    grid_config = GridConfig(
-        n_points=64,
-        h=1.0/63,
-        coeffs=[1.0, 0.0, 0.0, 0.0]
-    )
-    
+    grid_config = GridConfig(n_points=64, h=1.0 / 63, coeffs=[1.0, 0.0, 0.0, 0.0])
+
     # スパーステスターの実行
     tester = SparseCCDMethodTester(
         SparseCompositeSolver,
@@ -126,5 +106,5 @@ if __name__ == "__main__":
         (-1.0, 1.0),
         solver_kwargs={"scaling": "none", "regularization": "none"},
     )
-    
+
     tester.run_tests(prefix="sparse_test_", visualize=True)

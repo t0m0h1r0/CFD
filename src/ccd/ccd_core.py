@@ -23,7 +23,5 @@ def create_system_builder() -> CCDSystemBuilder:
         構成済みのCCDSystemBuilderインスタンス
     """
     return CCDSystemBuilder(
-        CCDLeftHandBuilder(),
-        CCDRightHandBuilder(),
-        CCDResultExtractor()
+        CCDLeftHandBuilder(), CCDRightHandBuilder(), CCDResultExtractor()
     )

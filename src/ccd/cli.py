@@ -93,7 +93,7 @@ def run_cli():
     n = args.n
     x_range = tuple(args.xrange)
     L = x_range[1] - x_range[0]
-    
+
     # coeffsを設定したグリッド設定を作成
     grid_config = GridConfig(n_points=n, h=L / (n - 1), coeffs=args.coeffs)
 
@@ -152,12 +152,10 @@ def run_cli():
         solvers_list = []
         for name, scaling, regularization, params in configs:
             params_copy = params.copy()
-            
+
             # 各ソルバー用のグリッド設定を作成（coeffsを含む）
             solver_grid_config = GridConfig(
-                n_points=grid_config.n_points, 
-                h=grid_config.h,
-                coeffs=args.coeffs
+                n_points=grid_config.n_points, h=grid_config.h, coeffs=args.coeffs
             )
 
             tester = CCDMethodTester(

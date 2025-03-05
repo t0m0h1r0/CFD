@@ -78,8 +78,9 @@ def parse_args():
     )
     compare_parser.add_argument("--no-viz", action="store_true", help="可視化を無効化")
     compare_parser.add_argument(
-        "--dense-vs-sparse", action="store_true", 
-        help="密行列と疎行列ソルバーを比較（他のオプションより優先）"
+        "--dense-vs-sparse",
+        action="store_true",
+        help="密行列と疎行列ソルバーを比較（他のオプションより優先）",
     )
 
     # 一覧表示コマンド - こちらも親パーサーから引数を継承（必要に応じて）
@@ -101,7 +102,7 @@ def run_cli():
     n = args.n
     x_range = tuple(args.xrange)
     L = x_range[1] - x_range[0]
-    
+
     # coeffsを設定したグリッド設定を作成
     grid_config = GridConfig(n_points=n, h=L / (n - 1), coeffs=args.coeffs)
 
@@ -113,6 +114,7 @@ def run_cli():
     else:
         # 従来の密行列ソルバーを使用
         from composite_solver import CCDCompositeSolver
+
         solver_class = CCDCompositeSolver
         tester_class = CCDMethodTester
 
@@ -166,14 +168,10 @@ def run_cli():
 
             # グリッド設定
             dense_grid_config = GridConfig(
-                n_points=grid_config.n_points, 
-                h=grid_config.h,
-                coeffs=args.coeffs
+                n_points=grid_config.n_points, h=grid_config.h, coeffs=args.coeffs
             )
             sparse_grid_config = GridConfig(
-                n_points=grid_config.n_points, 
-                h=grid_config.h,
-                coeffs=args.coeffs
+                n_points=grid_config.n_points, h=grid_config.h, coeffs=args.coeffs
             )
 
             # テスターを作成
@@ -187,7 +185,7 @@ def run_cli():
                 },
                 coeffs=args.coeffs,
             )
-            
+
             sparse_tester = SparseCCDMethodTester(
                 SparseCompositeSolver,
                 sparse_grid_config,
@@ -211,7 +209,7 @@ def run_cli():
             comparator.run_comparison(
                 save_results=True, visualize=not args.no_viz, prefix="dense_vs_sparse_"
             )
-            
+
         else:
             # 通常の比較モード（スケーリングまたは正則化）
             # 比較モードに応じて構成を設定
@@ -228,12 +226,10 @@ def run_cli():
             solvers_list = []
             for name, scaling, regularization, params in configs:
                 params_copy = params.copy()
-                
+
                 # 各ソルバー用のグリッド設定を作成（coeffsを含む）
                 solver_grid_config = GridConfig(
-                    n_points=grid_config.n_points, 
-                    h=grid_config.h,
-                    coeffs=args.coeffs
+                    n_points=grid_config.n_points, h=grid_config.h, coeffs=args.coeffs
                 )
 
                 tester = tester_class(
@@ -254,7 +250,9 @@ def run_cli():
             prefix = "sparse_" if args.sparse else ""
             comparator = SolverComparator(solvers_list, grid_config, x_range)
             comparator.run_comparison(
-                save_results=True, visualize=not args.no_viz, prefix=f"{prefix}{args.mode}_"
+                save_results=True,
+                visualize=not args.no_viz,
+                prefix=f"{prefix}{args.mode}_",
             )
 
     elif args.command == "list":
