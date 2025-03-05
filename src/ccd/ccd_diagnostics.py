@@ -4,11 +4,13 @@
 行列の基本的な特性を診断する機能を提供します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 import numpy as np
 from typing import Type, Dict, Any, Optional
 
-from ccd_core import GridConfig, CCDLeftHandBuilder, CCDRightHandBuilder
+from grid_config import GridConfig
+from matrix_builder import CCDLeftHandBuilder
+from vector_builder import CCDRightHandBuilder
 from ccd_solver import CCDSolver
 from test_functions import TestFunctionFactory
 
@@ -83,7 +85,7 @@ class CCDSolverDiagnostics:
         print(f"係数 [a, b, c, d]: {self.solver.grid_config.coeffs}")
 
         # 右辺ベクトルを作成（ゼロ関数の場合）
-        zero_f = jnp.zeros(self.grid_config.n_points)
+        zero_f = cp.zeros(self.grid_config.n_points)
         right_hand = self.right_builder.build_vector(
             self.solver.grid_config,
             zero_f,
@@ -115,14 +117,14 @@ class CCDSolverDiagnostics:
         print("\n左端の境界条件に対応する左辺行列の行:")
         for i in left_idx:
             print(
-                f"  行 {i}: {jnp.around(L_test[i, :8], decimals=3)}..."
+                f"  行 {i}: {cp.around(L_test[i, :8], decimals=3)}..."
             )  # 最初の8要素のみ表示
 
         print("\n右端の境界条件に対応する左辺行列の行:")
         for i in right_idx:
             start_idx = max(0, i - 8)
             print(
-                f"  行 {i}: ...{jnp.around(L_test[i, start_idx : i + 1], decimals=3)}"
+                f"  行 {i}: ...{cp.around(L_test[i, start_idx : i + 1], decimals=3)}"
             )
 
         return {
@@ -153,7 +155,7 @@ class CCDSolverDiagnostics:
         xrange = [-1.0, 1.0]  # 計算範囲
 
         # x座標のグリッド点
-        x_points = jnp.array([xrange[0] + i * h for i in range(n)])
+        x_points = cp.array([xrange[0] + i * h for i in range(n)])
 
         results = {}
 
@@ -162,10 +164,10 @@ class CCDSolverDiagnostics:
             print(f"\n--- テスト関数: {test_func.name} ---")
 
             # 関数値と導関数を計算
-            f_values = jnp.array([test_func.f(x) for x in x_points])
-            df_values = jnp.array([test_func.df(x) for x in x_points])
-            d2f_values = jnp.array([test_func.d2f(x) for x in x_points])
-            d3f_values = jnp.array([test_func.d3f(x) for x in x_points])
+            f_values = cp.array([test_func.f(x) for x in x_points])
+            df_values = cp.array([test_func.df(x) for x in x_points])
+            d2f_values = cp.array([test_func.d2f(x) for x in x_points])
+            d3f_values = cp.array([test_func.d3f(x) for x in x_points])
 
             # 境界条件の値を計算
             dirichlet_values = [f_values[0], f_values[-1]]
@@ -208,12 +210,12 @@ class CCDSolverDiagnostics:
 
             # 左右の境界でディリクレ条件を探す
             for i in left_idx:
-                if jnp.all(L_test[i, :4] == jnp.array([1, 0, 0, 0])):
+                if cp.all(L_test[i, :4] == cp.array([1, 0, 0, 0])):
                     dirichlet_row_left = i
                     break
 
             for i in right_idx:
-                if jnp.all(L_test[i, i - 3 : i + 1] == jnp.array([0, 0, 0, 1])):
+                if cp.all(L_test[i, i - 3 : i + 1] == cp.array([0, 0, 0, 1])):
                     dirichlet_row_right = i
                     break
 
@@ -247,13 +249,13 @@ class CCDSolverDiagnostics:
             # ディリクレ行の表示
             if dirichlet_row_left >= 0:
                 print(f"\n左端ディリクレ条件（行 {dirichlet_row_left}）:")
-                print(f"  {jnp.around(L_test[dirichlet_row_left, :8], decimals=3)}...")
+                print(f"  {cp.around(L_test[dirichlet_row_left, :8], decimals=3)}...")
 
             if dirichlet_row_right >= 0:
                 print(f"\n右端ディリクレ条件（行 {dirichlet_row_right}）:")
                 start_idx = max(0, dirichlet_row_right - 7)
                 print(
-                    f"  ...{jnp.around(L_test[dirichlet_row_right, start_idx : dirichlet_row_right + 1], decimals=3)}"
+                    f"  ...{cp.around(L_test[dirichlet_row_right, start_idx : dirichlet_row_right + 1], decimals=3)}"
                 )
 
             # 係数の影響分析
@@ -308,13 +310,13 @@ class CCDSolverDiagnostics:
         xrange = [-1.0, 1.0]  # 計算範囲
 
         # x座標のグリッド点
-        x_points = jnp.array([xrange[0] + i * h for i in range(n)])
+        x_points = cp.array([xrange[0] + i * h for i in range(n)])
 
         # 関数値と導関数を計算
-        f_values = jnp.array([test_func.f(x) for x in x_points])
-        df_values = jnp.array([test_func.df(x) for x in x_points])
-        d2f_values = jnp.array([test_func.d2f(x) for x in x_points])
-        d3f_values = jnp.array([test_func.d3f(x) for x in x_points])
+        f_values = cp.array([test_func.f(x) for x in x_points])
+        df_values = cp.array([test_func.df(x) for x in x_points])
+        d2f_values = cp.array([test_func.d2f(x) for x in x_points])
+        d3f_values = cp.array([test_func.d3f(x) for x in x_points])
 
         # 境界条件の値を計算
         dirichlet_values = [f_values[0], f_values[-1]]
@@ -363,9 +365,9 @@ class CCDSolverDiagnostics:
         if a == 0 and c == 1:  # f = ψ''
             print("\n特殊係数の場合の解析解:")
             if func_name == "Sine":
-                true_solution = lambda x: -jnp.sin(jnp.pi * x) / (jnp.pi**2)
+                true_solution = lambda x: -cp.sin(cp.pi * x) / (cp.pi**2)
             elif func_name == "Cosine":
-                true_solution = lambda x: -jnp.cos(2 * jnp.pi * x) / (4 * jnp.pi**2)
+                true_solution = lambda x: -cp.cos(2 * cp.pi * x) / (4 * cp.pi**2)
             elif func_name == "QuadPoly":
                 # f = (1 - x^2) -> ψ = x^4/12 - x^2/2 + C
                 # 境界条件から定数C = 11/12 を決定
@@ -374,11 +376,11 @@ class CCDSolverDiagnostics:
                 true_solution = None
 
             if true_solution:
-                true_values = jnp.array([true_solution(x) for x in x_points])
+                true_values = cp.array([true_solution(x) for x in x_points])
                 print(f"  特殊解 ψの左端での値: {true_values[0]}")
                 print(f"  特殊解 ψの右端での値: {true_values[-1]}")
                 # 誤差の計算
-                error = jnp.sqrt(jnp.mean((psi - true_values) ** 2))
+                error = cp.sqrt(cp.mean((psi - true_values) ** 2))
                 print(f"  特殊解との誤差 (RMSE): {error}")
 
         # 境界条件との一致を確認

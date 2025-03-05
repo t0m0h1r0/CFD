@@ -6,12 +6,12 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
-import jax.numpy as jnp
+import cupy as cp
 
 
 @dataclass
 class GridConfig:
-    """グリッド設定を保持するデータクラス"""
+    """グリッド設定を保持するデータクラス（CuPy対応）"""
 
     n_points: int  # グリッド点の数
     h: float  # グリッド幅
@@ -75,7 +75,7 @@ class GridConfig:
             
         return self.neumann_values[0], self.neumann_values[1]
         
-    def apply_boundary_correction(self, psi: jnp.ndarray) -> jnp.ndarray:
+    def apply_boundary_correction(self, psi: cp.ndarray) -> cp.ndarray:
         """計算結果に対して境界条件による補正を適用"""
         if not self.is_dirichlet or self.dirichlet_values is None or not self.enable_boundary_correction:
             return psi

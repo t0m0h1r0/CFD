@@ -1,10 +1,10 @@
 """
 正則化戦略モジュール
 
-行列の正則化に関する戦略を定義します。
+CuPy対応の行列の正則化に関する戦略を定義します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 from typing import Tuple, Callable
 
 from strategy_interface import TransformationStrategy
@@ -15,10 +15,10 @@ class RegularizationStrategy(TransformationStrategy):
     """
     正則化戦略の基底クラス
 
-    行列の正則化を行うための共通インターフェース
+    行列の正則化を行うための共通インターフェース（CuPy対応）
     """
 
-    def __init__(self, matrix: jnp.ndarray, **kwargs):
+    def __init__(self, matrix: cp.ndarray, **kwargs):
         """
         初期化
 
@@ -26,13 +26,13 @@ class RegularizationStrategy(TransformationStrategy):
             matrix: 正則化する行列
             **kwargs: 正則化パラメータ
         """
-        super().__init__(matrix, **kwargs)
+        super().__init__(cp.asarray(matrix), **kwargs)
         # 正則化のためのスケーリング係数
         self.reg_factor = 1.0
 
     def transform_matrix(
         self, matrix=None
-    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         正則化を適用し、逆変換関数を返す
 
@@ -43,12 +43,12 @@ class RegularizationStrategy(TransformationStrategy):
             (正則化された行列, 逆正則化関数)
         """
         if matrix is not None:
-            self.matrix = matrix
+            self.matrix = cp.asarray(matrix)
         return self.apply_regularization()
 
     def apply_regularization(
         self,
-    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         正則化を適用する具体的な実装
 
@@ -58,7 +58,7 @@ class RegularizationStrategy(TransformationStrategy):
         # デフォルトでは何もしない
         return self.matrix, lambda x: x
 
-    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+    def transform_rhs(self, rhs: cp.ndarray) -> cp.ndarray:
         """
         右辺ベクトルに正則化の変換を適用
 
@@ -76,12 +76,12 @@ class NoneRegularization(RegularizationStrategy):
     """
     正則化なし
 
-    元の行列をそのまま返す
+    元の行列をそのまま返す（CuPy対応）
     """
 
     def apply_regularization(
         self,
-    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         正則化を適用しない
 

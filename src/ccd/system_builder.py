@@ -1,10 +1,10 @@
 """
-システムビルダーモジュール
+CuPy対応システムビルダーモジュール
 
-CCD法の方程式系全体の構築を担当するクラスを提供します。
+CCD法の方程式系全体の構築を担当するクラス
 """
 
-import jax.numpy as jnp
+import cupy as cp
 from typing import List, Optional, Tuple
 
 from grid_config import GridConfig
@@ -14,7 +14,7 @@ from result_extractor import CCDResultExtractor
 
 
 class CCDSystemBuilder:
-    """CCD方程式系全体の構築を担当するクラス"""
+    """CCD方程式系全体の構築を担当するクラス（CuPy対応）"""
 
     def __init__(
         self,
@@ -37,11 +37,11 @@ class CCDSystemBuilder:
     def build_system(
         self,
         grid_config: GridConfig,
-        values: jnp.ndarray,
+        values: cp.ndarray,
         coeffs: Optional[List[float]] = None,
         dirichlet_enabled: bool = None,
         neumann_enabled: bool = None,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    ) -> Tuple[cp.ndarray, cp.ndarray]:
         """
         線形方程式系 Lx = b を構築する
         
@@ -79,8 +79,8 @@ class CCDSystemBuilder:
         return L, b
 
     def extract_results(
-        self, grid_config: GridConfig, solution: jnp.ndarray
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        self, grid_config: GridConfig, solution: cp.ndarray
+    ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
         解ベクトルから関数値と各階導関数を抽出する
         

@@ -1,24 +1,22 @@
 """
-スパース行列ビルダーモジュール
+CuPy対応スパース行列ビルダーモジュール
 
 CCD法の左辺行列を疎行列として効率的に生成するクラスを提供します。
 """
 
-import jax
-import jax.numpy as jnp
-import jax.scipy.sparse as jsp
-import jax.scipy.sparse.linalg as jspl
+import cupy as cp
+import cupyx.scipy.sparse as cpx_sparse
 from typing import List, Optional, Tuple
 
 from grid_config import GridConfig
 
 
 class SparseCCDLeftHandBuilder:
-    """左辺ブロック行列を疎行列として生成するクラス"""
+    """左辺ブロック行列を疎行列として生成するクラス（CuPy対応）"""
 
     def _build_interior_blocks(
         self, coeffs: Optional[List[float]] = None
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray]:
         """内部点のブロック行列A, B, Cを生成"""
         # デフォルト係数: f = psi
         if coeffs is None:
@@ -26,8 +24,8 @@ class SparseCCDLeftHandBuilder:
 
         a, b, c, d = coeffs
 
-        # 左ブロック行列 A
-        A = jnp.array(
+        # CuPy配列として定義
+        A = cp.array(
             [
                 [0, 0, 0, 0],
                 [35 / 32, 19 / 32, 1 / 8, 1 / 96],
@@ -37,10 +35,10 @@ class SparseCCDLeftHandBuilder:
         )
 
         # 中央ブロック行列 B - 第1行を係数で置き換え
-        B = jnp.array([[a, b, c, d], [0, 1, 0, 0], [8, 0, 1, 0], [0, 0, 0, 1]])
+        B = cp.array([[a, b, c, d], [0, 1, 0, 0], [8, 0, 1, 0], [0, 0, 0, 1]])
 
         # 右ブロック行列 C
-        C = jnp.array(
+        C = cp.array(
             [
                 [0, 0, 0, 0],
                 [-35 / 32, 19 / 32, -1 / 8, 1 / 96],
@@ -57,9 +55,9 @@ class SparseCCDLeftHandBuilder:
         dirichlet_enabled: bool = True,
         neumann_enabled: bool = False,
     ) -> Tuple[
-        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+        cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray
     ]:
-        """境界点のブロック行列を生成"""
+        """境界点のブロック行列を生成（CuPy対応）"""
         # デフォルト係数
         if coeffs is None:
             coeffs = [1.0, 0.0, 0.0, 0.0]
@@ -67,7 +65,7 @@ class SparseCCDLeftHandBuilder:
         a, b, c, d = coeffs
 
         # 基本のブロック行列
-        B0 = jnp.array(
+        B0 = cp.array(
             [
                 [a, b, c, d],  # 第1行を係数で置き換え
                 [11 / 2, 1, 0, 0],  # ノイマン境界用
@@ -76,7 +74,7 @@ class SparseCCDLeftHandBuilder:
             ]
         )
 
-        C0 = jnp.array(
+        C0 = cp.array(
             [
                 [0, 0, 0, 0],
                 [24, 24, 4, 4 / 3],
@@ -85,7 +83,7 @@ class SparseCCDLeftHandBuilder:
             ]
         )
 
-        D0 = jnp.array(
+        D0 = cp.array(
             [
                 [0, 0, 0, 0],
                 [-59 / 2, 10, -1, 0],
@@ -94,7 +92,7 @@ class SparseCCDLeftHandBuilder:
             ]
         )
 
-        ZR = jnp.array(
+        ZR = cp.array(
             [
                 [0, 0, 0, 0],
                 [59 / 2, 10, 1, 0],
@@ -103,7 +101,7 @@ class SparseCCDLeftHandBuilder:
             ]
         )
 
-        AR = jnp.array(
+        AR = cp.array(
             [
                 [0, 0, 0, 0],
                 [-24, 24, -4, 4 / 3],
@@ -112,7 +110,7 @@ class SparseCCDLeftHandBuilder:
             ]
         )
 
-        BR = jnp.array(
+        BR = cp.array(
             [
                 [a, b, c, d],  # 第1行を係数で置き換え
                 [-11 / 2, 1, 0, 0],  # ノイマン境界用
@@ -122,55 +120,58 @@ class SparseCCDLeftHandBuilder:
         )
 
         # 境界条件に応じて行を更新
+        # ヘルパー関数を使用してスライスを更新
+        def update_block(block, row_index, new_row):
+            """指定された行を更新"""
+            result = block.copy()
+            result[row_index] = new_row
+            return result
+
         # ディリクレ境界条件
         if dirichlet_enabled:
             # 左端の第4行
-            B0 = B0.at[3].set([1, 0, 0, 0])
-            C0 = C0.at[3].set([0, 0, 0, 0])
-            D0 = D0.at[3].set([0, 0, 0, 0])
+            B0 = update_block(B0, 3, [1, 0, 0, 0])
+            C0 = update_block(C0, 3, [0, 0, 0, 0])
+            D0 = update_block(D0, 3, [0, 0, 0, 0])
 
             # 右端の第4行
-            BR = BR.at[3].set([1, 0, 0, 0])
-            AR = AR.at[3].set([0, 0, 0, 0])
-            ZR = ZR.at[3].set([0, 0, 0, 0])
+            BR = update_block(BR, 3, [1, 0, 0, 0])
+            AR = update_block(AR, 3, [0, 0, 0, 0])
+            ZR = update_block(ZR, 3, [0, 0, 0, 0])
 
         # ノイマン境界条件
         if neumann_enabled:
             # 左端の第2行
-            B0 = B0.at[1].set([0, 1, 0, 0])
-            C0 = C0.at[1].set([0, 0, 0, 0])
-            D0 = D0.at[1].set([0, 0, 0, 0])
+            B0 = update_block(B0, 1, [0, 1, 0, 0])
+            C0 = update_block(C0, 1, [0, 0, 0, 0])
+            D0 = update_block(D0, 1, [0, 0, 0, 0])
 
             # 右端の第2行
-            BR = BR.at[1].set([0, 1, 0, 0])
-            AR = AR.at[1].set([0, 0, 0, 0])
-            ZR = ZR.at[1].set([0, 0, 0, 0])
+            BR = update_block(BR, 1, [0, 1, 0, 0])
+            AR = update_block(AR, 1, [0, 0, 0, 0])
+            ZR = update_block(ZR, 1, [0, 0, 0, 0])
 
         return B0, C0, D0, ZR, AR, BR
 
-    def _apply_scaling(self, blocks, h):
-        """ブロック行列に次数行列のスケーリングを適用"""
-        # 次数行列
-        DEGREE = jnp.array(
-            [
-                [1, 1, 1, 1],
-                [h**-1, h**0, h**1, h**2],
-                [h**-2, h**-1, h**0, h**1],
-                [h**-3, h**-2, h**1, h**0],
-            ]
-        )
-        
-        # 各ブロックにスケーリングを適用
-        return {k: v * DEGREE for k, v in blocks.items()}
-    
     def build_matrix_coo_data(
         self,
         grid_config: GridConfig,
         coeffs: Optional[List[float]] = None,
         dirichlet_enabled: bool = None,
         neumann_enabled: bool = None,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, Tuple[int, int]]:
-        """COO形式の疎行列データを生成"""
+    ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, Tuple[int, int]]:
+        """
+        COO形式の疎行列データを生成（CuPy対応）
+        
+        Args:
+            grid_config: グリッド設定
+            coeffs: 係数
+            dirichlet_enabled: ディリクレ境界条件の有効/無効
+            neumann_enabled: ノイマン境界条件の有効/無効
+        
+        Returns:
+            (行インデックス, 列インデックス, 値, 行列形状)
+        """
         n, h = grid_config.n_points, grid_config.h
 
         # coeffsが指定されていない場合はgrid_configから取得
@@ -191,27 +192,28 @@ class SparseCCDLeftHandBuilder:
         )
         
         # スケーリングを適用
-        blocks = {'A': A, 'B': B, 'C': C, 'B0': B0, 'C0': C0, 'D0': D0, 
-                 'ZR': ZR, 'AR': AR, 'BR': BR}
-        scaled_blocks = self._apply_scaling(blocks, h)
+        DEGREE = cp.array(
+            [
+                [1, 1, 1, 1],
+                [h**-1, h**0, h**1, h**2],
+                [h**-2, h**-1, h**0, h**1],
+                [h**-3, h**-2, h**1, h**0],
+            ]
+        )
         
-        A = scaled_blocks['A']
-        B = scaled_blocks['B']
-        C = scaled_blocks['C']
-        B0 = scaled_blocks['B0']
-        C0 = scaled_blocks['C0']
-        D0 = scaled_blocks['D0']
-        ZR = scaled_blocks['ZR']
-        AR = scaled_blocks['AR']
-        BR = scaled_blocks['BR']
+        A *= DEGREE
+        B *= DEGREE
+        C *= DEGREE
+        B0 *= DEGREE
+        C0 *= DEGREE
+        D0 *= DEGREE
+        ZR *= DEGREE
+        AR *= DEGREE
+        BR *= DEGREE
 
         # 全体の行列サイズと深さ
         depth = 4
         matrix_size = depth * n
-        
-        # 予想される非ゼロ要素数を計算
-        # 境界ブロック + 内部ブロック
-        estimated_nnz = (3 * depth * depth) * 2 + (3 * depth * depth) * (n - 2)
         
         # COO形式のデータを格納するための配列
         row_indices = []
@@ -292,13 +294,13 @@ class SparseCCDLeftHandBuilder:
                     col_indices.append(col_offset_right + j)
                     values.append(BR[i, j])
         
-        # JAX配列に変換
-        row_indices = jnp.array(row_indices, dtype=jnp.int32)
-        col_indices = jnp.array(col_indices, dtype=jnp.int32)
-        values = jnp.array(values, dtype=jnp.float32)
+        # CuPy配列に変換
+        row_indices = cp.array(row_indices, dtype=cp.int32)
+        col_indices = cp.array(col_indices, dtype=cp.int32)
+        values = cp.array(values, dtype=cp.float32)
         
         return row_indices, col_indices, values, (matrix_size, matrix_size)
-    
+
     def build_sparse_matrix(
         self,
         grid_config: GridConfig,
@@ -306,12 +308,23 @@ class SparseCCDLeftHandBuilder:
         dirichlet_enabled: bool = None,
         neumann_enabled: bool = None,
     ):
-        """JAX BCOO疎行列を構築"""
+        """
+        CuPy BCOO疎行列を構築
+        
+        Args:
+            grid_config: グリッド設定
+            coeffs: 行列の係数
+            dirichlet_enabled: ディリクレ境界条件の有効/無効
+            neumann_enabled: ノイマン境界条件の有効/無効
+        
+        Returns:
+            CuPyのBCOO疎行列
+        """
         # COOデータを取得
         row_indices, col_indices, values, shape = self.build_matrix_coo_data(
             grid_config, coeffs, dirichlet_enabled, neumann_enabled
         )
         
-        # JAXのBCOO形式で疎行列を作成
-        indices = jnp.column_stack([row_indices, col_indices])
-        return jsp.bcoo_matrix((values, indices), shape=shape)
+        # CuPyのBCOO行列を作成
+        indices = cp.column_stack([row_indices, col_indices])
+        return cpx_sparse.bcoo_matrix((values, indices), shape=shape)

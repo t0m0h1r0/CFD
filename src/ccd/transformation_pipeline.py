@@ -1,10 +1,10 @@
 """
 変換パイプライン
 
-スケーリングと正則化を順に適用するパイプラインを提供します。
+CuPy対応のスケーリングと正則化を順に適用するパイプラインを提供します。
 """
 
-import jax.numpy as jnp
+import cupy as cp
 from typing import Optional, Tuple, Callable, Dict, Any, List
 
 from strategy_interface import MatrixTransformer
@@ -14,7 +14,7 @@ class TransformationPipeline:
     """
     変換パイプライン
 
-    複数の変換を順次適用して、結果を結合します
+    複数の変換を順次適用して、結果を結合します（CuPy対応）
     """
 
     def __init__(self, transformers: Optional[List[MatrixTransformer]] = None):
@@ -30,8 +30,8 @@ class TransformationPipeline:
         self.transformation_history = []
 
     def transform_matrix(
-        self, matrix: jnp.ndarray
-    ) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]]:
+        self, matrix: cp.ndarray
+    ) -> Tuple[cp.ndarray, Callable[[cp.ndarray], cp.ndarray]]:
         """
         全変換を順に適用
 
@@ -41,8 +41,8 @@ class TransformationPipeline:
         Returns:
             (変換された行列, 逆変換関数)
         """
-        self.original_matrix = matrix
-        transformed = matrix
+        self.original_matrix = cp.asarray(matrix)
+        transformed = self.original_matrix
         inverse_funcs = []
         self.transformation_history = []
 
@@ -63,7 +63,7 @@ class TransformationPipeline:
 
         return transformed, composite_inverse
 
-    def transform_rhs(self, rhs: jnp.ndarray) -> jnp.ndarray:
+    def transform_rhs(self, rhs: cp.ndarray) -> cp.ndarray:
         """
         右辺ベクトルに全変換を順に適用
 
@@ -73,7 +73,7 @@ class TransformationPipeline:
         Returns:
             変換された右辺ベクトル
         """
-        transformed_rhs = rhs
+        transformed_rhs = cp.asarray(rhs)
 
         # 各変換を順に適用
         for transformer in self.transformers:
@@ -95,12 +95,12 @@ class TransformerFactory:
     """
     変換のファクトリークラス
 
-    スケーリングと正則化の戦略を生成します
+    スケーリングと正則化の戦略を生成します（CuPy対応）
     """
 
     @staticmethod
     def create_scaling_strategy(
-        name: str, matrix: jnp.ndarray, params: Optional[Dict[str, Any]] = None
+        name: str, matrix: cp.ndarray, params: Optional[Dict[str, Any]] = None
     ) -> MatrixTransformer:
         """
         スケーリング戦略を作成
@@ -124,7 +124,7 @@ class TransformerFactory:
 
     @staticmethod
     def create_regularization_strategy(
-        name: str, matrix: jnp.ndarray, params: Optional[Dict[str, Any]] = None
+        name: str, matrix: cp.ndarray, params: Optional[Dict[str, Any]] = None
     ) -> MatrixTransformer:
         """
         正則化戦略を作成
@@ -148,7 +148,7 @@ class TransformerFactory:
 
     @staticmethod
     def create_transformation_pipeline(
-        matrix: jnp.ndarray,
+        matrix: cp.ndarray,
         scaling: str = "none",
         regularization: str = "none",
         scaling_params: Optional[Dict[str, Any]] = None,

@@ -1,47 +1,34 @@
 """
-CCD法ソルバーモジュール
+CuPy対応結合コンパクト差分法ソルバーモジュール
 
 結合コンパクト差分法による微分計算クラスを提供します。
 """
 
-import jax.numpy as jnp
-import jax
+import cupy as cp
+import cupyx.scipy.sparse.linalg as cpx_spla
+import cupyx.scipy.sparse as cpx_sparse
 from functools import partial
-from typing import Tuple, List, Optional, Protocol, Dict, Any
-import jax.scipy.sparse.linalg as jspl
+from typing import Tuple, List, Optional, Dict, Any
 
 from grid_config import GridConfig
 from system_builder import CCDSystemBuilder
 from ccd_core import create_system_builder
 
 
-class LinearSolver(Protocol):
-    """線形方程式系を解くためのプロトコル"""
-
-    def solve(self, L: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
-        """
-        線形方程式 L*x = b を解く
-
-        Args:
-            L: 左辺行列
-            b: 右辺ベクトル
-
-        Returns:
-            解ベクトル x
-        """
-        ...
-
-
 class DirectSolver:
-    """直接法による線形ソルバー"""
+    """直接法による線形ソルバー（CuPy疎行列対応）"""
 
-    def solve(self, L: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+    def solve(self, L, b):
         """直接法で線形方程式を解く"""
-        return jnp.linalg.solve(L, b)
+        # 密行列を疎行列に変換
+        if not isinstance(L, cpx_sparse.spmatrix):
+            L = cpx_sparse.csr_matrix(L)
+        
+        return cpx_spla.spsolve(L, b)
 
 
 class IterativeSolver:
-    """反復法による線形ソルバー"""
+    """反復法による線形ソルバー（CuPy対応）"""
 
     def __init__(
         self,
@@ -51,6 +38,8 @@ class IterativeSolver:
         maxiter: int = 1000,
     ):
         """
+        初期化パラメータ
+        
         Args:
             tol: 相対許容誤差
             atol: 絶対許容誤差
@@ -62,21 +51,25 @@ class IterativeSolver:
         self.restart = restart
         self.maxiter = maxiter
 
-    def solve(self, L: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+    def solve(self, L, b):
         """GMRES法で線形方程式を解く"""
-        solution, _ = jspl.gmres(
-            L,
-            b,
-            tol=self.tol,
-            atol=self.atol,
-            restart=self.restart,
-            maxiter=self.maxiter,
+        # 密行列を疎行列に変換
+        if not isinstance(L, cpx_sparse.spmatrix):
+            L = cpx_sparse.csr_matrix(L)
+        
+        solution, _ = cpx_spla.gmres(
+            L, 
+            b, 
+            tol=self.tol, 
+            atol=self.atol, 
+            restart=self.restart, 
+            maxiter=self.maxiter
         )
         return solution
 
 
 class CCDSolver:
-    """結合コンパクト差分法による微分計算クラス"""
+    """結合コンパクト差分法による微分計算クラス（CuPy対応）"""
 
     def __init__(
         self,
@@ -98,6 +91,9 @@ class CCDSolver:
             system_builder: CCDSystemBuilderのインスタンス
             coeffs: 係数 [a, b, c, d]
         """
+        # CuPyデバイスの明示的選択
+        cp.cuda.Device(0).use()
+
         self.grid_config = grid_config
 
         # 係数とフラグの設定
@@ -107,36 +103,27 @@ class CCDSolver:
         if enable_boundary_correction is not None:
             self.grid_config.enable_boundary_correction = enable_boundary_correction
         
-        # 係数への参照（アクセスしやすさのため）
+        # 係数への参照
         self.coeffs = self.grid_config.coeffs
 
         # システムビルダーの初期化
         self.system_builder = system_builder if system_builder else create_system_builder()
 
-        # 左辺行列の構築（初期化時に一度だけ）
-        self.L, _ = self.system_builder.build_system(
-            grid_config,
-            jnp.zeros(grid_config.n_points),
-        )
-
-        # 行列の特性を分析して最適なソルバーを選択
-        self._select_solver(use_iterative, solver_kwargs or {})
-
-    def _select_solver(self, use_iterative: bool, solver_kwargs: Dict[str, Any]) -> None:
-        """
-        適切なソルバーを選択
+        # 左辺行列の構築（CuPy配列に変換）
+        # デフォルトの零ベクトルもCuPyに変換
+        zero_vector = cp.zeros(grid_config.n_points)
         
-        Args:
-            use_iterative: 反復法を使用するかどうか
-            solver_kwargs: ソルバーのパラメータ
-        """
-        self.use_iterative = use_iterative
-        self.solver = IterativeSolver(**solver_kwargs) if use_iterative else DirectSolver()
+        # システムビルダーを使用して行列を作成
+        self.L, _ = self.system_builder.build_system(grid_config, zero_vector)
 
-    @partial(jax.jit, static_argnums=(0,))
-    def solve(
-        self, f: jnp.ndarray
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        # ソルバーの選択（CuPy対応）
+        solver_kwargs = solver_kwargs or {}
+        self.use_iterative = use_iterative
+        self.solver = (IterativeSolver(**solver_kwargs) 
+                       if use_iterative 
+                       else DirectSolver())
+
+    def solve(self, f):
         """
         関数値fに対するCCD方程式系を解き、ψとその各階微分を返す
 
@@ -146,23 +133,29 @@ class CCDSolver:
         Returns:
             (ψ, ψ', ψ'', ψ''')のタプル
         """
+        # 入力をCuPy配列に変換
+        f_cupy = cp.asarray(f)
+
         # 右辺ベクトルを構築
-        _, b = self.system_builder.build_system(self.grid_config, f)
+        _, b = self.system_builder.build_system(self.grid_config, f_cupy)
 
         # 線形方程式を解く
         solution = self.solver.solve(self.L, b)
 
-        # 解から関数値と各階微分を抽出して返す
-        return self.system_builder.extract_results(self.grid_config, solution)
+        # 解から関数値と各階微分を抽出
+        result = self.system_builder.extract_results(self.grid_config, solution)
+
+        # メモリ管理: 不要になった大きな配列を明示的に解放
+        del f_cupy, b, solution
+        cp.get_default_memory_pool().free_all_blocks()
+
+        return result
 
 
 class VectorizedCCDSolver(CCDSolver):
-    """複数の関数に同時に適用可能なCCDソルバー"""
+    """複数の関数に同時に適用可能なCCDソルバー（CuPy対応）"""
 
-    @partial(jax.jit, static_argnums=(0,))
-    def solve_batch(
-        self, fs: jnp.ndarray
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    def solve_batch(self, fs):
         """
         複数の関数値セットに対してCCD方程式系を一度に解く
 
@@ -172,5 +165,17 @@ class VectorizedCCDSolver(CCDSolver):
         Returns:
             (ψs, ψ's, ψ''s, ψ'''s) 各要素は (batch_size, n_points) の形状
         """
-        # vmap: 関数をバッチ処理可能にする
-        return jax.vmap(self.solve)(fs)
+        # NumPyまたはリストをCuPy配列に変換
+        fs_cupy = cp.asarray(fs)
+
+        # バッチ処理
+        results = []
+        for f in fs_cupy:
+            results.append(self.solve(f))
+
+        # メモリ管理
+        del fs_cupy
+        cp.get_default_memory_pool().free_all_blocks()
+
+        # 結果を転置して元の形状に戻す
+        return tuple(cp.stack(r) for r in zip(*results))
