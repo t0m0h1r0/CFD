@@ -198,33 +198,44 @@ class CCDSolver:
             IterativeSolver(**solver_kwargs) if use_iterative else DirectSolver()
         )
 
-    def solve(self, f: Union[cp.ndarray, List[float]]) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
+    def solve(
+        self, f: Union[cp.ndarray, List[List[float]]]
+    ) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
-        関数値fに対するCCD方程式系を解き、ψとその各階微分を返す
+        関数値fに対する2次元CCD方程式系を解き、関数とその各偏導関数を返す
 
         Args:
-            f: グリッド点での関数値
+            f: グリッド点での関数値の2次元配列
 
         Returns:
-            (ψ, ψ', ψ'', ψ''')のタプル
+            (f, f_x, f_y, f_xx, f_xy, f_yy)のタプル
         """
         # 入力をCuPy配列に変換
         f_cupy = cp.asarray(f)
 
-        # 右辺ベクトルを構築
-        _, b = self.system_builder.build_system(self.grid_config, f_cupy)
+        try:
+            # 右辺ベクトルを構築
+            _, b = self.system_builder.build_system(self.grid_config, f_cupy)
+            
+            # デバッグ情報
+            print(f"行列サイズ: {self.L.shape}, ベクトルサイズ: {b.shape}")
+            
+            # 線形方程式を解く
+            solution = self.solver.solve(self.L, b)
 
-        # 線形方程式を解く
-        solution = self.solver.solve(self.L, b)
-
-        # 解から関数値と各階微分を抽出
-        result = self.system_builder.extract_results(self.grid_config, solution)
-
-        # メモリ管理: 不要になった大きな配列を明示的に解放
-        del f_cupy, b, solution
-        cp.get_default_memory_pool().free_all_blocks()
-
-        return result
+            # 解から関数値と各階微分を抽出
+            result = self.system_builder.extract_results(self.grid_config, solution)
+            
+            # メモリ管理: 不要になった大きな配列を明示的に解放
+            del f_cupy, b, solution
+            cp.get_default_memory_pool().free_all_blocks()
+            
+            return result
+            
+        except Exception as e:
+            print(f"エラー: {e}")
+            print(f"グリッドサイズ: nx={self.grid_config.nx_points}, ny={self.grid_config.ny_points}")
+            raise
 
 
 class VectorizedCCDSolver(CCDSolver):

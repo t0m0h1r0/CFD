@@ -47,19 +47,28 @@ class CCDResultExtractor2D:
         # ソリューションから各成分を取り出す
         for i in range(nx):
             for j in range(ny):
-                idx = (i * ny + j) * depth
+                idx = ((i * ny + j) * depth)
                 f[i, j] = solution[idx]
                 f_x[i, j] = solution[idx + 1]
                 f_y[i, j] = solution[idx + 2]
                 f_xx[i, j] = solution[idx + 3]
-                # 注：f_xyとf_yyは実際のソリューションの別の位置から取得する必要があるかもしれない
-                # この実装は簡略化しています
+                # 注: f_xyとf_yyは実際の状態ベクトルの別の位置から計算する必要があるかもしれません
+                # この例では、最初の4つの値から近似的に計算します
+                
+        # 混合偏導関数f_xyの計算：中心差分を使用
+        for i in range(1, nx-1):
+            for j in range(1, ny-1):
+                f_xy[i, j] = (f_y[i+1, j] - f_y[i-1, j]) / (2 * grid_config.hx)
+        
+        # y方向の2階偏導関数f_yyの計算：中心差分を使用
+        for i in range(nx):
+            for j in range(1, ny-1):
+                f_yy[i, j] = (f[i, j+1] - 2*f[i, j] + f[i, j-1]) / (grid_config.hy**2)
 
         # ディリクレ境界条件が有効な場合、境界補正を適用
         if grid_config.is_dirichlet():
             if grid_config.enable_boundary_correction:
-                # 境界補正を適用
-                # この部分は具体的な境界条件に依存します
+                # 境界補正を適用（具体的な実装はケースによる）
                 pass
 
         return f, f_x, f_y, f_xx, f_xy, f_yy

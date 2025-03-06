@@ -62,11 +62,13 @@ class CCDLeftHandBuilder2D:
         )
 
         # 単位行列を準備
-        Ix = cpx_sparse.eye(grid_config.nx_points * 4)
-        Iy = cpx_sparse.eye(grid_config.ny_points * 4)
+        nx, ny = grid_config.nx_points, grid_config.ny_points
+        depth = 4
+        Ix = cpx_sparse.eye(nx * depth)
+        Iy = cpx_sparse.eye(ny * depth)
 
         # クロネッカー積を用いて2次元行列を構築
-        # D_2D = D_x ⊗ I_y + I_x ⊗ D_y
-        L_2d = cpx_sparse.kron(Lx, Iy) + cpx_sparse.kron(Ix, Ly)
+        # D_2D = I_y ⊗ D_x + D_y ⊗ I_x
+        L_2d = cpx_sparse.kron(Iy, Lx) + cpx_sparse.kron(Ly, Ix)
 
         return L_2d

@@ -19,63 +19,59 @@ def main():
     hx = (x_range[1] - x_range[0]) / (nx - 1)
     hy = (y_range[1] - y_range[0]) / (ny - 1)
     
+    # 境界値を設定
+    boundary_values = {
+        "left": [0.0] * ny,
+        "right": [0.0] * ny,
+        "bottom": [0.0] * nx,
+        "top": [0.0] * nx,
+    }
+    
     grid_config = GridConfig2D(
         nx_points=nx,
         ny_points=ny,
         hx=hx,
         hy=hy,
+        boundary_values=boundary_values,
     )
     
-    # ソルバーの作成
+    print(f"行列サイズ: {nx*ny*4}x{nx*ny*4}")
+    
+    # ソルバーの作成（デバッグのため正則化を使わない）
     solver = CCDCompositeSolver2D(
         grid_config,
-        scaling="equalization",
-        regularization="tikhonov",
+        scaling="none",  # まずはシンプルな設定でテスト
+        regularization="none",
     )
     
     # テスト関数の準備
     test_funcs = TestFunction2DFactory.create_standard_functions()
-    gaussian = test_funcs[0]  # ガウス関数を選択
+    test_func = test_funcs[0]  # ガウス関数を選択
     
     # グリッド点
     x = cp.linspace(x_range[0], x_range[1], nx)
     y = cp.linspace(y_range[0], y_range[1], ny)
     
-    # テスト関数をグリッド上で評価
-    f, f_x_exact, f_y_exact, f_xx_exact, f_xy_exact, f_yy_exact = (
-        TestFunction2DFactory.evaluate_on_grid(gaussian, x, y)
-    )
+    # テスト関数をグリッド上で評価（まず関数値のみ）
+    f = cp.zeros((nx, ny))
+    for i in range(nx):
+        for j in range(ny):
+            f[i, j] = test_func.f(x[i], y[j])
+    
+    print(f"入力関数値の形状: {f.shape}")
     
     # CCDソルバーで偏導関数を計算
-    f_computed, f_x, f_y, f_xx, f_xy, f_yy = solver.solve(f)
+    try:
+        f_computed, f_x, f_y, f_xx, f_xy, f_yy = solver.solve(f)
+        print("計算成功！")
+    except Exception as e:
+        print(f"エラー発生: {e}")
+        # より詳細なデバッグ情報
+        import traceback
+        traceback.print_exc()
+        return
     
-    # 結果の可視化（例：x方向の1階偏導関数）
-    plt.figure(figsize=(12, 5))
-    
-    plt.subplot(1, 2, 1)
-    plt.imshow(f_x_exact.get(), cmap='jet', extent=[*x_range, *y_range])
-    plt.colorbar()
-    plt.title('Exact df/dx')
-    
-    plt.subplot(1, 2, 2)
-    plt.imshow(f_x.get(), cmap='jet', extent=[*x_range, *y_range])
-    plt.colorbar()
-    plt.title('Computed df/dx')
-    
-    plt.tight_layout()
-    plt.savefig('ccd_2d_result.png')
-    plt.show()
-    
-    # 誤差の計算と表示
-    error_x = cp.sqrt(cp.mean((f_x - f_x_exact) ** 2))
-    error_y = cp.sqrt(cp.mean((f_y - f_y_exact) ** 2))
-    error_xx = cp.sqrt(cp.mean((f_xx - f_xx_exact) ** 2))
-    error_yy = cp.sqrt(cp.mean((f_yy - f_yy_exact) ** 2))
-    
-    print(f"RMSE for df/dx: {error_x:.2e}")
-    print(f"RMSE for df/dy: {error_y:.2e}")
-    print(f"RMSE for d²f/dx²: {error_xx:.2e}")
-    print(f"RMSE for d²f/dy²: {error_yy:.2e}")
+    # 結果の可視化と検証は成功したら実装
 
 
 if __name__ == "__main__":
