@@ -1,300 +1,256 @@
 """
-2次元CuPy対応結合コンパクト差分法ソルバーモジュール
+CuPy対応結合コンパクト差分法ソルバーモジュール
 
-2次元結合コンパクト差分法による微分計算クラスを提供します。
+結合コンパクト差分法による微分計算クラスを提供します。
 """
 
 import cupy as cp
 import cupyx.scipy.sparse.linalg as cpx_spla
 import cupyx.scipy.sparse as cpx_sparse
-from typing import Dict, Any, Optional, Tuple, List, Union
+from typing import List, Optional, Dict, Any, Tuple, Union
 
-from grid2d_config import Grid2DConfig
-from system2d_builder import CCD2DSystemBuilder
-from matrix2d_builder import CCD2DLeftHandBuilder
-from vector2d_builder import CCD2DRightHandBuilder
-from result2d_extractor import CCD2DResultExtractor
+from grid_config import GridConfig
+from system_builder import CCDSystemBuilder
+from ccd_core import create_system_builder
 
 
-class CCD2DSolver:
-    """2次元結合コンパクト差分法による微分計算クラス（CuPy対応）"""
+class DirectSolver:
+    """直接法による線形ソルバー（CuPy疎行列対応）"""
+
+    def solve(self, L: cpx_sparse.spmatrix, b: cp.ndarray) -> cp.ndarray:
+        """直接法で線形方程式を解く"""
+        # 行列が疎行列でない場合は変換
+        if not cpx_sparse.issparse(L):
+            L = cpx_sparse.csr_matrix(L)
+
+        # 右辺ベクトルが1次元ではない場合は変換
+        if b.ndim != 1:
+            b = b.ravel()
+
+        # CuPyの直接ソルバーを使用
+        try:
+            return cpx_spla.spsolve(L, b)
+        except Exception as e:
+            print(f"Error in direct solver: {e}")
+            # エラーが発生した場合、別の方法を試す
+            print("Attempting to solve using alternative method...")
+            # LUまたはQRなどの別の方法を試みる
+            # LUを試す
+            try:
+                # スパース行列をデンス行列に変換
+                L_dense = L.toarray()
+                return cp.linalg.solve(L_dense, b)
+            except Exception as e2:
+                print(f"Alternative solver also failed: {e2}")
+                raise
+
+
+class IterativeSolver:
+    """反復法による線形ソルバー（CuPy対応）"""
 
     def __init__(
         self,
-        grid_config: Grid2DConfig,
-        use_iterative: bool = True,
-        solver_type: str = "gmres",
-        solver_kwargs: Optional[Dict[str, Any]] = None,
-        system_builder: Optional[CCD2DSystemBuilder] = None,
-        coeffs: Optional[Dict[str, float]] = None,
+        tol: float = 1e-10,
+        atol: float = 1e-10,
+        restart: int = 50,
+        maxiter: int = 1000,
+        use_precond: bool = True,
     ):
         """
-        2次元CCDソルバーの初期化
+        初期化パラメータ
 
         Args:
-            grid_config: 2次元グリッド設定
+            tol: 相対許容誤差
+            atol: 絶対許容誤差
+            restart: GMRESの再起動パラメータ
+            maxiter: 最大反復回数
+            use_precond: プリコンディショナーを使用するかどうか
+        """
+        self.tol = tol
+        self.atol = atol
+        self.restart = restart
+        self.maxiter = maxiter
+        self.use_precond = use_precond
+
+    def solve(self, L: cpx_sparse.spmatrix, b: cp.ndarray) -> cp.ndarray:
+        """GMRES法で線形方程式を解く"""
+        # 行列が疎行列でない場合は変換
+        if not cpx_sparse.issparse(L):
+            L = cpx_sparse.csr_matrix(L)
+
+        # 右辺ベクトルが1次元ではない場合は変換
+        if b.ndim != 1:
+            b = b.ravel()
+
+        # プリコンディショナーの準備
+        M = None
+        if self.use_precond:
+            try:
+                # 対角成分によるプリコンディショナー
+                diag = L.diagonal()
+                # ゼロ要素がないことを確認
+                diag_abs = cp.abs(diag)
+                if cp.all(diag_abs > 1e-10):
+                    # CuPyの配列で逆数を計算
+                    diag_inv = 1.0 / diag
+                    D_inv = cpx_sparse.diags(diag_inv)
+                    
+                    # LinearOperatorを使用する代わりに直接対角行列を使用
+                    M = D_inv
+            except Exception as e:
+                print(f"Warning: Could not create preconditioner: {e}")
+                # エラーの場合はプリコンディショナーなしで実行
+                pass
+
+        try:
+            solution, info = cpx_spla.gmres(
+                L,
+                b,
+                tol=self.tol,
+                atol=self.atol,
+                restart=self.restart,
+                maxiter=self.maxiter,
+                M=M,
+            )
+            
+            # 収束しない場合は直接法で解く
+            if info > 0:
+                print(f"GMRES did not converge: info={info}. Falling back to direct solver.")
+                return cpx_spla.spsolve(L, b)
+                
+            return solution
+            
+        except Exception as e:
+            print(f"Error in GMRES solver: {e}")
+            print("Falling back to direct solver.")
+            # GMRESが失敗した場合、直接法を試す
+            return cpx_spla.spsolve(L, b)
+
+
+class CCDSolver:
+    """結合コンパクト差分法による微分計算クラス（CuPy対応）"""
+
+    def __init__(
+        self,
+        grid_config: GridConfig,
+        use_iterative: bool = False,
+        enable_boundary_correction: bool = None,
+        solver_kwargs: Optional[Dict[str, Any]] = None,
+        system_builder: Optional[CCDSystemBuilder] = None,
+        coeffs: Optional[List[float]] = None,
+    ):
+        """
+        CCDソルバーの初期化
+
+        Args:
+            grid_config: グリッド設定
             use_iterative: 反復法を使用するかどうか
-            solver_type: 反復法のタイプ ('gmres', 'cg', 'bicgstab', 'lsqr')
+            enable_boundary_correction: 境界補正を有効にするかどうか
             solver_kwargs: 線形ソルバーのパラメータ
-            system_builder: CCD2DSystemBuilderのインスタンス
-            coeffs: 方程式の係数
+            system_builder: CCDSystemBuilderのインスタンス
+            coeffs: 係数 [a, b, c, d]
         """
         # CuPyデバイスの明示的選択
         cp.cuda.Device(0).use()
 
         self.grid_config = grid_config
 
-        # 係数の設定
+        # 係数とフラグの設定
         if coeffs is not None:
             self.grid_config.coeffs = coeffs
+
+        if enable_boundary_correction is not None:
+            self.grid_config.enable_boundary_correction = enable_boundary_correction
 
         # 係数への参照
         self.coeffs = self.grid_config.coeffs
 
         # システムビルダーの初期化
-        if system_builder is None:
-            matrix_builder = CCD2DLeftHandBuilder()
-            vector_builder = CCD2DRightHandBuilder()
-            result_extractor = CCD2DResultExtractor()
-            system_builder = CCD2DSystemBuilder(matrix_builder, vector_builder, result_extractor)
-        
-        self.system_builder = system_builder
+        self.system_builder = (
+            system_builder if system_builder else create_system_builder()
+        )
 
-        # デフォルトの零ベクトルもCuPyに変換
-        nx, ny = grid_config.nx, grid_config.ny
-        zero_values = cp.zeros((nx, ny))
+        # デフォルトの零ベクトルをCuPyに変換
+        zero_vector = cp.zeros(grid_config.n_points, dtype=cp.float64)
 
         # システムビルダーを使用して行列を作成
-        self.L, _ = self.system_builder.build_system(grid_config, zero_values)
+        try:
+            self.L, _ = self.system_builder.build_system(grid_config, zero_vector)
+        except Exception as e:
+            print(f"Error building system: {e}")
+            raise
 
-        # 線形ソルバーの設定
+        # 左辺行列が疎行列でない場合は変換
+        if not cpx_sparse.issparse(self.L):
+            self.L = cpx_sparse.csr_matrix(self.L)
+
+        # 行列の疎性を調査して出力
+        nnz = self.L.nnz
+        size = self.L.shape[0] * self.L.shape[1]
+        density = nnz / size
+        # デバッグ情報を表示しない（必要に応じてコメントアウト解除）
+        # print(f"Matrix size: {self.L.shape}, NNZ: {nnz}, Density: {density:.6f}")
+
+        # ソルバーの選択（CuPy対応）
+        solver_kwargs = solver_kwargs or {}
         self.use_iterative = use_iterative
-        self.solver_type = solver_type.lower()
-        self.solver_kwargs = solver_kwargs or {}
-        
-        # プリコンディショナの設定（サポートされている場合）
-        self.preconditioner = None
-        if self.use_iterative and "precond" in self.solver_kwargs:
-            precond_type = self.solver_kwargs.pop("precond")
-            self._setup_preconditioner(precond_type)
+        self.solver = (
+            IterativeSolver(**solver_kwargs) if use_iterative else DirectSolver()
+        )
 
-    def _setup_preconditioner(self, precond_type: str = "ilu"):
+    def solve(self, f: Union[cp.ndarray, List[float]]) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
-        プリコンディショナを設定
-        
-        Args:
-            precond_type: プリコンディショナのタイプ ('ilu', 'jacobi', etc.)
-        """
-        if precond_type == "ilu":
-            from cupyx.scipy.sparse.linalg import spilu
-            # ILU分解をプリコンディショナとして使用
-            try:
-                ilu = spilu(self.L.tocsc())
-                
-                # LinearOperatorを作成してプリコンディショナとして使用
-                from cupyx.scipy.sparse.linalg import LinearOperator
-                
-                def mv(v):
-                    return ilu.solve(v)
-                
-                n = self.L.shape[0]
-                self.preconditioner = LinearOperator((n, n), matvec=mv)
-            except Exception as e:
-                print(f"ILUプリコンディショナの設定に失敗しました: {e}")
-                self.preconditioner = None
-        
-        elif precond_type == "jacobi":
-            # ヤコビプリコンディショナ（対角成分の逆数）
-            diag = self.L.diagonal()
-            diag_inv = 1.0 / cp.maximum(cp.abs(diag), 1e-10)
-            
-            # LinearOperatorを作成
-            from cupyx.scipy.sparse.linalg import LinearOperator
-            
-            def mv(v):
-                return diag_inv * v
-            
-            n = self.L.shape[0]
-            self.preconditioner = LinearOperator((n, n), matvec=mv)
-            
-        else:
-            print(f"未対応のプリコンディショナタイプ: {precond_type}")
-            self.preconditioner = None
-
-    def solve(
-        self, f_values: cp.ndarray
-    ) -> Dict[str, cp.ndarray]:
-        """
-        2次元関数値fに対するCCD方程式系を解き、関数とその各階微分を返す
+        関数値fに対するCCD方程式系を解き、ψとその各階微分を返す
 
         Args:
-            f_values: グリッド点での関数値 (2D配列)
+            f: グリッド点での関数値
 
         Returns:
-            各成分を含む辞書
-            {
-                "f": 関数値(nx, ny),
-                "f_x": x方向1階微分(nx, ny),
-                "f_y": y方向1階微分(nx, ny),
-                "f_xx": x方向2階微分(nx, ny),
-                ...
-            }
+            (ψ, ψ', ψ'', ψ''')のタプル
         """
         # 入力をCuPy配列に変換
-        f_values_cupy = cp.asarray(f_values)
+        f_cupy = cp.asarray(f)
 
         # 右辺ベクトルを構築
-        _, b = self.system_builder.build_system(self.grid_config, f_values_cupy)
+        _, b = self.system_builder.build_system(self.grid_config, f_cupy)
 
         # 線形方程式を解く
-        if self.use_iterative:
-            solution = self._solve_iterative(self.L, b)
-        else:
-            solution = self._solve_direct(self.L, b)
+        solution = self.solver.solve(self.L, b)
 
         # 解から関数値と各階微分を抽出
         result = self.system_builder.extract_results(self.grid_config, solution)
 
         # メモリ管理: 不要になった大きな配列を明示的に解放
-        del f_values_cupy, b, solution
+        del f_cupy, b, solution
         cp.get_default_memory_pool().free_all_blocks()
 
         return result
 
-    def _solve_direct(self, L: cpx_sparse.spmatrix, b: cp.ndarray) -> cp.ndarray:
+
+class VectorizedCCDSolver(CCDSolver):
+    """複数の関数に同時に適用可能なCCDソルバー（CuPy対応）"""
+
+    def solve_batch(self, fs: Union[cp.ndarray, List[List[float]]]) -> Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray]:
         """
-        直接法で線形方程式を解く
+        複数の関数値セットに対してCCD方程式系を一度に解く
 
         Args:
-            L: 左辺行列
-            b: 右辺ベクトル
+            fs: 関数値の配列 (batch_size, n_points)
 
         Returns:
-            解ベクトル
-        """
-        # スパース行列の場合はCSRに変換
-        if not isinstance(L, cpx_sparse.csr_matrix):
-            L = cpx_sparse.csr_matrix(L)
-
-        # 直接法で解く
-        try:
-            return cpx_spla.spsolve(L, b)
-        except Exception as e:
-            print(f"直接法での解法に失敗しました: {e}")
-            print("反復法を試みます...")
-            return self._solve_iterative(L, b)
-
-    def _solve_iterative(self, L: cpx_sparse.spmatrix, b: cp.ndarray) -> cp.ndarray:
-        """
-        反復法で線形方程式を解く
-
-        Args:
-            L: 左辺行列
-            b: 右辺ベクトル
-
-        Returns:
-            解ベクトル
-        """
-        # スパース行列の場合はCSRに変換
-        if not isinstance(L, cpx_sparse.csr_matrix):
-            L = cpx_sparse.csr_matrix(L)
-
-        # ソルバーのパラメータの取得
-        tol = self.solver_kwargs.get("tol", 1e-10)
-        atol = self.solver_kwargs.get("atol", 1e-12)
-        maxiter = self.solver_kwargs.get("maxiter", 1000)
-        restart = self.solver_kwargs.get("restart", 20)
-
-        # 選択されたソルバーで解く
-        if self.solver_type == "gmres":
-            x, info = cpx_spla.gmres(
-                L, b, tol=tol, atol=atol, restart=restart, maxiter=maxiter,
-                M=self.preconditioner
-            )
-        elif self.solver_type == "cg":
-            x, info = cpx_spla.cg(
-                L, b, tol=tol, atol=atol, maxiter=maxiter,
-                M=self.preconditioner
-            )
-        elif self.solver_type == "bicgstab":
-            x, info = cpx_spla.bicgstab(
-                L, b, tol=tol, atol=atol, maxiter=maxiter,
-                M=self.preconditioner
-            )
-        elif self.solver_type == "lsqr":
-            # LSQRにはプリコンディショナを直接渡せない
-            x, info = cpx_spla.lsqr(
-                L, b, atol=atol, btol=tol, iter_lim=maxiter
-            )
-        else:
-            raise ValueError(f"未対応のソルバータイプ: {self.solver_type}")
-
-        # 収束状態の確認
-        if info != 0:
-            print(f"警告: 反復法が収束しませんでした (info={info})")
-
-        return x
-
-    def get_system_info(self) -> Dict[str, Any]:
-        """
-        システムの情報を取得
-        
-        Returns:
-            システム情報を含む辞書
-        """
-        # 行列のサイズと疎密度
-        nnz = self.L.nnz
-        size = self.L.shape[0]
-        density = nnz / (size * size)
-        
-        return {
-            "matrix_size": size,
-            "nonzeros": nnz,
-            "density": density,
-            "grid_nx": self.grid_config.nx,
-            "grid_ny": self.grid_config.ny,
-            "x_deriv_order": self.grid_config.x_deriv_order,
-            "y_deriv_order": self.grid_config.y_deriv_order,
-            "coeffs": self.coeffs,
-            "solver_type": "direct" if not self.use_iterative else self.solver_type,
-        }
-
-
-class CCD2DCompositeSolver(CCD2DSolver):
-    """
-    スケーリングと正則化を組み合わせた2次元統合ソルバー
-    
-    スケーリングと正則化機能を追加するには、transformation_pipelineモジュールを拡張して、
-    2次元の行列とベクトルに対応させる必要があります。
-    """
-    pass  # 実装はtransformation_pipelineの2次元拡張後に追加
-
-
-class VectorizedCCD2DSolver(CCD2DSolver):
-    """複数の関数に同時に適用可能な2次元CCDソルバー（CuPy対応）"""
-
-    def solve_batch(
-        self, fs_values: cp.ndarray
-    ) -> List[Dict[str, cp.ndarray]]:
-        """
-        複数の関数値セットに対して2次元CCD方程式系を一度に解く
-
-        Args:
-            fs_values: 関数値の3次元配列 (batch_size, nx, ny)
-
-        Returns:
-            辞書のリスト、各辞書は単一の解に対応する結果を含む
+            (ψs, ψ's, ψ''s, ψ'''s) 各要素は (batch_size, n_points) の形状
         """
         # NumPyまたはリストをCuPy配列に変換
-        fs_values_cupy = cp.asarray(fs_values)
+        fs_cupy = cp.asarray(fs)
 
         # バッチ処理
         results = []
-        for f in fs_values_cupy:
+        for f in fs_cupy:
             results.append(self.solve(f))
 
         # メモリ管理
-        del fs_values_cupy
+        del fs_cupy
         cp.get_default_memory_pool().free_all_blocks()
 
-        return results
+        # 結果を転置して元の形状に戻す
+        return tuple(cp.stack(r) for r in zip(*results))
