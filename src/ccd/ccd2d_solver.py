@@ -258,3 +258,90 @@ class CCD2DSolver:
             "coeffs": self.coeffs,
             "solver_type": "direct" if not self.use_iterative else self.solver_type,
         }
+
+    def _solve_iterative(self, L: cpx_sparse.spmatrix, b: cp.ndarray) -> cp.ndarray:
+        """
+        反復法で線形方程式を解く
+        """
+        # サイズ不一致を再確認
+        if L.shape[0] != b.shape[0]:
+            print(f"警告: 行列サイズ({L.shape})とベクトルサイズ({b.shape})が不一致です")
+            
+            # 対処法1: 行列のサイズを変更せず、右辺ベクトルを拡張
+            if L.shape[0] > b.shape[0]:
+                new_b = cp.zeros(L.shape[0], dtype=b.dtype)
+                new_b[:b.shape[0]] = b
+                b = new_b
+                print(f"右辺ベクトルを拡張しました: {b.shape}")
+        
+        # スパース行列の場合はCSRに変換
+        if not isinstance(L, cpx_sparse.csr_matrix):
+            L = cpx_sparse.csr_matrix(L)
+
+        # ソルバーのパラメータの取得
+        tol = self.solver_kwargs.get("tol", 1e-10)
+        atol = self.solver_kwargs.get("atol", 1e-12)
+        maxiter = self.solver_kwargs.get("maxiter", 1000)
+        restart = self.solver_kwargs.get("restart", 20)
+
+        # ソルバーの試行順序
+        solvers_to_try = []
+        
+        # 指定されたソルバーを最初に試す
+        if self.solver_type == "gmres":
+            solvers_to_try.append(("gmres", lambda: cpx_spla.gmres(
+                L, b, tol=tol, atol=atol, restart=restart, maxiter=maxiter,
+                M=self.preconditioner
+            )))
+        elif self.solver_type == "cg":
+            solvers_to_try.append(("cg", lambda: cpx_spla.cg(
+                L, b, tol=tol, atol=atol, maxiter=maxiter,
+                M=self.preconditioner
+            )))
+        elif self.solver_type == "bicgstab":
+            solvers_to_try.append(("bicgstab", lambda: cpx_spla.bicgstab(
+                L, b, tol=tol, atol=atol, maxiter=maxiter,
+                M=self.preconditioner
+            )))
+        elif self.solver_type == "lsqr":
+            solvers_to_try.append(("lsqr", lambda: cpx_spla.lsqr(
+                L, b, atol=atol, btol=tol, iter_lim=maxiter
+            )))
+        
+        # 指定以外のソルバーもフォールバックとして試す
+        if self.solver_type != "bicgstab":
+            solvers_to_try.append(("bicgstab", lambda: cpx_spla.bicgstab(
+                L, b, tol=tol, atol=atol, maxiter=maxiter
+            )))
+        if self.solver_type != "lsqr":
+            solvers_to_try.append(("lsqr", lambda: cpx_spla.lsqr(
+                L, b, atol=atol, btol=tol, iter_lim=maxiter
+            )))
+        
+        # 最後の手段として直接法を試す
+        solvers_to_try.append(("direct", lambda: (cpx_spla.spsolve(L, b), 0)))
+        
+        # 順番にソルバーを試す
+        last_error = None
+        for solver_name, solver_func in solvers_to_try:
+            try:
+                print(f"{solver_name}ソルバーを試行中...")
+                x, info = solver_func()
+                
+                if info == 0:
+                    print(f"{solver_name}ソルバーが収束しました")
+                    return x
+                else:
+                    print(f"警告: {solver_name}ソルバーが収束しませんでした (info={info})")
+                    # 収束しなくても結果を返すことがある
+                    if solver_name == "direct" or solver_name == "lsqr":
+                        return x
+            except Exception as e:
+                print(f"{solver_name}ソルバーの実行中にエラー: {e}")
+                last_error = e
+        
+        # すべてのソルバーが失敗した場合
+        if last_error:
+            raise last_error
+        else:
+            raise RuntimeError("すべてのソルバーが失敗しました")

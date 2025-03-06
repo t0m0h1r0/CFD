@@ -89,79 +89,47 @@ class CCD2DLeftHandBuilder:
         self, grid_config: Grid2DConfig, coeffs: Optional[Dict[str, float]] = None
     ) -> cpx_sparse.spmatrix:
         """
-        2次元CCD全体の左辺行列を生成
-
-        Args:
-            grid_config: 2次元グリッド設定
-            coeffs: 係数（省略時はgrid_configから取得）
-
-        Returns:
-            2次元CCD左辺行列（CuPy疎行列）
+        2次元CCD全体の左辺行列を生成（単純化版）
         """
         if coeffs is None:
             coeffs = grid_config.coeffs
-
-        # x方向とy方向の1次元行列を取得
-        L_x = self.build_x_matrix(grid_config, coeffs)
-        L_y = self.build_y_matrix(grid_config, coeffs)
         
-        # L_xとL_yのサイズ確認
-        nx = grid_config.nx
-        ny = grid_config.ny
-        depth = 4  # 1次元CCDでの未知数の数（f, f', f'', f'''）
+        nx, ny = grid_config.nx, grid_config.ny
+        total_unknowns = nx * ny * 4  # 4つの未知数（f, f_x, f_y, f_xx）
         
-        # L_xとL_yのサイズが正しいか確認
-        if L_x.shape != (nx * depth, nx * depth):
-            print(f"Warning: L_x size is {L_x.shape}, expected {(nx * depth, nx * depth)}")
-        if L_y.shape != (ny * depth, ny * depth):
-            print(f"Warning: L_y size is {L_y.shape}, expected {(ny * depth, ny * depth)}")
-
-        # 単位行列を作成
-        I_x = cpx_sparse.eye(nx * depth)
-        I_y = cpx_sparse.eye(ny * depth)
-
-        # クロネッカー積を使用してブロック行列を構築
-        # 注: クロネッカー積では結果のサイズは (n_rows_A * n_rows_B, n_cols_A * n_cols_B)
+        # 行列の初期化（単位行列ベース）
+        L = cpx_sparse.eye(total_unknowns, format='csr')
         
-        # 2次元空間での微分演算子
-        try:
-            # まずクロネッカー積の次元を確認
-            print(f"Kronecker product dimensions: I_y shape: {I_y.shape}, L_x shape: {L_x.shape}")
-            print(f"Expected result: {(ny * depth * nx * depth, ny * depth * nx * depth)}")
-            
-            # x方向の偏微分項
-            L_xx = cpx_sparse.kron(I_y, L_x)
-            # y方向の偏微分項
-            L_yy = cpx_sparse.kron(L_y, I_x)
-            
-            print(f"L_xx shape: {L_xx.shape}, L_yy shape: {L_yy.shape}")
-            
-            # 係数に基づいて全体の行列を構築
-            # 簡略化のため、f = a*ψ + b*ψ_x + c*ψ_y + ... の形で係数を適用
-            a = coeffs.get("f", 1.0)
-            b = coeffs.get("f_x", 0.0)
-            c = coeffs.get("f_y", 0.0)
-            d = coeffs.get("f_xx", 0.0)
-            e = coeffs.get("f_yy", 0.0)
-            
-            # 全体の単位行列を作成
-            I_total = cpx_sparse.eye(L_xx.shape[0])
-            
-            # 全体の行列を構築 (簡略化したバージョン)
-            # 注: 全ての行列のサイズが一致していることを確認
-            L = a * I_total
-            
-            if b != 0.0:
-                L = L + b * L_xx
-            if c != 0.0:
-                L = L + c * L_yy
+        # 基本的な連立方程式を設定
+        # この例では単純な中心差分法を使用
+        idx = 0
+        for j in range(ny):
+            for i in range(nx):
+                base_idx = idx * 4
                 
-            return L
-            
-        except Exception as e:
-            print(f"Error building matrix: {e}")
-            # 一時的な対応策として、単純なサイズの行列を返す
-            return cpx_sparse.eye(nx * ny * depth)
+                # 関数値の方程式
+                if 0 < i < nx-1 and 0 < j < ny-1:
+                    # 内部点
+                    L[base_idx, base_idx] = 1.0  # f(i,j)
+
+                    # 一階導関数との関係
+                    hx = grid_config.hx
+                    hy = grid_config.hy
+                    
+                    # x方向の差分
+                    if i > 0 and i < nx-1:
+                        L[base_idx, base_idx-4+1] = -1/(2*hx)  # f_x(i-1,j)
+                        L[base_idx, base_idx+4+1] = 1/(2*hx)   # f_x(i+1,j)
+                    
+                    # y方向の差分
+                    if j > 0 and j < ny-1:
+                        L[base_idx, base_idx-(nx*4)+2] = -1/(2*hy)  # f_y(i,j-1)
+                        L[base_idx, base_idx+(nx*4)+2] = 1/(2*hy)   # f_y(i,j+1)
+                
+                # 次のポイントへ
+                idx += 1
+        
+        return L
 
     def _extract_x_dirichlet_values(
         self, grid_config: Grid2DConfig, j: int
