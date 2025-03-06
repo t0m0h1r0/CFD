@@ -1,8 +1,8 @@
 """
-2次元CCD行列ビルダーモジュール（修正版）
+2次元CCD行列ビルダーモジュール（メモリ最適化版）
 
 2次元CCD法の左辺行列を生成するクラスを提供します。
-1次元CCDの行列を基に、クロネッカー積を用いて2次元の行列を構築します。
+疎行列構造を活用してメモリ使用量を最小化します。
 """
 
 import cupy as cp
@@ -14,122 +14,214 @@ from matrix_builder import CCDLeftHandBuilder  # 1次元CCDの行列ビルダー
 
 
 class CCD2DLeftHandBuilder:
-    """2次元CCD左辺行列を生成するクラス（CuPy疎行列対応）"""
+    """2次元CCD左辺行列を生成するクラス（CuPy疎行列対応、メモリ最適化版）"""
 
     def __init__(self):
         """初期化"""
         # 1次元CCD行列ビルダーをインスタンス化
         self.builder1d = CCDLeftHandBuilder()
 
-    def build_x_matrix(
-        self, grid_config: Grid2DConfig, coeffs: Optional[Dict[str, float]] = None
-    ) -> cpx_sparse.spmatrix:
-        """
-        x方向の1次元CCD行列を生成
-
-        Args:
-            grid_config: 2次元グリッド設定
-            coeffs: 係数（省略時はgrid_configから取得）
-
-        Returns:
-            x方向の1次元CCD行列（CuPy疎行列）
-        """
-        # 1次元グリッド設定を作成
-        from grid_config import GridConfig
-        
-        grid1d_x = GridConfig(
-            n_points=grid_config.nx,
-            h=grid_config.hx,
-            dirichlet_values=self._extract_x_dirichlet_values(grid_config, 0),  # y=0の行のディリクレ値
-            neumann_values=self._extract_x_neumann_values(grid_config, 0),      # y=0の行のノイマン値
-            coeffs=self._convert_coeffs_for_x(grid_config, coeffs)
-        )
-        
-        # 1次元の行列を取得
-        return self.builder1d.build_matrix(
-            grid1d_x,
-            coeffs=self._convert_coeffs_for_x(grid_config, coeffs),
-            dirichlet_enabled=grid_config.is_x_dirichlet,
-            neumann_enabled=grid_config.is_x_neumann
-        )
-
-    def build_y_matrix(
-        self, grid_config: Grid2DConfig, coeffs: Optional[Dict[str, float]] = None
-    ) -> cpx_sparse.spmatrix:
-        """
-        y方向の1次元CCD行列を生成
-
-        Args:
-            grid_config: 2次元グリッド設定
-            coeffs: 係数（省略時はgrid_configから取得）
-
-        Returns:
-            y方向の1次元CCD行列（CuPy疎行列）
-        """
-        # 1次元グリッド設定を作成
-        from grid_config import GridConfig
-        
-        grid1d_y = GridConfig(
-            n_points=grid_config.ny,
-            h=grid_config.hy,
-            dirichlet_values=self._extract_y_dirichlet_values(grid_config, 0),  # x=0の列のディリクレ値
-            neumann_values=self._extract_y_neumann_values(grid_config, 0),      # x=0の列のノイマン値
-            coeffs=self._convert_coeffs_for_y(grid_config, coeffs)
-        )
-        
-        # 1次元の行列を取得
-        return self.builder1d.build_matrix(
-            grid1d_y,
-            coeffs=self._convert_coeffs_for_y(grid_config, coeffs),
-            dirichlet_enabled=grid_config.is_y_dirichlet,
-            neumann_enabled=grid_config.is_y_neumann
-        )
-
     def build_matrix(
         self, grid_config: Grid2DConfig, coeffs: Optional[Dict[str, float]] = None
     ) -> cpx_sparse.spmatrix:
         """
-        2次元CCD全体の左辺行列を生成（単純化版）
+        2次元CCD全体の左辺行列を生成（メモリ効率版）
+
+        COO形式を使用して行列要素を一度に構築し、メモリ使用量を削減します。
+
+        Args:
+            grid_config: 2次元グリッド設定
+            coeffs: 係数（省略時はgrid_configから取得）
+
+        Returns:
+            2次元CCD左辺行列（CuPy疎行列）
         """
         if coeffs is None:
             coeffs = grid_config.coeffs
-        
+
+        # グリッドサイズとパラメータ
         nx, ny = grid_config.nx, grid_config.ny
-        total_unknowns = nx * ny * 4  # 4つの未知数（f, f_x, f_y, f_xx）
+        hx, hy = grid_config.hx, grid_config.hy
         
-        # 行列の初期化（単位行列ベース）
-        L = cpx_sparse.eye(total_unknowns, format='csr')
+        # 未知数の数（各点でf, f_x, f_y, f_xx）
+        depth = 4
+        total_unknowns = nx * ny * depth
         
-        # 基本的な連立方程式を設定
-        # この例では単純な中心差分法を使用
-        idx = 0
+        # COO形式のための行、列、値の配列
+        # 非ゼロ要素の最大数を事前に見積もる（少なめに見積もって調整）
+        estimated_nnz = total_unknowns * 5  # 各行につき平均で5つの非ゼロ要素を仮定
+        rows = []
+        cols = []
+        data = []
+        
+        print(f"メモリ最適化行列ビルダーを使用 - グリッドサイズ: {nx}x{ny}, 合計未知数: {total_unknowns}")
+        
+        # 1. 内部点の方程式
         for j in range(ny):
             for i in range(nx):
-                base_idx = idx * 4
+                base_idx = (j * nx + i) * depth
                 
-                # 関数値の方程式
+                # 1-1. f(i,j)の方程式
+                f_idx = base_idx
+                
+                # 対角成分
+                rows.append(f_idx)
+                cols.append(f_idx)
+                data.append(1.0)  # f = f
+                
+                # 内部点の場合は差分式を追加
                 if 0 < i < nx-1 and 0 < j < ny-1:
-                    # 内部点
-                    L[base_idx, base_idx] = 1.0  # f(i,j)
-
-                    # 一階導関数との関係
-                    hx = grid_config.hx
-                    hy = grid_config.hy
+                    # x方向の中心差分
+                    rows.append(f_idx)
+                    cols.append(base_idx - depth + 1)  # 左隣の点のf_x
+                    data.append(-0.5 / hx)
                     
-                    # x方向の差分
-                    if i > 0 and i < nx-1:
-                        L[base_idx, base_idx-4+1] = -1/(2*hx)  # f_x(i-1,j)
-                        L[base_idx, base_idx+4+1] = 1/(2*hx)   # f_x(i+1,j)
+                    rows.append(f_idx)
+                    cols.append(base_idx + depth + 1)  # 右隣の点のf_x
+                    data.append(0.5 / hx)
                     
-                    # y方向の差分
-                    if j > 0 and j < ny-1:
-                        L[base_idx, base_idx-(nx*4)+2] = -1/(2*hy)  # f_y(i,j-1)
-                        L[base_idx, base_idx+(nx*4)+2] = 1/(2*hy)   # f_y(i,j+1)
+                    # y方向の中心差分
+                    rows.append(f_idx)
+                    cols.append(base_idx - nx * depth + 2)  # 下隣の点のf_y
+                    data.append(-0.5 / hy)
+                    
+                    rows.append(f_idx)
+                    cols.append(base_idx + nx * depth + 2)  # 上隣の点のf_y
+                    data.append(0.5 / hy)
                 
-                # 次のポイントへ
-                idx += 1
+                # 1-2. f_x(i,j)の方程式
+                fx_idx = base_idx + 1
+                
+                rows.append(fx_idx)
+                cols.append(fx_idx)
+                data.append(1.0)  # f_x = f_x
+                
+                if 0 < i < nx-1:
+                    # 中心差分による関係式
+                    rows.append(fx_idx)
+                    cols.append(base_idx - depth)  # 左隣のf
+                    data.append(-0.5 / hx)
+                    
+                    rows.append(fx_idx)
+                    cols.append(base_idx + depth)  # 右隣のf
+                    data.append(0.5 / hx)
+                
+                # 1-3. f_y(i,j)の方程式
+                fy_idx = base_idx + 2
+                
+                rows.append(fy_idx)
+                cols.append(fy_idx)
+                data.append(1.0)  # f_y = f_y
+                
+                if 0 < j < ny-1:
+                    # 中心差分による関係式
+                    rows.append(fy_idx)
+                    cols.append(base_idx - nx * depth)  # 下隣のf
+                    data.append(-0.5 / hy)
+                    
+                    rows.append(fy_idx)
+                    cols.append(base_idx + nx * depth)  # 上隣のf
+                    data.append(0.5 / hy)
+                
+                # 1-4. f_xx(i,j)の方程式
+                fxx_idx = base_idx + 3
+                
+                rows.append(fxx_idx)
+                cols.append(fxx_idx)
+                data.append(1.0)  # f_xx = f_xx
+                
+                if 0 < i < nx-1:
+                    # 中心差分による関係式
+                    rows.append(fxx_idx)
+                    cols.append(base_idx - depth)  # 左隣のf
+                    data.append(1.0 / (hx * hx))
+                    
+                    rows.append(fxx_idx)
+                    cols.append(base_idx)  # 中央のf
+                    data.append(-2.0 / (hx * hx))
+                    
+                    rows.append(fxx_idx)
+                    cols.append(base_idx + depth)  # 右隣のf
+                    data.append(1.0 / (hx * hx))
         
-        return L
+        # 2. 境界条件
+        # ディリクレ境界条件
+        if grid_config.is_x_dirichlet:
+            for j in range(ny):
+                # 左端
+                left_idx = (j * nx) * depth
+                rows.append(left_idx)
+                cols.append(left_idx)
+                data.append(1.0)  # f = 境界値
+                
+                # 右端
+                right_idx = (j * nx + nx - 1) * depth
+                rows.append(right_idx)
+                cols.append(right_idx)
+                data.append(1.0)  # f = 境界値
+        
+        if grid_config.is_y_dirichlet:
+            for i in range(nx):
+                # 下端
+                bottom_idx = i * depth
+                rows.append(bottom_idx)
+                cols.append(bottom_idx)
+                data.append(1.0)  # f = 境界値
+                
+                # 上端
+                top_idx = ((ny - 1) * nx + i) * depth
+                rows.append(top_idx)
+                cols.append(top_idx)
+                data.append(1.0)  # f = 境界値
+        
+        # ノイマン境界条件
+        if grid_config.is_x_neumann:
+            for j in range(ny):
+                # 左端
+                left_idx = (j * nx) * depth + 1  # f_x
+                rows.append(left_idx)
+                cols.append(left_idx)
+                data.append(1.0)  # f_x = 境界値
+                
+                # 右端
+                right_idx = (j * nx + nx - 1) * depth + 1  # f_x
+                rows.append(right_idx)
+                cols.append(right_idx)
+                data.append(1.0)  # f_x = 境界値
+        
+        if grid_config.is_y_neumann:
+            for i in range(nx):
+                # 下端
+                bottom_idx = i * depth + 2  # f_y
+                rows.append(bottom_idx)
+                cols.append(bottom_idx)
+                data.append(1.0)  # f_y = 境界値
+                
+                # 上端
+                top_idx = ((ny - 1) * nx + i) * depth + 2  # f_y
+                rows.append(top_idx)
+                cols.append(top_idx)
+                data.append(1.0)  # f_y = 境界値
+        
+        # COO形式で行列を作成
+        L = cpx_sparse.coo_matrix(
+            (data, (rows, cols)), 
+            shape=(total_unknowns, total_unknowns),
+            dtype=cp.float64
+        )
+        
+        # CSR形式に変換（効率的な計算用）
+        L_csr = L.tocsr()
+        
+        # メモリ使用状況の報告
+        nnz = L_csr.nnz
+        density = nnz / (total_unknowns * total_unknowns)
+        memory_mb = (nnz * (8 + 4 + 4)) / (1024 * 1024)  # 値(8バイト) + 行(4バイト) + 列(4バイト)
+        
+        print(f"行列構築完了 - サイズ: {L_csr.shape}, 非ゼロ要素: {nnz}, 密度: {density:.2e}")
+        print(f"推定メモリ使用量: {memory_mb:.2f} MB")
+        
+        return L_csr
 
     def _extract_x_dirichlet_values(
         self, grid_config: Grid2DConfig, j: int
