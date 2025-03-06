@@ -1,5 +1,5 @@
 """
-2次元行列ビルダーモジュール - バグ修正版
+2次元行列ビルダーモジュール - 根本的バグ修正版
 
 1次元CCDの行列ビルダーを利用して、2次元CCD用の行列を構築します。
 """
@@ -64,58 +64,32 @@ class CCDLeftHandBuilder2D:
         # デバッグ情報の出力
         print(f"Lxのサイズ: {Lx.shape}, Lyのサイズ: {Ly.shape}")
         print(f"nx: {grid_config.nx_points}, ny: {grid_config.ny_points}")
-        
-        # クロネッカー積によるアプローチを修正し、シンプルな実装を選択
-        # 各点の状態数（f, f', f'', f'''）は4
+
         nx, ny = grid_config.nx_points, grid_config.ny_points
-        state_dim = 4
+        depth = 4  # 各点での状態の次元
         
-        # 全体の行列サイズを計算
-        mat_size = nx * ny * state_dim
+        # 正しいサイズの単位行列を作成
+        Ix = cpx_sparse.eye(nx * depth, format='csr')
+        Iy = cpx_sparse.eye(ny * depth, format='csr')
         
-        # より安全なアプローチ: 2次元システムに適したサイズの単位行列を作成
+        # クロネッカー積を計算
+        print(f"クロネッカー積を計算: {Ix.shape} ⊗ {Ly.shape} + {Lx.shape} ⊗ {Iy.shape}")
+        
+        # 正しいクロネッカー積の組み合わせで2D行列を構築
         try:
-            # まずIdentity行列をクロネッカー積で構築
-            I_ny = cpx_sparse.eye(ny * state_dim)
-            I_nx = cpx_sparse.eye(nx * state_dim)
+            # クロネッカー積を計算 (テンソル積)
+            L2D = cpx_sparse.kron(Ix, Ly) + cpx_sparse.kron(Lx, Iy)
             
-            # 各次元ごとに行列を組み立て、クロネッカー積を形成
-            L2D = cpx_sparse.kron(Lx, I_ny) + cpx_sparse.kron(I_nx, Ly)
+            # 実際のサイズとあるべきサイズをチェック
+            actual_size = L2D.shape
+            expected_size = (nx * ny * depth, nx * ny * depth)
             
-            # デバッグ情報
+            if actual_size != expected_size:
+                print(f"警告: 2D行列のサイズ {actual_size} が期待値 {expected_size} と一致しません")
+            
             print(f"2D行列のサイズ: {L2D.shape}, NNZ: {L2D.nnz}")
-            
             return L2D
             
         except Exception as e:
             print(f"クロネッカー積の計算でエラー: {e}")
-            print(f"代替アプローチでの行列構築を試みます...")
-            
-            # より単純なアプローチ: 各要素を手動で設定
-            from scipy.sparse import coo_matrix
-            import numpy as np
-            
-            # 小さな要素からなる疎行列を作成するためのリスト
-            data = []
-            row_indices = []
-            col_indices = []
-            
-            # 対角要素の配置
-            for i in range(mat_size):
-                data.append(1.0)  # 対角要素
-                row_indices.append(i)
-                col_indices.append(i)
-            
-            # リストからNumPy配列に変換（CuPy配列ではなく）
-            data_np = np.array(data, dtype=np.float64)
-            row_np = np.array(row_indices, dtype=np.int32)
-            col_np = np.array(col_indices, dtype=np.int32)
-            
-            # まずSciPyのCOO行列を作成
-            scipy_coo = coo_matrix((data_np, (row_np, col_np)), shape=(mat_size, mat_size))
-            
-            # SciPyからCuPyに変換
-            L2D = cpx_sparse.csr_matrix(scipy_coo)
-            
-            print(f"単純化された2D行列のサイズ: {L2D.shape}, NNZ: {L2D.nnz}")
-            return L2D
+            raise
