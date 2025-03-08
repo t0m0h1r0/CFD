@@ -33,6 +33,11 @@ class EquationSystem:
         """右境界用の方程式を追加"""
         self.right_boundary_equations.append(equation)
 
+    def add_equation(self, equation: Equation) -> None:
+        self.left_boundary_equations.append(equation)
+        self.interior_equations.append(equation)
+        self.right_boundary_equations.append(equation)
+
     def build_matrix_system(self) -> Tuple[cp.ndarray, cp.ndarray]:
         """行列システムを構築"""
         n = self.grid.n_points
@@ -84,5 +89,7 @@ class EquationSystem:
 
                 # 右辺ベクトルを設定
                 b[i * 4 + k] = rhs_value
-
+        
+        cp.set_printoptions(precision=2,suppress=True,linewidth=300)
+        print(A)
         return A, b

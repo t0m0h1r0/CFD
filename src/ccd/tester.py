@@ -5,6 +5,7 @@ from grid import Grid
 from solver import CCDSolver
 from equation_system import EquationSystem
 from equation.poisson import PoissonEquation
+from equation.custom import CustomEquation
 from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
 from equation.compact_internal import (
     Internal1stDerivativeEquation,
@@ -62,14 +63,16 @@ class CCDTester:
         x_min = self.grid.x_min
         x_max = self.grid.x_max
 
+        # 支配方程式
+        system.add_equation(CustomEquation(f_func=test_func.df,coeff=[1,0,0,0]))
+        #system.add_equation(PoissonEquation(test_func.d2f))
+
         # 内部点の方程式を設定
-        system.add_interior_equation(PoissonEquation(test_func.d2f))
         system.add_interior_equation(Internal1stDerivativeEquation())
         system.add_interior_equation(Internal2ndDerivativeEquation())
         system.add_interior_equation(Internal3rdDerivativeEquation())
 
         # 左境界の方程式を設定
-        system.add_left_boundary_equation(PoissonEquation(test_func.d2f))
         system.add_left_boundary_equation(
             DirichletBoundaryEquation(test_func.f(x_min), is_left=True)
         )
@@ -83,7 +86,6 @@ class CCDTester:
         )
 
         # 右境界の方程式を設定
-        system.add_right_boundary_equation(PoissonEquation(test_func.d2f))
         system.add_right_boundary_equation(
             DirichletBoundaryEquation(test_func.f(x_max), is_left=False)
         )
