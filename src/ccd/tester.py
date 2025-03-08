@@ -47,7 +47,7 @@ class CCDTester:
         ソルバーの種類とオプションを設定
 
         Args:
-            method: ソルバーの種類 ('direct', 'gmres', 'bicgstab', 'cg')
+            method: ソルバーの種類 ('direct', 'gmres', 'cg', 'cgs')
             options: ソルバーのオプション
             analyze_matrix: 行列の疎性を分析するかどうか
         """
@@ -56,7 +56,7 @@ class CCDTester:
         self.analyze_matrix = analyze_matrix
 
     def setup_equation_system(self, test_func: TestFunction, use_dirichlet: bool = True, 
-                             use_neumann: bool = True, rehu_number: Optional[float] = None):
+                             use_neumann: bool = True):
         """
         方程式システムとソルバーを設定する（または再設定する）
 
@@ -64,7 +64,6 @@ class CCDTester:
             test_func: テスト関数
             use_dirichlet: ディリクレ境界条件を使用するかどうか
             use_neumann: ノイマン境界条件を使用するかどうか
-            rehu_number: Reynolds-Hugoniot数（スケーリング用）
         """
         # システムを構築
         self.system = EquationSystem(self.grid)
@@ -117,20 +116,11 @@ class CCDTester:
         if self.solver_method != "direct" or self.solver_options:
             self.solver.set_solver(method=self.solver_method, options=self.solver_options)
 
-        # Rehuスケーリングの設定
-        if rehu_number is not None:
-            self.solver.set_rehu_scaling(
-                rehu_number=rehu_number,
-                characteristic_velocity=1.0,
-                reference_length=1.0,
-            )
-
     def run_test_with_options(
         self,
         test_func: TestFunction,
         use_dirichlet: bool = True,
         use_neumann: bool = True,
-        rehu_number: Optional[float] = None,
     ) -> Dict:
         """
         より柔軟なオプションでテストを実行
@@ -139,13 +129,12 @@ class CCDTester:
             test_func: テスト関数
             use_dirichlet: ディリクレ境界条件を使用するかどうか（デフォルトはTrue）
             use_neumann: ノイマン境界条件を使用するかどうか（デフォルトはTrue）
-            rehu_number: Reynolds-Hugoniot数（Noneの場合はスケーリングなし）
 
         Returns:
             テスト結果の辞書
         """
         # 方程式システムとソルバーを設定
-        self.setup_equation_system(test_func, use_dirichlet, use_neumann, rehu_number)
+        self.setup_equation_system(test_func, use_dirichlet, use_neumann)
 
         # 行列を分析（オプション）
         if self.analyze_matrix:
@@ -182,7 +171,6 @@ class CCDTester:
         x_range: Tuple[float, float],
         use_dirichlet: bool = True,
         use_neumann: bool = True,
-        rehu_number: Optional[float] = None,
     ) -> Dict[int, List[float]]:
         """
         グリッドサイズによる収束性テストを実行
@@ -193,7 +181,6 @@ class CCDTester:
             x_range: 計算範囲
             use_dirichlet: ディリクレ境界条件を使用するかどうか（デフォルトはTrue）
             use_neumann: ノイマン境界条件を使用するかどうか（デフォルトはTrue）
-            rehu_number: Reynolds-Hugoniot数（Noneの場合はスケーリングなし）
 
         Returns:
             グリッドサイズごとの誤差 {grid_size: [err_psi, err_psi', err_psi'', err_psi''']}
@@ -220,7 +207,6 @@ class CCDTester:
                 test_func,
                 use_dirichlet=use_dirichlet,
                 use_neumann=use_neumann,
-                rehu_number=rehu_number,
             )
 
             # 結果を保存

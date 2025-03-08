@@ -33,12 +33,6 @@ def parse_args():
         action="store_true",
         help="全てのテスト関数でテストを実行",
     )
-    parser.add_argument(
-        "--rehu-scaling",
-        type=float,
-        default=None,
-        help="指定したRehu数でスケーリングを適用",
-    )
     parser.add_argument("--prefix", type=str, default="", help="出力ファイル名の接頭辞")
     parser.add_argument("--dpi", type=int, default=150, help="出力画像のDPI")
     parser.add_argument(
@@ -116,7 +110,6 @@ def get_solver_options(args: argparse.Namespace) -> Dict[str, Any]:
 def run_convergence_test(
     func_name: str,
     x_range: Tuple[float, float],
-    rehu_number: Optional[float],
     prefix: str,
     dpi: int,
     show: bool,
@@ -145,11 +138,8 @@ def run_convergence_test(
     print("ディリクレ境界条件とノイマン境界条件を使用")
     print(f"ソルバー: {solver_method}")
 
-    if rehu_number is not None:
-        print(f"Rehuスケーリングを適用（Rehu数: {rehu_number}）")
-
     results = tester.run_grid_convergence_test(
-        selected_func, grid_sizes, x_range, rehu_number=rehu_number
+        selected_func, grid_sizes, x_range
     )
 
     # 結果を表示
@@ -181,7 +171,6 @@ def run_convergence_test(
 def test_all_functions(
     n_points: int,
     x_range: Tuple[float, float],
-    rehu_number: Optional[float],
     visualize: bool,
     prefix: str,
     dpi: int,
@@ -212,9 +201,6 @@ def test_all_functions(
     print("ディリクレ境界条件とノイマン境界条件を使用")
     print(f"ソルバー: {solver_method}")
 
-    if rehu_number is not None:
-        print(f"Rehuスケーリングを適用（Rehu数: {rehu_number}）")
-
     print("\n" + "-" * 80)
     print(
         f"{'関数名':<15} {'ψ誤差':<15} {"ψ'誤差":<15} {'ψ"誤差':<15} {'ψ\'"誤差':<15}"
@@ -224,7 +210,7 @@ def test_all_functions(
     # 各関数に対してテストを実行
     for func in test_funcs:
         # テストの実行（同じテスターインスタンスを再利用）
-        results = tester.run_test_with_options(func, rehu_number=rehu_number)
+        results = tester.run_test_with_options(func)
 
         # 結果の表示
         errors = results["errors"]
@@ -275,7 +261,6 @@ def run_cli():
         test_all_functions(
             args.n_points,
             tuple(args.x_range),
-            args.rehu_scaling,
             not args.no_visualization,
             args.prefix,
             args.dpi,
@@ -291,7 +276,6 @@ def run_cli():
         run_convergence_test(
             args.test_func,
             tuple(args.x_range),
-            args.rehu_scaling,
             args.prefix,
             args.dpi,
             args.show,
@@ -322,10 +306,7 @@ def run_cli():
     print("ディリクレ境界条件とノイマン境界条件を使用")
     print(f"ソルバー: {args.solver}")
 
-    if args.rehu_scaling is not None:
-        print(f"Rehuスケーリングを適用（Rehu数: {args.rehu_scaling}）")
-
-    results = tester.run_test_with_options(selected_func, rehu_number=args.rehu_scaling)
+    results = tester.run_test_with_options(selected_func)
 
     # 結果の表示
     print("\n誤差分析:")

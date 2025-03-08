@@ -5,7 +5,6 @@ import cupyx.scipy.sparse.linalg as splinalg
 from typing import Tuple, Optional, Dict, Union
 from equation_system import EquationSystem
 from grid import Grid
-from matrix_scaling import MatrixRehuScaling
 
 
 class CCDSolver:
@@ -21,7 +20,6 @@ class CCDSolver:
         """
         self.system = system
         self.grid = grid
-        self.scaler = None  # スケーリングオブジェクト
         self.solver_method = "direct"  # デフォルトはdirect (スパース直接法)
         self.solver_options = {}
         self.sparsity_info = None  # 疎性分析結果
@@ -33,29 +31,6 @@ class CCDSolver:
             "cg": self._solve_cg,
             "cgs": self._solve_cgs
         }
-
-    def set_rehu_scaling(
-        self,
-        rehu_number: float = 1.0,
-        characteristic_velocity: float = 1.0,
-        reference_length: float = 1.0,
-    ):
-        """
-        Reynolds-Hugoniotスケーリングを設定
-
-        Args:
-            rehu_number: Reynolds-Hugoniot数
-            characteristic_velocity: 特性速度
-            reference_length: 代表長さ
-        """
-        self.scaler = MatrixRehuScaling(
-            characteristic_velocity=characteristic_velocity,
-            reference_length=reference_length,
-            rehu_number=rehu_number,
-        )
-        print(
-            f"Matrix-based Reynolds-Hugoniot scaling set with Rehu number: {rehu_number}"
-        )
 
     def set_solver(self, method: str = "direct", options: Dict = None):
         """
@@ -97,35 +72,6 @@ class CCDSolver:
         print(f"メモリ削減率: {(1 - self.sparsity_info['memory_sparse_MB'] / self.sparsity_info['memory_dense_MB']) * 100:.2f}%")
         
         return self.sparsity_info
-
-    def _scale_sparse_matrix(
-        self, A: sp.csr_matrix, b: cp.ndarray, n_points: int
-    ) -> Tuple[sp.csr_matrix, cp.ndarray]:
-        """
-        スパース行列システムにスケーリングを適用
-
-        Args:
-            A: 元のスパース係数行列
-            b: 元の右辺ベクトル
-            n_points: グリッド点の数
-
-        Returns:
-            スケーリングされた行列システム (A_scaled, b_scaled)
-        """
-        # スケーリング行列の作成
-        S = self.scaler._create_scaling_matrix(n_points)
-        S_inv = cp.linalg.inv(S)  # 逆行列
-
-        # スパース行列のスケーリング: S⁻¹ A S
-        # まず S⁻¹ A を計算
-        S_inv_A = sp.dia_matrix((S_inv.diagonal(), [0]), shape=S_inv.shape) @ A
-        # 次に (S⁻¹ A) S を計算
-        A_scaled = S_inv_A @ sp.dia_matrix((S.diagonal(), [0]), shape=S.shape)
-        
-        # 右辺ベクトルのスケーリング: S⁻¹ b
-        b_scaled = S_inv @ b
-        
-        return A_scaled, b_scaled
 
     def _create_preconditioner(self, A: sp.csr_matrix):
         """
@@ -288,19 +234,9 @@ class CCDSolver:
         if analyze_before_solve:
             self.analyze_system()
 
-        # スケーリングが設定されていれば適用
-        if self.scaler is not None:
-            print("行列スケーリングを適用中...")
-            A, b = self._scale_sparse_matrix(A, b, self.grid.n_points)
-
         # システムを解く
         solver_func = self.available_solvers.get(self.solver_method, self._solve_direct)
         sol = solver_func(A, b)
-
-        # スケーリングが適用されていた場合、結果を元のスケールに戻す
-        if self.scaler is not None:
-            print("解のスケーリングを元に戻しています...")
-            sol = self.scaler.unscale_solution(sol, self.grid.n_points)
 
         # 解から各成分を抽出
         n = self.grid.n_points
