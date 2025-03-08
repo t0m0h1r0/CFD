@@ -41,6 +41,13 @@ class EquationSystem2D:
     def add_top_boundary_equation(self, equation):
         """上境界の方程式を追加 (j=ny-1)"""
         self.top_boundary_equations.append(equation)
+        
+    def add_equation(self, equation):
+        self.interior_equations.append(equation)
+        self.left_boundary_equations.append(equation)
+        self.right_boundary_equations.append(equation)
+        self.bottom_boundary_equations.append(equation)
+        self.top_boundary_equations.append(equation)
     
     def is_left_boundary(self, i, j):
         """左境界かどうかを判定"""

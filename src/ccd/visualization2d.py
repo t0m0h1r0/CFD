@@ -44,7 +44,7 @@ class CCD2DVisualizer:
         Y_np = to_numpy(Y)
         
         # 可視化するソリューションのリスト
-        solution_names = ["ψ", "ψ_x", "ψ_y", "ψ''_x", "ψ''_y", "ψ'''_x", "ψ'''_y"]
+        solution_names = ["ψ", "ψ_x", "ψ_y", "ψ_xx", "ψ_yy", "ψ_xxx", "ψ_yyy"]
         
         # マルチページの図を作成
         len(solution_names)
@@ -225,7 +225,7 @@ class CCD2DVisualizer:
             dpi: 保存する図のDPI
         """
         fig, axes = plt.subplots(2, 4, figsize=(15, 10))
-        solution_names = ["ψ", "ψ_x", "ψ_y", "ψ''_x", "ψ''_y", "ψ'''_x", "ψ'''_y"]
+        solution_names = ["ψ", "ψ_x", "ψ_y", "ψ_xx", "ψ_yy", "ψ_xxx", "ψ_yyy"]
         
         grid_spacings = [1.0 / (n - 1) for n in grid_sizes]
         

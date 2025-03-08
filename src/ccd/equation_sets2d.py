@@ -2,7 +2,8 @@ import cupy as cp
 from abc import ABC, abstractmethod
 
 from equation.equation_converter import Equation1Dto2DConverter
-from equation.poisson2d import PoissonEquation2D
+from equation.poisson import PoissonEquation2D
+from equation.original import OriginalEquation2D
 from equation.compact_internal import Internal1stDerivativeEquation, Internal2ndDerivativeEquation, Internal3rdDerivativeEquation
 from equation.compact_left_boundary import LeftBoundary1stDerivativeEquation, LeftBoundary2ndDerivativeEquation, LeftBoundary3rdDerivativeEquation
 from equation.compact_right_boundary import RightBoundary1stDerivativeEquation, RightBoundary2ndDerivativeEquation, RightBoundary3rdDerivativeEquation
@@ -145,9 +146,8 @@ class Derivative2DEquationSet(EquationSet2D):
         
         # 内部点における偏導関数方程式
         # 関数値
-        system.add_interior_equation(CustomEquation2D(
+        system.add_equation(OriginalEquation2D(
             lambda x, y: test_func.f(x, y),
-            [1, 0, 0, 0, 0, 0, 0]
         ))
         
         # X方向微分
