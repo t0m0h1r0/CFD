@@ -20,11 +20,11 @@ class PoissonEquation(Equation):
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         ポアソン方程式のステンシル係数を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             ステンシル係数の辞書
         """
@@ -38,11 +38,11 @@ class PoissonEquation(Equation):
     def get_rhs(self, grid: Grid, i: int) -> float:
         """
         右辺関数f(x)の値
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右辺の値
         """
@@ -53,11 +53,11 @@ class PoissonEquation(Equation):
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         ポアソン方程式が適用可能かを判定
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             方程式が適用可能な場合True
         """

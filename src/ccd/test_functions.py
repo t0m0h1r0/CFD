@@ -3,19 +3,21 @@ import cupy as cp  # NumPyではなくCuPyを使用
 from dataclasses import dataclass
 from typing import Callable, List
 
+
 @dataclass
 class TestFunction:
     """テスト関数とその導関数を保持するデータクラス"""
-    
+
     name: str
     f: Callable[[float], float]
     df: Callable[[float], float]
     d2f: Callable[[float], float]
     d3f: Callable[[float], float]
 
+
 class TestFunctionFactory:
     """テスト関数を生成するファクトリークラス"""
-    
+
     @staticmethod
     def create_standard_functions() -> List[TestFunction]:
         """標準的なテスト関数セットを作成"""
