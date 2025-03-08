@@ -64,8 +64,7 @@ class CCDTester:
         x_max = self.grid.x_max
 
         # 支配方程式
-        system.add_equation(CustomEquation(f_func=test_func.df,coeff=[1,0,0,0]))
-        #system.add_equation(PoissonEquation(test_func.d2f))
+        system.add_equation(PoissonEquation(test_func.d2f))
 
         # 内部点の方程式を設定
         system.add_interior_equation(Internal1stDerivativeEquation())
