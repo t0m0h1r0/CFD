@@ -24,9 +24,9 @@ class LeftBoundary1stDerivativeEquation(Equation):
 
         # 既存コードから流用した左境界点の係数
         coeffs = {
-            0: cp.array([11 / 2, 1, 0, 0]),  # 境界点
-            1: cp.array([24, 24, 4, 4 / 3]),  # 第1隣接点
-            2: cp.array([-59 / 2, 10, -1, 0]),  # 第2隣接点
+            0: cp.array([9/2,1,0,0]),  # 境界点
+            1: cp.array([-4,4,-1,1/3]),  # 第1隣接点
+            2: cp.array([-(1/2),0,0,0]),  # 第2隣接点
         }
 
         # スケール調整
@@ -81,9 +81,9 @@ class LeftBoundary2ndDerivativeEquation(Equation):
 
         # 既存コードから流用した左境界点の係数
         coeffs = {
-            0: cp.array([-51 / 2, 0, 1, 0]),  # 境界点
-            1: cp.array([-264, -216, -44, -12]),  # 第1隣接点
-            2: cp.array([579 / 2, -99, 10, 0]),  # 第2隣接点
+            0: cp.array([-16,0,1,0]),  # 境界点
+            1: cp.array([12,-20,5,-(7/3)]),  # 第1隣接点
+            2: cp.array([4,0,0,0]),  # 第2隣接点
         }
 
         # スケール調整
@@ -138,9 +138,9 @@ class LeftBoundary3rdDerivativeEquation(Equation):
 
         # 既存コードから流用した左境界点の係数
         coeffs = {
-            0: cp.array([387 / 4, 0, 0, 1]),  # 境界点
-            1: cp.array([1644, 1236, 282, 66]),  # 第1隣接点
-            2: cp.array([-6963 / 4, 1203 / 2, -123 / 2, 0]),  # 第2隣接点
+            0: cp.array([42,0,0,1]),  # 境界点
+            1: cp.array([-24,60,-12,9]),  # 第1隣接点
+            2: cp.array([-18,0,0,0]),  # 第2隣接点
         }
 
         # スケール調整

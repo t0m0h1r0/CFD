@@ -7,6 +7,7 @@ from equation_system import EquationSystem
 from equation.poisson import PoissonEquation
 from equation.custom import CustomEquation
 from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
+from equation.essential import EssentialEquation
 from equation.compact_internal import (
     Internal1stDerivativeEquation,
     Internal2ndDerivativeEquation,
@@ -64,7 +65,7 @@ class CCDTester:
         x_max = self.grid.x_max
 
         # 支配方程式
-        system.add_equation(PoissonEquation(test_func.d2f))
+        system.add_equation(CustomEquation(f_func=test_func.f, coeff=[1,0,0,0]))
 
         # 内部点の方程式を設定
         system.add_interior_equation(Internal1stDerivativeEquation())
@@ -73,28 +74,24 @@ class CCDTester:
 
         # 左境界の方程式を設定
         system.add_left_boundary_equation(
-            DirichletBoundaryEquation(value=test_func.f(x_min))
-        )
-        system.add_left_boundary_equation(
-            NeumannBoundaryEquation(value=test_func.df(x_min))
-        )
-        system.add_left_boundary_equation(
             LeftBoundary1stDerivativeEquation()
-            + LeftBoundary2ndDerivativeEquation()
-            + LeftBoundary3rdDerivativeEquation()
+        )
+        system.add_left_boundary_equation(
+            LeftBoundary2ndDerivativeEquation()
+        )
+        system.add_left_boundary_equation(
+            LeftBoundary3rdDerivativeEquation()
         )
 
         # 右境界の方程式を設定
         system.add_right_boundary_equation(
-            DirichletBoundaryEquation(value=test_func.f(x_max))
-        )
-        system.add_right_boundary_equation(
-            NeumannBoundaryEquation(value=test_func.df(x_max))
-        )
-        system.add_right_boundary_equation(
             RightBoundary1stDerivativeEquation()
-            + RightBoundary2ndDerivativeEquation()
-            + RightBoundary3rdDerivativeEquation()
+        )
+        system.add_right_boundary_equation(
+            RightBoundary2ndDerivativeEquation()
+        )
+        system.add_right_boundary_equation(
+            RightBoundary3rdDerivativeEquation()
         )
 
         # ソルバーを作成

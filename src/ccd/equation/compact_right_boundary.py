@@ -24,9 +24,9 @@ class RightBoundary1stDerivativeEquation(Equation):
 
         # 既存コードから流用した右境界点の係数
         coeffs = {
-            -2: cp.array([59 / 2, 10, 1, 0]),  # i-2点
-            -1: cp.array([-24, 24, -4, 4 / 3]),  # i-1点
-            0: cp.array([-11 / 2, 1, 0, 0]),  # i点（境界点）
+            0: cp.array([-(9/2),1,0,0]),  # i-2点
+            -1: cp.array([4,4,1,1/3]),  # i-1点
+            -2: cp.array([1/2,0,0,0]),  # i点（境界点）
         }
 
         # スケール調整
@@ -82,9 +82,9 @@ class RightBoundary2ndDerivativeEquation(Equation):
 
         # 既存コードから流用した右境界点の係数
         coeffs = {
-            -2: cp.array([579 / 2, 99, 10, 0]),  # i-2点
-            -1: cp.array([-264, 216, -44, 12]),  # i-1点
-            0: cp.array([-51 / 2, 0, 1, 0]),  # i点（境界点）
+            0: cp.array([-16,0,1,0]),  # i-2点
+            -1: cp.array([12,20,5,7/3]),  # i-1点
+            -2: cp.array([4,0,0,0]),  # i点（境界点）
         }
 
         # スケール調整
@@ -140,9 +140,9 @@ class RightBoundary3rdDerivativeEquation(Equation):
 
         # 既存コードから流用した右境界点の係数
         coeffs = {
-            -2: cp.array([6963 / 4, 1203 / 2, 123 / 2, 0]),  # i-2点
-            -1: cp.array([-1644, 1236, -282, 66]),  # i-1点
-            0: cp.array([-387 / 4, 0, 0, 1]),  # i点（境界点）
+            0: cp.array([-42,0,0,1]),  # i-2点
+            -1: cp.array([24,60,12,9]),  # i-1点
+            -2: cp.array([18,0,0,0]),  # i点（境界点）
         }
 
         # スケール調整
