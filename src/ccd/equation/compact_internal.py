@@ -1,5 +1,5 @@
 import cupy as cp
-from .base import Equation
+from .base1d import Equation
 
 class Internal1stDerivativeEquation(Equation):
     """内部点での1階導関数関係式"""

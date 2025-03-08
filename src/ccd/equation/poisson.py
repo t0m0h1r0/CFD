@@ -1,5 +1,5 @@
 import cupy as cp
-from .base import Equation
+from .base1d import Equation
 
 class PoissonEquation(Equation):
     """ポアソン方程式: psi''(x) = f(x)"""

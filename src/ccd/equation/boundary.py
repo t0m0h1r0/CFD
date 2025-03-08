@@ -1,5 +1,5 @@
 import cupy as cp
-from .base import Equation
+from .base1d import Equation
 
 class DirichletBoundaryEquation(Equation):
     """ディリクレ境界条件: psi(x) = value"""

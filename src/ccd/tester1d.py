@@ -1,8 +1,8 @@
 import cupy as cp
-from grid import Grid
-from solver import CCDSolver
-from equation_system import EquationSystem
-from equation_sets import EquationSet
+from grid1d import Grid
+from solver1d import CCDSolver
+from equation_system1d import EquationSystem
+from equation_sets1d import EquationSet
 
 class CCDTester:
     """CCDメソッドのテストを行うクラス"""

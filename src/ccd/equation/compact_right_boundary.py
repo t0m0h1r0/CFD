@@ -1,5 +1,5 @@
 import cupy as cp
-from .base import Equation
+from .base1d import Equation
 
 class RightBoundary1stDerivativeEquation(Equation):
     """右境界点での1階導関数関係式"""

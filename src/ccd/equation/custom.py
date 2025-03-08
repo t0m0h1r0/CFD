@@ -1,8 +1,8 @@
 # equation/poisson.py
 import cupy as cp
 from typing import Dict, Callable
-from grid import Grid
-from .base import Equation
+from grid1d import Grid
+from .base1d import Equation
 
 
 class CustomEquation(Equation):
