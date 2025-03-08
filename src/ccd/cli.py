@@ -6,6 +6,7 @@ from grid import Grid
 from tester import CCDTester
 from test_functions import TestFunctionFactory
 from visualization import CCDVisualizer
+from equation_sets import EquationSet
 
 
 def parse_args():
@@ -37,6 +38,16 @@ def parse_args():
     parser.add_argument("--dpi", type=int, default=150, help="出力画像のDPI")
     parser.add_argument(
         "--show", action="store_true", help="プロットを表示（ファイル保存に加えて）"
+    )
+
+    # 方程式セットオプション
+    equation_set_group = parser.add_argument_group('方程式セットオプション')
+    equation_set_group.add_argument(
+        "--equation-set",
+        type=str,
+        choices=list(EquationSet.get_available_sets().keys()),
+        default="poisson",
+        help="使用する方程式セット (デフォルト: poisson)"
     )
 
     # ソルバー関連のオプションを追加
@@ -116,6 +127,7 @@ def run_convergence_test(
     solver_method: str = "direct",
     solver_options: Optional[Dict[str, Any]] = None,
     analyze_matrix: bool = False,
+    equation_set_name: str = "poisson",
 ):
     """格子収束性テストを実行"""
     # テスト関数を選択
@@ -132,11 +144,15 @@ def run_convergence_test(
     # ソルバー設定
     if solver_options:
         tester.set_solver_options(solver_method, solver_options, analyze_matrix)
+        
+    # 方程式セット設定
+    tester.set_equation_set(equation_set_name)
 
     # 収束性テストを実行
     print(f"{selected_func.name}関数での格子収束性テストを実行しています...")
     print("ディリクレ境界条件とノイマン境界条件を使用")
     print(f"ソルバー: {solver_method}")
+    print(f"方程式セット: {equation_set_name}")
 
     results = tester.run_grid_convergence_test(
         selected_func, grid_sizes, x_range
@@ -178,6 +194,7 @@ def test_all_functions(
     solver_method: str = "direct",
     solver_options: Optional[Dict[str, Any]] = None,
     analyze_matrix: bool = False,
+    equation_set_name: str = "poisson",
 ):
     """全てのテスト関数に対してテストを実行"""
     # テスト関数の取得
@@ -196,10 +213,14 @@ def test_all_functions(
     # ソルバー設定
     if solver_options:
         tester.set_solver_options(solver_method, solver_options, analyze_matrix)
+        
+    # 方程式セット設定
+    tester.set_equation_set(equation_set_name)
 
     print(f"\n==== 全関数のテスト ({n_points} 点) ====")
     print("ディリクレ境界条件とノイマン境界条件を使用")
     print(f"ソルバー: {solver_method}")
+    print(f"方程式セット: {equation_set_name}")
 
     print("\n" + "-" * 80)
     print(
@@ -268,6 +289,7 @@ def run_cli():
             args.solver,
             solver_options,
             args.analyze_matrix,
+            args.equation_set,
         )
         return
 
@@ -282,6 +304,7 @@ def run_cli():
             args.solver,
             solver_options,
             args.analyze_matrix,
+            args.equation_set,
         )
         return
 
@@ -294,6 +317,9 @@ def run_cli():
     
     # ソルバー設定
     tester.set_solver_options(args.solver, solver_options, args.analyze_matrix)
+    
+    # 方程式セット設定
+    tester.set_equation_set(args.equation_set)
 
     # テスト関数の選択
     test_funcs = TestFunctionFactory.create_standard_functions()
@@ -305,6 +331,7 @@ def run_cli():
     print(f"\n{selected_func.name}関数でテストを実行しています...")
     print("ディリクレ境界条件とノイマン境界条件を使用")
     print(f"ソルバー: {args.solver}")
+    print(f"方程式セット: {args.equation_set}")
 
     results = tester.run_test_with_options(selected_func)
 

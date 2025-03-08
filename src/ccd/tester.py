@@ -4,24 +4,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from grid import Grid
 from solver import CCDSolver
 from equation_system import EquationSystem
-from equation.poisson import PoissonEquation
-from equation.custom import CustomEquation
-from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
-from equation.compact_internal import (
-    Internal1stDerivativeEquation,
-    Internal2ndDerivativeEquation,
-    Internal3rdDerivativeEquation,
-)
-from equation.compact_left_boundary import (
-    LeftBoundary1stDerivativeEquation,
-    LeftBoundary2ndDerivativeEquation,
-    LeftBoundary3rdDerivativeEquation,
-)
-from equation.compact_right_boundary import (
-    RightBoundary1stDerivativeEquation,
-    RightBoundary2ndDerivativeEquation,
-    RightBoundary3rdDerivativeEquation,
-)
+from equation_sets import EquationSet
 from test_functions import TestFunction
 
 
@@ -41,6 +24,7 @@ class CCDTester:
         self.solver_method = "direct"
         self.solver_options = None
         self.analyze_matrix = False
+        self.equation_set = None
 
     def set_solver_options(self, method: str, options: Dict[str, Any], analyze_matrix: bool = False):
         """
@@ -55,8 +39,22 @@ class CCDTester:
         self.solver_options = options
         self.analyze_matrix = analyze_matrix
 
-    def setup_equation_system(self, test_func: TestFunction, use_dirichlet: bool = True, 
-                             use_neumann: bool = True):
+    def set_equation_set(self, equation_set_name: str):
+        """
+        使用する方程式セットを設定
+
+        Args:
+            equation_set_name: 方程式セットの名前 ('poisson', 'higher_derivative', 'custom')
+        """
+        self.equation_set = EquationSet.create(equation_set_name)
+        print(f"方程式セットを '{equation_set_name}' に設定しました")
+
+    def setup_equation_system(
+        self, 
+        test_func: TestFunction, 
+        use_dirichlet: bool = True,
+        use_neumann: bool = True
+    ):
         """
         方程式システムとソルバーを設定する（または再設定する）
 
@@ -68,42 +66,17 @@ class CCDTester:
         # システムを構築
         self.system = EquationSystem(self.grid)
 
-        # グリッド情報
-        x_min = self.grid.x_min
-        x_max = self.grid.x_max
+        # 方程式セットが設定されていない場合はデフォルトのポアソン方程式を使用
+        if self.equation_set is None:
+            self.equation_set = EquationSet.create("poisson")
 
-        # 支配方程式
-        self.system.add_equation(PoissonEquation(test_func.d2f))
-
-        # 内部点の方程式を設定
-        self.system.add_interior_equation(Internal1stDerivativeEquation())
-        self.system.add_interior_equation(Internal2ndDerivativeEquation())
-        self.system.add_interior_equation(Internal3rdDerivativeEquation())
-
-        # 左境界の方程式を設定
-        self.system.add_left_boundary_equation(
-            DirichletBoundaryEquation(value=test_func.f(x_min))
-        )
-        self.system.add_left_boundary_equation(
-            NeumannBoundaryEquation(value=test_func.df(x_min))
-        )
-        self.system.add_left_boundary_equation(
-            LeftBoundary1stDerivativeEquation()
-            + LeftBoundary2ndDerivativeEquation()
-            + LeftBoundary3rdDerivativeEquation()
-        )
-
-        # 右境界の方程式を設定
-        self.system.add_right_boundary_equation(
-            DirichletBoundaryEquation(value=test_func.f(x_max))
-        )
-        self.system.add_right_boundary_equation(
-            NeumannBoundaryEquation(value=test_func.df(x_max))
-        )
-        self.system.add_right_boundary_equation(
-            RightBoundary1stDerivativeEquation()
-            + RightBoundary2ndDerivativeEquation()
-            + RightBoundary3rdDerivativeEquation()
+        # 方程式セットを使って方程式を設定
+        self.equation_set.setup_equations(
+            self.system, 
+            self.grid, 
+            test_func, 
+            use_dirichlet, 
+            use_neumann
         )
 
         # ソルバーを作成または更新
@@ -187,10 +160,11 @@ class CCDTester:
         """
         results = {}
 
-        # 現在のソルバー設定を保存
+        # 現在のソルバー設定とEquationSetを保存
         original_method = self.solver_method
         original_options = self.solver_options
         original_analyze = self.analyze_matrix
+        original_equation_set = self.equation_set
 
         for n in grid_sizes:
             # グリッドを作成
@@ -199,8 +173,9 @@ class CCDTester:
             # このクラスのインスタンスを新しいグリッドで作成
             tester = CCDTester(grid)
             
-            # ソルバー設定を引き継ぐ
+            # ソルバー設定とEquationSetを引き継ぐ
             tester.set_solver_options(original_method, original_options, original_analyze)
+            tester.equation_set = original_equation_set
 
             # テストを実行
             result = tester.run_test_with_options(
