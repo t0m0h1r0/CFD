@@ -1,34 +1,36 @@
 import cupy as cp
-from base2d import Equation2D
+from equation.base2d import Equation2D
 
 class Equation1Dto2DConverter:
     """1次元方程式を2次元方程式に変換するファクトリクラス"""
     
     @staticmethod
-    def to_x(equation_1d):
+    def to_x(equation_1d, x_only=False):
         """
         1次元方程式をx方向の2次元方程式に変換
         
         Args:
             equation_1d: 1次元方程式クラスのインスタンス
+            x_only: True の場合、y方向の成分を無視
             
         Returns:
             x方向用の2次元方程式インスタンス
         """
-        return DirectionalEquation2D(equation_1d, 'x')
+        return DirectionalEquation2D(equation_1d, 'x', x_only)
     
     @staticmethod
-    def to_y(equation_1d):
+    def to_y(equation_1d, y_only=False):
         """
         1次元方程式をy方向の2次元方程式に変換
         
         Args:
             equation_1d: 1次元方程式クラスのインスタンス
+            y_only: True の場合、x方向の成分を無視
             
         Returns:
             y方向用の2次元方程式インスタンス
         """
-        return DirectionalEquation2D(equation_1d, 'y')
+        return DirectionalEquation2D(equation_1d, 'y', y_only)
     
     @staticmethod
     def to_xy(equation_1d_x, equation_1d_y=None):
@@ -56,16 +58,18 @@ class DirectionalEquation2D(Equation2D):
     1次元方程式を指定方向の2次元方程式に変換するアダプタクラス
     """
     
-    def __init__(self, equation_1d, direction='x'):
+    def __init__(self, equation_1d, direction='x', direction_only=False):
         """
         初期化
         
         Args:
             equation_1d: 1次元方程式のインスタンス
             direction: 'x'または'y'
+            direction_only: 特定の方向のみ処理する場合True
         """
         self.equation_1d = equation_1d
         self.direction = direction
+        self.direction_only = direction_only
         
         # 方向に応じたインデックスマッピング
         # 2次元の未知数順序: [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy]
@@ -93,15 +97,18 @@ class DirectionalEquation2D(Equation2D):
         if self.direction == 'x':
             h = grid.get_spacing()[0]  # hx
             i_1d = i  # x方向のインデックス
+            is_boundary = i == 0 or i == grid.nx_points - 1
         else:  # self.direction == 'y'
             h = grid.get_spacing()[1]  # hy
             i_1d = j  # y方向のインデックス
+            is_boundary = j == 0 or j == grid.ny_points - 1
         
         # 1D Grid オブジェクトをエミュレート
         class Grid1DEmulator:
-            def __init__(self, points, spacing):
+            def __init__(self, points, spacing, n_points):
                 self.points = points
                 self.h = spacing
+                self.n_points = n_points
             
             def get_point(self, idx):
                 return self.points[idx]
@@ -111,19 +118,20 @@ class DirectionalEquation2D(Equation2D):
             
             def get_spacing(self):
                 return self.h
-            
-            @property
-            def n_points(self):
-                return len(self.points)
         
         # 方向に応じた1Dグリッドを作成
         if self.direction == 'x':
-            emulated_grid = Grid1DEmulator(grid.x, h)
+            emulated_grid = Grid1DEmulator(grid.x, h, grid.nx_points)
         else:  # self.direction == 'y'
-            emulated_grid = Grid1DEmulator(grid.y, h)
+            emulated_grid = Grid1DEmulator(grid.y, h, grid.ny_points)
         
         # 1次元方程式からステンシル係数を取得
-        coeffs_1d = self.equation_1d.get_stencil_coefficients(emulated_grid, i_1d)
+        if self.direction_only and is_boundary:
+            # 境界点で特定方向のみの場合、有効性チェックをスキップ
+            # 実際の有効性は後で is_valid_at で判定
+            coeffs_1d = {}
+        else:
+            coeffs_1d = self.equation_1d.get_stencil_coefficients(emulated_grid, i_1d)
         
         # 1次元の係数を2次元に変換
         coeffs_2d = {}
@@ -160,16 +168,23 @@ class DirectionalEquation2D(Equation2D):
             # x方向の場合は1次元方程式にiを渡す
             point = grid.get_point(i, j)[0]  # x座標のみ
             i_1d = i
+            is_boundary = i == 0 or i == grid.nx_points - 1
         else:  # self.direction == 'y'
             # y方向の場合は1次元方程式にjを渡す
             point = grid.get_point(i, j)[1]  # y座標のみ
             i_1d = j
+            is_boundary = j == 0 or j == grid.ny_points - 1
+        
+        if self.direction_only and is_boundary:
+            # 境界点で特定方向のみの場合、右辺値を0とする
+            return 0.0
         
         # 1D Grid オブジェクトをエミュレート
         class Grid1DEmulator:
-            def __init__(self, point, spacing):
+            def __init__(self, point, spacing, n_points):
                 self.point_value = point
                 self.h = spacing
+                self.n_points = n_points
             
             def get_point(self, idx):
                 return self.point_value
@@ -179,9 +194,10 @@ class DirectionalEquation2D(Equation2D):
         
         # 方向に応じた間隔を選択
         h = grid.get_spacing()[0] if self.direction == 'x' else grid.get_spacing()[1]
+        n = grid.nx_points if self.direction == 'x' else grid.ny_points
         
         # エミュレートされた1Dグリッドを作成
-        emulated_grid = Grid1DEmulator(point, h)
+        emulated_grid = Grid1DEmulator(point, h, n)
         
         # 1次元方程式から右辺値を取得
         return self.equation_1d.get_rhs(emulated_grid, i_1d)
@@ -198,19 +214,27 @@ class DirectionalEquation2D(Equation2D):
             有効性を示すブール値
         """
         # 方向に応じた有効性の判定
-        nx, ny = grid.nx_points, grid.ny_points
-        
         if self.direction == 'x':
             # x方向の境界判定
-            # 内部点か境界点かを方向に応じて判定
-            if i == 0 or i == nx - 1:
-                return False  # x方向の境界では無効
-            return True  # 内部点では有効
+            if self.direction_only:
+                # x方向のみの場合、内部点および左右境界のみで有効（上下境界では無効）
+                if j == 0 or j == grid.ny_points - 1:
+                    return False
+                return True
+            
+            # 通常の判定：内部点と上下境界で有効
+            return 0 < i < grid.nx_points - 1
+            
         else:  # self.direction == 'y'
             # y方向の境界判定
-            if j == 0 or j == ny - 1:
-                return False  # y方向の境界では無効
-            return True  # 内部点では有効
+            if self.direction_only:
+                # y方向のみの場合、内部点および上下境界のみで有効（左右境界では無効）
+                if i == 0 or i == grid.nx_points - 1:
+                    return False
+                return True
+            
+            # 通常の判定：内部点と左右境界で有効
+            return 0 < j < grid.ny_points - 1
 
 
 class CombinedDirectionalEquation2D(Equation2D):

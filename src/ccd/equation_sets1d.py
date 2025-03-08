@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from equation.poisson import PoissonEquation
+from equation.original import OriginalEquation
 from equation.custom import CustomEquation
 from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
 from equation.compact_internal import Internal1stDerivativeEquation, Internal2ndDerivativeEquation, Internal3rdDerivativeEquation
@@ -76,7 +77,7 @@ class DerivativeEquationSet(EquationSet):
     """高階微分のための方程式セット"""
 
     def setup_equations(self, system, grid, test_func, use_dirichlet=True, use_neumann=True):
-        system.add_equation(CustomEquation(f_func=test_func.f, coeff=[1, 0, 0, 0]))
+        system.add_equation(OriginalEquation(f_func=test_func.f))
 
         system.add_interior_equation(Internal1stDerivativeEquation())
         system.add_interior_equation(Internal2ndDerivativeEquation())
