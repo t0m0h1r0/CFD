@@ -81,8 +81,5 @@ class EquationSystem:
                 
                 # 右辺ベクトルを設定
                 b[i*4 + k] = rhs_value
-        cp.set_printoptions(precision=2,suppress=True,linewidth=300)
-        print(A)
-        print(b.reshape((n,4)))
         
         return A, b
