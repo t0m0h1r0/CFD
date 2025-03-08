@@ -1,5 +1,5 @@
 import cupy as cp
-from base2d import Equation2D
+from .base2d import Equation2D
 
 class PoissonEquation2D(Equation2D):
     """2D Poisson equation: ψ_xx + ψ_yy = f(x,y)"""

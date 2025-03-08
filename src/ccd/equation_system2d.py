@@ -1,37 +1,72 @@
 import cupy as cp
 import cupyx.scipy.sparse as sp
-import numpy as np
-from scipy import sparse
 
 class EquationSystem2D:
-    """Manages the system of equations for 2D CCD method"""
+    """2次元方程式システムを管理するクラス"""
     
     def __init__(self, grid):
         """
-        Initialize with a 2D grid
+        グリッドを指定して初期化
         
         Args:
-            grid: Grid2D object
+            grid: Grid2D オブジェクト
         """
         self.grid = grid
+        
+        # 内部点の方程式
         self.interior_equations = []
-        self.boundary_equations = []
-        self.corner_equations = []
+        
+        # 境界の方程式
+        self.left_boundary_equations = []    # i = 0
+        self.right_boundary_equations = []   # i = nx-1
+        self.bottom_boundary_equations = []  # j = 0
+        self.top_boundary_equations = []     # j = ny-1
     
     def add_interior_equation(self, equation):
-        """Add an equation for interior points"""
+        """内部点の方程式を追加"""
         self.interior_equations.append(equation)
     
-    def add_boundary_equation(self, equation):
-        """Add an equation for boundary points (not corners)"""
-        self.boundary_equations.append(equation)
+    def add_left_boundary_equation(self, equation):
+        """左境界の方程式を追加 (i=0)"""
+        self.left_boundary_equations.append(equation)
     
-    def add_corner_equation(self, equation):
-        """Add an equation for corner points"""
-        self.corner_equations.append(equation)
+    def add_right_boundary_equation(self, equation):
+        """右境界の方程式を追加 (i=nx-1)"""
+        self.right_boundary_equations.append(equation)
+    
+    def add_bottom_boundary_equation(self, equation):
+        """下境界の方程式を追加 (j=0)"""
+        self.bottom_boundary_equations.append(equation)
+    
+    def add_top_boundary_equation(self, equation):
+        """上境界の方程式を追加 (j=ny-1)"""
+        self.top_boundary_equations.append(equation)
+    
+    def is_left_boundary(self, i, j):
+        """左境界かどうかを判定"""
+        return i == 0
+    
+    def is_right_boundary(self, i, j):
+        """右境界かどうかを判定"""
+        nx = self.grid.nx_points
+        return i == nx - 1
+    
+    def is_bottom_boundary(self, i, j):
+        """下境界かどうかを判定"""
+        return j == 0
+    
+    def is_top_boundary(self, i, j):
+        """上境界かどうかを判定"""
+        ny = self.grid.ny_points
+        return j == ny - 1
+    
+    def is_interior(self, i, j):
+        """内部点かどうかを判定"""
+        nx, ny = self.grid.nx_points, self.grid.ny_points
+        return 0 < i < nx - 1 and 0 < j < ny - 1
     
     def build_matrix_system(self):
-        """Build the sparse matrix system"""
+        """行列システムを構築"""
         nx, ny = self.grid.nx_points, self.grid.ny_points
         
         # 7 unknowns per grid point: ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy
@@ -43,31 +78,51 @@ class EquationSystem2D:
         col_indices = []
         b = cp.zeros(system_size)
         
-        # Iterate over all grid points
+        # 全グリッド点に対して
         for j in range(ny):
             for i in range(nx):
-                # Determine point type (interior, boundary, corner)
-                is_corner = self.grid.is_corner_point(i, j)
-                is_boundary = self.grid.is_boundary_point(i, j) and not is_corner
+                # グリッド点の基本インデックス
+                base_idx = (j * nx + i) * n_unknowns_per_point
                 
-                # Select appropriate equations
-                if is_corner:
-                    equations = self.corner_equations
-                elif is_boundary:
-                    equations = self.boundary_equations
+                # この点で適用する方程式リスト
+                applicable_equations = []
+                
+                # 点のタイプに基づいて適用する方程式を決定
+                if self.is_interior(i, j):
+                    # 内部点の場合は内部方程式のみ
+                    applicable_equations = self.interior_equations
                 else:
-                    equations = self.interior_equations
+                    # 境界点の場合、適用される境界条件を収集
+                    if self.is_left_boundary(i, j):
+                        applicable_equations.extend(self.left_boundary_equations)
+                    
+                    if self.is_right_boundary(i, j):
+                        applicable_equations.extend(self.right_boundary_equations)
+                    
+                    if self.is_bottom_boundary(i, j):
+                        applicable_equations.extend(self.bottom_boundary_equations)
+                    
+                    if self.is_top_boundary(i, j):
+                        applicable_equations.extend(self.top_boundary_equations)
                 
-                # Apply equations at this grid point
-                for k, eq in enumerate(equations):
+                # 有効な方程式のカウンター
+                eq_count = 0
+                
+                # 各方程式を適用
+                for eq in applicable_equations:
                     if eq.is_valid_at(self.grid, i, j):
-                        # Current equation row index
-                        row = (j * nx + i) * n_unknowns_per_point + k
+                        # 最大7つまで（オーバーフロー防止）
+                        if eq_count >= n_unknowns_per_point:
+                            break
                         
-                        # Get stencil coefficients
+                        # 行インデックス
+                        row = base_idx + eq_count
+                        eq_count += 1
+                        
+                        # ステンシル係数を取得
                         stencil_coeffs = eq.get_stencil_coefficients(self.grid, i, j)
                         
-                        # Add coefficients to the matrix
+                        # 行列に係数を追加
                         for (di, dj), coeffs in stencil_coeffs.items():
                             ni, nj = i + di, j + dj
                             if 0 <= ni < nx and 0 <= nj < ny:
@@ -78,10 +133,18 @@ class EquationSystem2D:
                                         col_indices.append(col_base + m)
                                         data.append(float(coeff))
                         
-                        # Add right-hand side value
+                        # 右辺値を設定
                         b[row] = eq.get_rhs(self.grid, i, j)
+                
+                # 方程式が不足している場合、単位行列で補完
+                if eq_count < n_unknowns_per_point:
+                    for k in range(eq_count, n_unknowns_per_point):
+                        row = base_idx + k
+                        row_indices.append(row)
+                        col_indices.append(row)  # 同じインデックスで対角成分
+                        data.append(1.0)  # 単位行列の要素
         
-        # Create the sparse matrix
+        # 疎行列を作成
         A = sp.csr_matrix(
             (cp.array(data), (cp.array(row_indices), cp.array(col_indices))),
             shape=(system_size, system_size)
@@ -89,43 +152,8 @@ class EquationSystem2D:
         
         return A, b
     
-    def build_kronecker_matrix_system(self):
-        """
-        Alternative method to build the matrix system using explicit Kronecker products
-        This is more suitable for theoretical analysis and understanding
-        """
-        nx, ny = self.grid.nx_points, self.grid.ny_points
-        hx, hy = self.grid.get_spacing()
-        
-        # First, build the 1D operators for x and y directions
-        # (This is a simplified version for demonstration)
-        
-        # Matrix sizes: 4 unknowns per point in 1D
-        x_size = 4 * nx
-        y_size = 4 * ny
-        
-        # Build sample 1D operators (actual implementation would use the original 1D method)
-        Lx = sp.eye(x_size)  # Placeholder
-        Ly = sp.eye(y_size)  # Placeholder
-        
-        # Create identity matrices
-        Ix = sp.eye(x_size)
-        Iy = sp.eye(y_size)
-        
-        # Build 2D operator using Kronecker products
-        # L_2D = L_x ⊗ I_y + I_x ⊗ L_y
-        L2D = sparse.kron(Lx.get().tocsr(), Iy.get().tocsr()) + sparse.kron(Ix.get().tocsr(), Ly.get().tocsr())
-        
-        # Convert back to CuPy sparse matrix
-        L2D_cupy = sp.csr_matrix(L2D)
-        
-        # Build right-hand side (simplified)
-        b2D = cp.zeros(L2D_cupy.shape[0])
-        
-        return L2D_cupy, b2D
-    
     def analyze_sparsity(self):
-        """Analyze the sparsity of the matrix system"""
+        """行列の疎性を分析"""
         A, _ = self.build_matrix_system()
         
         total_size = A.shape[0]
@@ -134,7 +162,7 @@ class EquationSystem2D:
         sparsity = 1.0 - (nnz / max_possible_nnz)
         
         memory_dense_MB = (total_size * total_size * 8) / (1024 * 1024)  # 8 bytes per double
-        memory_sparse_MB = (nnz * 12) / (1024 * 1024)  # 8 bytes for value + 4 bytes for indices (approximate)
+        memory_sparse_MB = (nnz * 12) / (1024 * 1024)  # 8 bytes for value + 4 bytes for indices
         
         results = {
             "matrix_size": total_size,
