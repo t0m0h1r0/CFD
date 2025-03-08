@@ -24,10 +24,21 @@ class EquationSet(ABC):
 
     @classmethod
     def create(cls, name):
-        available_sets = cls.get_available_sets()
-        if name not in available_sets:
-            name = "poisson"
-        return available_sets[name]()
+        available_sets = {
+            "poisson": PoissonEquationSet,
+            "derivative": DerivativeEquationSet,
+        }
+        
+        # 文字列の前後の空白を削除
+        name = name.strip()
+        
+        if name in available_sets:
+            return available_sets[name]()
+        else:
+            print(f"警告: 方程式セット '{name}' は利用できません。")
+            print(f"利用可能なセット: {list(available_sets.keys())}")
+            print("デフォルトの 'poisson' を使用します。")
+            return available_sets["poisson"]()
 
 
 class PoissonEquationSet(EquationSet):
