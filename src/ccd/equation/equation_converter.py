@@ -5,7 +5,7 @@ class Equation1Dto2DConverter:
     """1次元方程式を2次元方程式に変換するファクトリクラス"""
     
     @staticmethod
-    def convert_to_x_direction(equation_1d):
+    def to_x(equation_1d):
         """
         1次元方程式をx方向の2次元方程式に変換
         
@@ -18,7 +18,7 @@ class Equation1Dto2DConverter:
         return DirectionalEquation2D(equation_1d, 'x')
     
     @staticmethod
-    def convert_to_y_direction(equation_1d):
+    def to_y(equation_1d):
         """
         1次元方程式をy方向の2次元方程式に変換
         
@@ -31,7 +31,7 @@ class Equation1Dto2DConverter:
         return DirectionalEquation2D(equation_1d, 'y')
     
     @staticmethod
-    def convert_to_both_directions(equation_1d_x, equation_1d_y=None):
+    def to_xy(equation_1d_x, equation_1d_y=None):
         """
         異なる方程式をx方向とy方向に適用
         
