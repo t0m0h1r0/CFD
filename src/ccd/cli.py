@@ -35,10 +35,6 @@ def parse_args():
         help="全てのテスト関数でテストを実行",
     )
     parser.add_argument("--prefix", type=str, default="", help="出力ファイル名の接頭辞")
-    parser.add_argument("--dpi", type=int, default=150, help="出力画像のDPI")
-    parser.add_argument(
-        "--show", action="store_true", help="プロットを表示（ファイル保存に加えて）"
-    )
 
     # 方程式セットオプション
     equation_set_group = parser.add_argument_group('方程式セットオプション')
