@@ -1,6 +1,7 @@
 # equation/boundary.py
-import cupy as np
+import cupy as cp
 from typing import Dict
+from grid import Grid
 from .base import Equation
 
 
@@ -18,22 +19,49 @@ class DirichletBoundaryEquation(Equation):
         self.alpha = alpha
         self.is_left = is_left
 
-    def get_stencil_coefficients(
-        self, i: int, n: int, h: float
-    ) -> Dict[int, np.ndarray]:
-        """ディリクレ境界条件の係数を返す"""
+    def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
+        """
+        ディリクレ境界条件のステンシル係数を返す
+        
+        Args:
+            grid: 計算格子
+            i: グリッド点のインデックス
+            
+        Returns:
+            ステンシル係数の辞書
+        """
+        # psiに対応する係数を1に設定
         coeffs = {
-            0: np.array([1, 0, 0, 0]),  # psiに対応する係数を1に設定
+            0: cp.array([1, 0, 0, 0]),
         }
 
         return coeffs
 
-    def get_rhs(self, i: int, n: int, h: float) -> float:
-        """指定された境界値"""
+    def get_rhs(self, grid: Grid, i: int) -> float:
+        """
+        指定された境界値を返す
+        
+        Args:
+            grid: 計算格子
+            i: グリッド点のインデックス
+            
+        Returns:
+            境界値
+        """
         return self.alpha
 
-    def is_valid_at(self, i: int, n: int) -> bool:
-        """境界点でのみ有効"""
+    def is_valid_at(self, grid: Grid, i: int) -> bool:
+        """
+        境界点でのみ有効かを判定
+        
+        Args:
+            grid: 計算格子
+            i: グリッド点のインデックス
+            
+        Returns:
+            境界点の場合True
+        """
+        n = grid.n_points
         if self.is_left:
             return i == 0
         else:
@@ -54,22 +82,49 @@ class NeumannBoundaryEquation(Equation):
         self.beta = beta
         self.is_left = is_left
 
-    def get_stencil_coefficients(
-        self, i: int, n: int, h: float
-    ) -> Dict[int, np.ndarray]:
-        """ノイマン境界条件の係数を返す"""
+    def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
+        """
+        ノイマン境界条件のステンシル係数を返す
+        
+        Args:
+            grid: 計算格子
+            i: グリッド点のインデックス
+            
+        Returns:
+            ステンシル係数の辞書
+        """
+        # psi'に対応する係数を1に設定
         coeffs = {
-            0: np.array([0, 1, 0, 0]),  # psi'に対応する係数を1に設定
+            0: cp.array([0, 1, 0, 0]),
         }
 
         return coeffs
 
-    def get_rhs(self, i: int, n: int, h: float) -> float:
-        """指定された微分値"""
+    def get_rhs(self, grid: Grid, i: int) -> float:
+        """
+        指定された微分値を返す
+        
+        Args:
+            grid: 計算格子
+            i: グリッド点のインデックス
+            
+        Returns:
+            境界での微分値
+        """
         return self.beta
 
-    def is_valid_at(self, i: int, n: int) -> bool:
-        """境界点でのみ有効"""
+    def is_valid_at(self, grid: Grid, i: int) -> bool:
+        """
+        境界点でのみ有効かを判定
+        
+        Args:
+            grid: 計算格子
+            i: グリッド点のインデックス
+            
+        Returns:
+            境界点の場合True
+        """
+        n = grid.n_points
         if self.is_left:
             return i == 0
         else:

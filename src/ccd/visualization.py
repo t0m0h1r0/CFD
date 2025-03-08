@@ -1,5 +1,6 @@
 # visualization.py
 import os
+import numpy as np
 import matplotlib.pyplot as plt
 import cupy as cp
 from typing import List, Dict, Tuple, Optional
@@ -75,7 +76,7 @@ class CCDVisualizer:
         titles = ["$\\psi$", "$\\psi'$", "$\\psi''$", "$\\psi'''$"]
         
         # CuPy配列をNumPy配列に変換
-        x_np = x.get()
+        x_np = x.get() if hasattr(x, 'get') else x
         
         for i, ax in enumerate(axes.flat):
             # CuPy配列をNumPy配列に変換
@@ -240,3 +241,94 @@ class CCDVisualizer:
             plt.close(fig)
         
         return filepath
+    
+    def compare_all_functions_errors(
+        self,
+        results_summary: Dict[str, List[float]],
+        prefix: str = "",
+        dpi: int = 150,
+        show: bool = False
+    ) -> str:
+        """
+        全テスト関数の誤差比較グラフを生成（警告解消版）
+        
+        Args:
+            results_summary: 関数名ごとの誤差リスト {function_name: [err_psi, err_psi', err_psi'', err_psi''']}
+            prefix: ファイル名の接頭辞
+            dpi: 画像解像度
+            show: 結果を画面に表示するかどうか
+            
+        Returns:
+            保存したファイルのパス
+        """
+        # 関数名とエラーデータを抽出
+        func_names = list(results_summary.keys())
+        
+        # 比較グラフの作成
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        error_types = ["ψ", "ψ'", "ψ''", "ψ'''"]
+        
+        for i, (ax, error_type) in enumerate(zip(axes.flat, error_types)):
+            errors = [results_summary[name][i] for name in func_names]
+            
+            # x軸の位置を設定（警告解消のため）
+            x_positions = np.arange(len(func_names))
+            
+            # 誤差値に0がないか確認（log スケール警告対策）
+            has_zero = any(err == 0.0 for err in errors)
+            min_nonzero = min((err for err in errors if err > 0), default=1e-16)
+            
+            # 誤差の対数棒グラフ
+            bars = ax.bar(x_positions, errors)
+            
+            # グラフの装飾
+            if not has_zero:
+                # 0値がなければ対数スケールを適用
+                ax.set_yscale('log')
+            else:
+                # 0値がある場合は線形スケールを使用し、注意書きを追加
+                ax.text(0.5, 0.95, "Linear scale used due to zero values", 
+                       transform=ax.transAxes, ha='center', fontsize=9,
+                       bbox=dict(facecolor='yellow', alpha=0.3))
+            
+            ax.set_title(f"{error_type} Error Comparison")
+            ax.set_xlabel("Test Function")
+            ax.set_ylabel("Error" + (" (log scale)" if not has_zero else ""))
+            ax.grid(True, which='both', linestyle='--', alpha=0.5)
+            
+            # 明示的に目盛りを設定してから、ラベルを設定（警告解消）
+            ax.set_xticks(x_positions)
+            ax.set_xticklabels(func_names, rotation=45, ha='right')
+            
+            # 値をバーの上に表示
+            for j, bar in enumerate(bars):
+                height = bar.get_height()
+                # 高さが0または非常に小さい場合は特別な表示
+                if height == 0:
+                    label_text = "0.0"
+                    y_pos = min_nonzero / 10 if not has_zero else 0.0001  # 小さな正の値
+                else:
+                    label_text = f'{height:.2e}'
+                    y_pos = height
+                
+                ax.annotate(label_text,
+                           xy=(bar.get_x() + bar.get_width() / 2, y_pos),
+                           xytext=(0, 3),  # オフセット
+                           textcoords="offset points",
+                           ha='center', va='bottom',
+                           fontsize=8)
+        
+        plt.tight_layout()
+        
+        # 保存
+        filename = f"{self.output_dir}/{prefix}_all_functions_comparison.png" if prefix else f"{self.output_dir}/all_functions_comparison.png"
+        plt.savefig(filename, dpi=dpi)
+        print(f"All functions comparison plot saved to {filename}")
+        
+        # 表示
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+            
+        return filename

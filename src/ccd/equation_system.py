@@ -1,5 +1,5 @@
 # equation_system.py
-import cupy as cp  # NumPyではなくCuPyを使用
+import cupy as cp
 from typing import List, Tuple, Dict
 from equation.base import Equation
 from grid import Grid
@@ -19,10 +19,7 @@ class EquationSystem:
         self.left_boundary_equations: List[Equation] = []
         self.interior_equations: List[Equation] = []
         self.right_boundary_equations: List[Equation] = []
-        
-        # 強制する方程式（特に境界条件など）
-        self.forced_equations: Dict[int, List[Equation]] = {}
-    
+            
     def add_left_boundary_equation(self, equation: Equation) -> None:
         """左境界用の方程式を追加"""
         self.left_boundary_equations.append(equation)
@@ -35,16 +32,9 @@ class EquationSystem:
         """右境界用の方程式を追加"""
         self.right_boundary_equations.append(equation)
     
-    def add_forced_equation(self, point_index: int, equation: Equation) -> None:
-        """特定の点に強制的に適用する方程式を追加（例：境界条件）"""
-        if point_index not in self.forced_equations:
-            self.forced_equations[point_index] = []
-        self.forced_equations[point_index].append(equation)
-    
     def build_matrix_system(self) -> Tuple[cp.ndarray, cp.ndarray]:
         """行列システムを構築"""
         n = self.grid.n_points
-        h = self.grid.h
         
         # マトリックスサイズ: 各点に4つの値 (psi, psi', psi'', psi''') がある
         size = 4 * n
@@ -55,11 +45,7 @@ class EquationSystem:
         for i in range(n):
             equations_to_use = []
             
-            # 強制方程式があればそれを使用
-            if i in self.forced_equations:
-                equations_to_use = self.forced_equations[i]
-            # それ以外は位置に応じた方程式を使用
-            elif i == 0:  # 左境界
+            if i == 0:  # 左境界
                 equations_to_use = self.left_boundary_equations
             elif i == n - 1:  # 右境界
                 equations_to_use = self.right_boundary_equations
@@ -76,9 +62,13 @@ class EquationSystem:
             
             # 各方程式を行列に反映
             for k, eq in enumerate(equations_to_use):
+                # この方程式がこの点に適用可能か確認
+                if not eq.is_valid_at(self.grid, i):
+                    raise ValueError(f"方程式 {k} は点 {i} に適用できません")
+                
                 # 方程式のステンシル係数を取得
-                stencil_coeffs = eq.get_stencil_coefficients(i, n, h)
-                rhs_value = eq.get_rhs(i, n, h)
+                stencil_coeffs = eq.get_stencil_coefficients(self.grid, i)
+                rhs_value = eq.get_rhs(self.grid, i)
                 
                 # 各ステンシル点の係数を行列に設定
                 for offset, coeffs in stencil_coeffs.items():
