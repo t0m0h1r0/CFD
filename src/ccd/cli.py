@@ -124,6 +124,9 @@ def test_all_functions(
     # グリッドの作成
     grid = Grid(n_points, x_range)
     visualizer = CCDVisualizer() if visualize else None
+    
+    # テスターの作成（一度だけ）
+    tester = CCDTester(grid)
 
     print(f"\n==== 全関数のテスト ({n_points} 点) ====")
     print("ディリクレ境界条件とノイマン境界条件を使用")
@@ -139,10 +142,7 @@ def test_all_functions(
 
     # 各関数に対してテストを実行
     for func in test_funcs:
-        # テスターの作成
-        tester = CCDTester(grid)
-
-        # テストの実行
+        # テストの実行（同じテスターインスタンスを再利用）
         results = tester.run_test_with_options(func, rehu_number=rehu_number)
 
         # 結果の表示

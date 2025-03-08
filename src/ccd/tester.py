@@ -36,6 +36,74 @@ class CCDTester:
             grid: 計算格子
         """
         self.grid = grid
+        self.system = None
+        self.solver = None
+
+    def setup_equation_system(self, test_func: TestFunction, use_dirichlet: bool = True, 
+                             use_neumann: bool = True, rehu_number: Optional[float] = None):
+        """
+        方程式システムとソルバーを設定する（または再設定する）
+
+        Args:
+            test_func: テスト関数
+            use_dirichlet: ディリクレ境界条件を使用するかどうか
+            use_neumann: ノイマン境界条件を使用するかどうか
+            rehu_number: Reynolds-Hugoniot数（スケーリング用）
+        """
+        # システムを構築
+        self.system = EquationSystem(self.grid)
+
+        # グリッド情報
+        x_min = self.grid.x_min
+        x_max = self.grid.x_max
+
+        # 支配方程式
+        self.system.add_equation(PoissonEquation(test_func.d2f))
+
+        # 内部点の方程式を設定
+        self.system.add_interior_equation(Internal1stDerivativeEquation())
+        self.system.add_interior_equation(Internal2ndDerivativeEquation())
+        self.system.add_interior_equation(Internal3rdDerivativeEquation())
+
+        # 左境界の方程式を設定
+        self.system.add_left_boundary_equation(
+            DirichletBoundaryEquation(value=test_func.f(x_min))
+        )
+        self.system.add_left_boundary_equation(
+            NeumannBoundaryEquation(value=test_func.df(x_min))
+        )
+        self.system.add_left_boundary_equation(
+            LeftBoundary1stDerivativeEquation()
+            + LeftBoundary2ndDerivativeEquation()
+            + LeftBoundary3rdDerivativeEquation()
+        )
+
+        # 右境界の方程式を設定
+        self.system.add_right_boundary_equation(
+            DirichletBoundaryEquation(value=test_func.f(x_max))
+        )
+        self.system.add_right_boundary_equation(
+            NeumannBoundaryEquation(value=test_func.df(x_max))
+        )
+        self.system.add_right_boundary_equation(
+            RightBoundary1stDerivativeEquation()
+            + RightBoundary2ndDerivativeEquation()
+            + RightBoundary3rdDerivativeEquation()
+        )
+
+        # ソルバーを作成または更新
+        if self.solver is None:
+            self.solver = CCDSolver(self.system, self.grid)
+        else:
+            self.solver.system = self.system  # システム参照を更新
+
+        # Rehuスケーリングの設定
+        if rehu_number is not None:
+            self.solver.set_rehu_scaling(
+                rehu_number=rehu_number,
+                characteristic_velocity=1.0,
+                reference_length=1.0,
+            )
 
     def run_test_with_options(
         self,
@@ -56,60 +124,11 @@ class CCDTester:
         Returns:
             テスト結果の辞書
         """
-        # システムを構築
-        system = EquationSystem(self.grid)
-
-        # グリッド情報
-        x_min = self.grid.x_min
-        x_max = self.grid.x_max
-
-        # 支配方程式
-        system.add_equation(PoissonEquation(test_func.d2f))
-
-        # 内部点の方程式を設定
-        system.add_interior_equation(Internal1stDerivativeEquation())
-        system.add_interior_equation(Internal2ndDerivativeEquation())
-        system.add_interior_equation(Internal3rdDerivativeEquation())
-
-        # 左境界の方程式を設定
-        system.add_left_boundary_equation(
-            DirichletBoundaryEquation(value=test_func.f(x_min))
-        )
-        system.add_left_boundary_equation(
-            NeumannBoundaryEquation(value=test_func.df(x_min))
-        )
-        system.add_left_boundary_equation(
-            LeftBoundary1stDerivativeEquation()
-            + LeftBoundary2ndDerivativeEquation()
-            + LeftBoundary3rdDerivativeEquation()
-        )
-
-        # 右境界の方程式を設定
-        system.add_right_boundary_equation(
-            DirichletBoundaryEquation(value=test_func.f(x_max))
-        )
-        system.add_right_boundary_equation(
-            NeumannBoundaryEquation(value=test_func.df(x_max))
-        )
-        system.add_right_boundary_equation(
-            RightBoundary1stDerivativeEquation()
-            + RightBoundary2ndDerivativeEquation()
-            + RightBoundary3rdDerivativeEquation()
-        )
-
-        # ソルバーを作成
-        solver = CCDSolver(system, self.grid)
-
-        # Rehuスケーリングの設定
-        if rehu_number is not None:
-            solver.set_rehu_scaling(
-                rehu_number=rehu_number,
-                characteristic_velocity=1.0,
-                reference_length=1.0,
-            )
+        # 方程式システムとソルバーを設定
+        self.setup_equation_system(test_func, use_dirichlet, use_neumann, rehu_number)
 
         # 解く
-        psi, psi_prime, psi_second, psi_third = solver.solve()
+        psi, psi_prime, psi_second, psi_third = self.solver.solve()
 
         # 解析解を計算
         x = self.grid.get_points()
