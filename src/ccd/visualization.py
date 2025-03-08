@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-import cupy as cp
 
 class CCDVisualizer:
     """CCDソルバーの結果を可視化するクラス"""

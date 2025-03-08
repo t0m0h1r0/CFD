@@ -1,6 +1,5 @@
 import cupy as cp
 import cupyx.scipy.sparse as sp
-from grid import Grid
 
 class EquationSystem:
     """方程式システムを管理するクラス"""
@@ -53,10 +52,10 @@ class EquationSystem:
                 for offset, coeffs in stencil_coeffs.items():
                     j = i + offset
                     if 0 <= j < n:
-                        for l, coeff in enumerate(coeffs):
+                        for m, coeff in enumerate(coeffs):
                             if coeff != 0.0:
                                 row_indices.append(i * 4 + k)
-                                col_indices.append(j * 4 + l)
+                                col_indices.append(j * 4 + m)
                                 data.append(coeff)
 
                 b[i * 4 + k] = rhs_value

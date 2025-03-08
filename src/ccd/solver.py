@@ -1,7 +1,6 @@
 import cupy as cp
 import cupyx.scipy.sparse as sp
 import cupyx.scipy.sparse.linalg as splinalg
-from grid import Grid
 
 class CCDSolver:
     """CCDソルバークラス"""
