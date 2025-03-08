@@ -45,22 +45,32 @@ class TestFunction2DGenerator:
         name = f"{func1d.name}Product{suffix}"
         
         # 2D関数とその偏導関数を定義
-        f = lambda x, y: func1d.f(x) * func1d.f(y)
+        def f(x, y):
+            return func1d.f(x) * func1d.f(y)
         
         # 一階偏導関数
-        df_dx = lambda x, y: func1d.df(x) * func1d.f(y)
-        df_dy = lambda x, y: func1d.f(x) * func1d.df(y)
+        def df_dx(x, y):
+            return func1d.df(x) * func1d.f(y)
+        def df_dy(x, y):
+            return func1d.f(x) * func1d.df(y)
         
         # 二階偏導関数
-        d2f_dx2 = lambda x, y: func1d.d2f(x) * func1d.f(y)
-        d2f_dy2 = lambda x, y: func1d.f(x) * func1d.d2f(y)
-        d2f_dxdy = lambda x, y: func1d.df(x) * func1d.df(y)
+        def d2f_dx2(x, y):
+            return func1d.d2f(x) * func1d.f(y)
+        def d2f_dy2(x, y):
+            return func1d.f(x) * func1d.d2f(y)
+        def d2f_dxdy(x, y):
+            return func1d.df(x) * func1d.df(y)
         
         # 三階偏導関数
-        d3f_dx3 = lambda x, y: func1d.d3f(x) * func1d.f(y)
-        d3f_dy3 = lambda x, y: func1d.f(x) * func1d.d3f(y)
-        d3f_dx2dy = lambda x, y: func1d.d2f(x) * func1d.df(y)
-        d3f_dxdy2 = lambda x, y: func1d.df(x) * func1d.d2f(y)
+        def d3f_dx3(x, y):
+            return func1d.d3f(x) * func1d.f(y)
+        def d3f_dy3(x, y):
+            return func1d.f(x) * func1d.d3f(y)
+        def d3f_dx2dy(x, y):
+            return func1d.d2f(x) * func1d.df(y)
+        def d3f_dxdy2(x, y):
+            return func1d.df(x) * func1d.d2f(y)
         
         return TestFunction2D(
             name=name,
@@ -92,22 +102,32 @@ class TestFunction2DGenerator:
         name = f"{func1d.name}Sum{suffix}"
         
         # 2D関数とその偏導関数を定義
-        f = lambda x, y: func1d.f(x) + func1d.f(y)
+        def f(x, y):
+            return func1d.f(x) + func1d.f(y)
         
         # 一階偏導関数
-        df_dx = lambda x, y: func1d.df(x)
-        df_dy = lambda x, y: func1d.df(y)
+        def df_dx(x, y):
+            return func1d.df(x)
+        def df_dy(x, y):
+            return func1d.df(y)
         
         # 二階偏導関数
-        d2f_dx2 = lambda x, y: func1d.d2f(x)
-        d2f_dy2 = lambda x, y: func1d.d2f(y)
-        d2f_dxdy = lambda x, y: 0.0
+        def d2f_dx2(x, y):
+            return func1d.d2f(x)
+        def d2f_dy2(x, y):
+            return func1d.d2f(y)
+        def d2f_dxdy(x, y):
+            return 0.0
         
         # 三階偏導関数
-        d3f_dx3 = lambda x, y: func1d.d3f(x)
-        d3f_dy3 = lambda x, y: func1d.d3f(y)
-        d3f_dx2dy = lambda x, y: 0.0
-        d3f_dxdy2 = lambda x, y: 0.0
+        def d3f_dx3(x, y):
+            return func1d.d3f(x)
+        def d3f_dy3(x, y):
+            return func1d.d3f(y)
+        def d3f_dx2dy(x, y):
+            return 0.0
+        def d3f_dxdy2(x, y):
+            return 0.0
         
         return TestFunction2D(
             name=name,
@@ -139,7 +159,8 @@ class TestFunction2DGenerator:
         name = f"{func1d.name}Radial{suffix}"
         
         # 2D関数とその偏導関数を定義
-        f = lambda x, y: func1d.f(cp.sqrt(x**2 + y**2))
+        def f(x, y):
+            return func1d.f(cp.sqrt(x**2 + y**2))
         
         # 補助関数
         def r(x, y):
@@ -172,13 +193,18 @@ class TestFunction2DGenerator:
             return -x * y / (r_val**3)
         
         # 一階偏導関数
-        df_dx = lambda x, y: func1d.df(r(x, y)) * dr_dx(x, y)
-        df_dy = lambda x, y: func1d.df(r(x, y)) * dr_dy(x, y)
+        def df_dx(x, y):
+            return func1d.df(r(x, y)) * dr_dx(x, y)
+        def df_dy(x, y):
+            return func1d.df(r(x, y)) * dr_dy(x, y)
         
         # 二階偏導関数
-        d2f_dx2 = lambda x, y: func1d.d2f(r(x, y)) * dr_dx(x, y)**2 + func1d.df(r(x, y)) * d2r_dx2(x, y)
-        d2f_dy2 = lambda x, y: func1d.d2f(r(x, y)) * dr_dy(x, y)**2 + func1d.df(r(x, y)) * d2r_dy2(x, y)
-        d2f_dxdy = lambda x, y: func1d.d2f(r(x, y)) * dr_dx(x, y) * dr_dy(x, y) + func1d.df(r(x, y)) * d2r_dxdy(x, y)
+        def d2f_dx2(x, y):
+            return func1d.d2f(r(x, y)) * dr_dx(x, y)**2 + func1d.df(r(x, y)) * d2r_dx2(x, y)
+        def d2f_dy2(x, y):
+            return func1d.d2f(r(x, y)) * dr_dy(x, y)**2 + func1d.df(r(x, y)) * d2r_dy2(x, y)
+        def d2f_dxdy(x, y):
+            return func1d.d2f(r(x, y)) * dr_dx(x, y) * dr_dy(x, y) + func1d.df(r(x, y)) * d2r_dxdy(x, y)
         
         # 三階偏導関数（簡易版 - 完全な式は非常に複雑になるため）
         def d3f_dx3(x, y):

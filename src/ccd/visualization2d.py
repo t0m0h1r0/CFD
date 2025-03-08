@@ -47,7 +47,7 @@ class CCD2DVisualizer:
         solution_names = ["ψ", "ψ_x", "ψ_y", "ψ''_x", "ψ''_y", "ψ'''_x", "ψ'''_y"]
         
         # マルチページの図を作成
-        num_solutions = len(solution_names)
+        len(solution_names)
         
         for sol_idx, (name, num, ex, err) in enumerate(zip(solution_names, numerical, exact, errors)):
             fig = plt.figure(figsize=(15, 5))
@@ -55,7 +55,7 @@ class CCD2DVisualizer:
             # 数値解
             ax1 = fig.add_subplot(1, 3, 1, projection='3d')
             num_np = to_numpy(num)
-            surf = ax1.plot_surface(X_np, Y_np, num_np, cmap=cm.viridis, alpha=0.8)
+            ax1.plot_surface(X_np, Y_np, num_np, cmap=cm.viridis, alpha=0.8)
             ax1.set_title(f"{name} (Numerical Solution)")
             ax1.set_xlabel('X')
             ax1.set_ylabel('Y')
@@ -63,7 +63,7 @@ class CCD2DVisualizer:
             # 厳密解
             ax2 = fig.add_subplot(1, 3, 2, projection='3d')
             ex_np = to_numpy(ex)
-            surf = ax2.plot_surface(X_np, Y_np, ex_np, cmap=cm.viridis, alpha=0.8)
+            ax2.plot_surface(X_np, Y_np, ex_np, cmap=cm.viridis, alpha=0.8)
             ax2.set_title(f"{name} (Exact Solution)")
             ax2.set_xlabel('X')
             ax2.set_ylabel('Y')

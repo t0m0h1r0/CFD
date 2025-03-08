@@ -78,7 +78,8 @@ class Poisson2DEquationSet(EquationSet2D):
         converter = Equation1Dto2DConverter
         
         # ポアソン方程式: Δψ = f(x,y)
-        poisson_source = lambda x, y: -(test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y))
+        def poisson_source(x, y):
+            return -(test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y))
         poisson_eq = PoissonEquation2D(poisson_source)
         system.add_interior_equation(poisson_eq)
         
