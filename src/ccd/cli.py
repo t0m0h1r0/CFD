@@ -1,315 +1,147 @@
-#!/usr/bin/env python3
-"""
-拡張されたCCD法コマンドラインインターフェース
-
-1次元と2次元のCCD計算・テストを切り替え可能なツールを提供します。
-"""
-
+# cli.py
 import argparse
 import os
-
-from grid_config import GridConfig
-from composite_solver import CCDCompositeSolver
-from ccd_tester import CCDMethodTester
-from ccd_diagnostics import CCDSolverDiagnostics
-from solver_comparator import SolverComparator
-
-# 2次元CCD用のクラスをインポート（存在する場合）
-try:
-    from grid_config_2d import GridConfig2D
-    from composite_solver_2d import CCDCompositeSolver2D
-    from ccd_tester_2d import CCDMethodTester2D
-    from ccd_diagnostics_2d import CCDSolverDiagnostics2D
-    from solver_comparator_2d import SolverComparator2D
-    has_2d_support = True
-except ImportError:
-    has_2d_support = False
-
+import cupy as cp
+from typing import List, Tuple
+from grid import Grid
+from tester import CCDTester
+from test_functions import TestFunctionFactory
+from visualization import CCDVisualizer
 
 def parse_args():
-    """コマンドライン引数をパース"""
-    parser = argparse.ArgumentParser(description="CCD法の計算・テスト")
-
-    # 親パーサーを作成 - 共通オプション
-    parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument("--n", type=int, default=32, help="グリッド点の数 (1Dの場合) または x方向のグリッド点の数 (2Dの場合)")
-    parent_parser.add_argument("--m", type=int, default=32, help="y方向のグリッド点の数 (2Dの場合のみ使用)")
-    parent_parser.add_argument(
-        "--xrange",
-        type=float,
-        nargs=2,
-        default=[-1.0, 1.0],
-        help="x軸の範囲 (開始点 終了点)",
-    )
-    parent_parser.add_argument(
-        "--yrange",
-        type=float,
-        nargs=2,
-        default=[-1.0, 1.0],
-        help="y軸の範囲 (2Dの場合のみ使用)(開始点 終了点)",
-    )
-    parent_parser.add_argument(
-        "--coeffs",
-        type=float,
-        nargs="+",
-        default=[1.0, 0.0, 0.0, 0.0],
-        help="[a, b, c, d] 係数リスト (f = a*psi + b*psi' + c*psi'' + d*psi''')",
-    )
+    """コマンドライン引数の解析"""
+    parser = argparse.ArgumentParser(description="1D CCD Method Implementation")
     
-    # 次元の指定（1Dまたは2D）
-    parent_parser.add_argument(
-        "--dim",
-        type=int,
-        choices=[1, 2],
-        default=1,
-        help="計算の次元 (1: 1次元, 2: 2次元) デフォルトは1",
-    )
-
-    # サブコマンド
-    subparsers = parser.add_subparsers(
-        dest="command", help="実行するコマンド", required=True
-    )
-
-    # テストコマンド - 親パーサーから引数を継承
-    test_parser = subparsers.add_parser(
-        "test", parents=[parent_parser], help="テストを実行"
-    )
-    test_parser.add_argument(
-        "--scaling", type=str, default="none", help="スケーリング手法"
-    )
-    test_parser.add_argument("--reg", type=str, default="none", help="正則化手法")
-    test_parser.add_argument("--no-viz", action="store_true", help="可視化を無効化")
-
-    # 診断コマンド - 親パーサーから引数を継承
-    diag_parser = subparsers.add_parser(
-        "diagnostics", parents=[parent_parser], help="診断を実行"
-    )
-    diag_parser.add_argument(
-        "--scaling", type=str, default="none", help="スケーリング手法"
-    )
-    diag_parser.add_argument("--reg", type=str, default="none", help="正則化手法")
-    diag_parser.add_argument("--viz", action="store_true", help="可視化を有効化")
-    diag_parser.add_argument(
-        "--func", type=str, default="Sine", help="個別テストに使用するテスト関数の名前"
-    )
-
-    # 比較コマンド - 親パーサーから引数を継承
-    compare_parser = subparsers.add_parser(
-        "compare", parents=[parent_parser], help="ソルバー間の比較を実行"
-    )
-    compare_parser.add_argument(
-        "--mode", choices=["scaling", "reg"], default="reg", help="比較モード"
-    )
-    compare_parser.add_argument("--no-viz", action="store_true", help="可視化を無効化")
-
-    # 一覧表示コマンド - こちらも親パーサーから引数を継承
-    list_parser = subparsers.add_parser(
-        "list", parents=[parent_parser], help="使用可能な設定を一覧表示"
-    )
-
+    # 引数の追加
+    parser.add_argument('--n-points', type=int, default=21,
+                        help='Number of grid points')
+    parser.add_argument('--x-range', type=float, nargs=2, default=[-1.0, 1.0],
+                        help='Range of x coordinates (min max)')
+    parser.add_argument('--test-func', type=str, default='Sin',
+                        help='Test function name')
+    parser.add_argument('--boundary', type=str, choices=['dirichlet', 'neumann', 'mixed'],
+                        default='dirichlet', help='Boundary condition type')
+    parser.add_argument('--no-visualization', action='store_true',
+                        help='Disable visualization')
+    parser.add_argument('--convergence-test', action='store_true',
+                        help='Run grid convergence test')
+    parser.add_argument('--prefix', type=str, default='',
+                        help='Prefix for output filenames')
+    parser.add_argument('--dpi', type=int, default=150,
+                        help='DPI for output images')
+    parser.add_argument('--show', action='store_true',
+                        help='Show plots (in addition to saving)')
+    
     return parser.parse_args()
 
-
-def create_1d_config(args):
-    """1次元グリッド設定を作成"""
-    n = args.n
-    x_range = tuple(args.xrange)
-    L = x_range[1] - x_range[0]
-
-    # coeffsを設定したグリッド設定を作成
-    return GridConfig(n_points=n, h=L / (n - 1), coeffs=args.coeffs)
-
-
-def create_2d_config(args):
-    """2次元グリッド設定を作成"""
-    if not has_2d_support:
-        raise ImportError("2次元サポートモジュールが見つかりません。モジュールをインストールしてください。")
-
-    nx = args.n
-    ny = args.m
-    x_range = tuple(args.xrange)
-    y_range = tuple(args.yrange)
-    Lx = x_range[1] - x_range[0]
-    Ly = y_range[1] - y_range[0]
-
-    # 境界値（デフォルトはゼロ）
-    boundary_values = {
-        "left": [0.0] * ny,
-        "right": [0.0] * ny,
-        "bottom": [0.0] * nx,
-        "top": [0.0] * nx,
-    }
-
-    # 2次元グリッド設定を作成
-    return GridConfig2D(
-        nx_points=nx,
-        ny_points=ny,
-        hx=Lx / (nx - 1),
-        hy=Ly / (ny - 1),
-        boundary_values=boundary_values,
-        coeffs=args.coeffs
+def run_convergence_test(
+    func_name: str,
+    x_range: Tuple[float, float],
+    use_dirichlet: bool,
+    use_neumann: bool,
+    prefix: str,
+    dpi: int,
+    show: bool
+):
+    """グリッド収束性テストを実行"""
+    # テスト関数を選択
+    test_funcs = TestFunctionFactory.create_standard_functions()
+    selected_func = next((f for f in test_funcs if f.name == func_name), test_funcs[0])
+    
+    # グリッドサイズ
+    grid_sizes = [11, 21, 41, 81, 161]
+    
+    # 基準グリッドでテスターを作成
+    base_grid = Grid(grid_sizes[0], x_range)
+    tester = CCDTester(base_grid)
+    
+    # 収束性テストを実行
+    print(f"Running grid convergence test for {selected_func.name} function...")
+    results = tester.run_grid_convergence_test(
+        selected_func, grid_sizes, x_range, use_dirichlet, use_neumann
+    )
+    
+    # 結果を表示
+    print("\nGrid Convergence Results:")
+    print(f"{'Grid Size':<10} {'h':<10} {'ψ error':<15} {'ψ\' error':<15} {'ψ\" error':<15} {'ψ\'\" error':<15}")
+    print("-" * 80)
+    
+    for n in grid_sizes:
+        h = (x_range[1] - x_range[0]) / (n - 1)
+        print(f"{n:<10} {h:<10.6f} {results[n][0]:<15.6e} {results[n][1]:<15.6e} {results[n][2]:<15.6e} {results[n][3]:<15.6e}")
+    
+    # 可視化
+    visualizer = CCDVisualizer()
+    visualizer.visualize_grid_convergence(
+        selected_func.name, grid_sizes, results,
+        prefix=prefix, save=True, show=show, dpi=dpi
     )
 
-
 def run_cli():
-    """コマンドラインインターフェースの実行"""
-    # プラグインを読み込み
-    CCDCompositeSolver.load_plugins(silent=True)
-
+    """CLIエントリーポイント"""
     args = parse_args()
-
-    # 次元を確認
-    is_2d = args.dim == 2
-
-    # 2次元モードが選択されたが、サポートされていない場合
-    if is_2d and not has_2d_support:
-        print("警告: 2次元サポートモジュールが見つかりません。1次元モードで実行します。")
-        is_2d = False
-
-    try:
-        # 次元に応じたグリッド設定を作成
-        grid_config = create_2d_config(args) if is_2d else create_1d_config(args)
-    except ImportError as e:
-        print(f"エラー: {e}")
+    
+    # 出力ディレクトリの作成
+    os.makedirs("results", exist_ok=True)
+    
+    # 収束性テスト
+    if args.convergence_test:
+        # 境界条件の設定
+        use_dirichlet = args.boundary in ['dirichlet', 'mixed']
+        use_neumann = args.boundary in ['neumann', 'mixed']
+        
+        run_convergence_test(
+            args.test_func, tuple(args.x_range),
+            use_dirichlet, use_neumann,
+            args.prefix, args.dpi, args.show
+        )
         return
     
-    # 範囲を取得
-    if is_2d:
-        x_range = tuple(args.xrange)
-        y_range = tuple(args.yrange)
-    else:
-        x_range = tuple(args.xrange)
-
-    # ソルバー設定を準備
-    solver_kwargs = {
-        "scaling": args.scaling,
-        "regularization": args.reg,
-    }
-
-    # コマンドの実行
-    if args.command == "test":
-        # 出力ディレクトリの作成
-        os.makedirs("results", exist_ok=True)
-
-        # 次元に応じてテスターを作成
-        if is_2d:
-            tester = CCDMethodTester2D(
-                CCDCompositeSolver2D,
-                grid_config,
-                (x_range, y_range),
-                solver_kwargs=solver_kwargs,
-                coeffs=args.coeffs,
-            )
-        else:
-            tester = CCDMethodTester(
-                CCDCompositeSolver,
-                grid_config,
-                x_range,
-                solver_kwargs=solver_kwargs,
-                coeffs=args.coeffs,
-            )
-
-        name = f"{args.scaling}_{args.reg}"
-        dim_str = "2D" if is_2d else "1D"
-        print(f"{dim_str}テスト実行中: {name} (coeffs={args.coeffs})")
-        tester.run_tests(prefix=f"{dim_str.lower()}_{name.lower()}_", visualize=not args.no_viz)
-
-    elif args.command == "diagnostics":
-        # 次元に応じて診断クラスを選択
-        if is_2d:
-            diagnostics = CCDSolverDiagnostics2D(
-                CCDCompositeSolver2D, grid_config, solver_kwargs=solver_kwargs
-            )
-        else:
-            diagnostics = CCDSolverDiagnostics(
-                CCDCompositeSolver, grid_config, solver_kwargs=solver_kwargs
-            )
-
-        name = f"{args.scaling}_{args.reg}"
-        dim_str = "2D" if is_2d else "1D"
-        print(f"{dim_str}診断実行中: {name} (coeffs={args.coeffs})")
-        diagnostics.perform_diagnosis(visualize=args.viz, test_func_name=args.func)
-
-    elif args.command == "compare":
-        # 比較モードに応じて構成を設定
-        if args.mode == "scaling":
-            # スケーリング戦略比較
-            if is_2d:
-                scaling_methods = CCDCompositeSolver2D.available_scaling_methods()
-            else:
-                scaling_methods = CCDCompositeSolver.available_scaling_methods()
-            configs = [(s.capitalize(), s, "none", {}) for s in scaling_methods]
-        else:  # 'reg'
-            # 正則化戦略比較
-            if is_2d:
-                reg_methods = CCDCompositeSolver2D.available_regularization_methods()
-            else:
-                reg_methods = CCDCompositeSolver.available_regularization_methods()
-            configs = [(r.capitalize(), "none", r, {}) for r in reg_methods]
-
-        # ソルバーリストの作成
-        solvers_list = []
-        for name, scaling, regularization, params in configs:
-            params_copy = params.copy()
-
-            if is_2d:
-                # 2次元比較
-                tester = CCDMethodTester2D(
-                    CCDCompositeSolver2D,
-                    grid_config,
-                    (x_range, y_range),
-                    solver_kwargs={
-                        "scaling": scaling,
-                        "regularization": regularization,
-                        **params_copy,
-                    },
-                    coeffs=args.coeffs,
-                )
-            else:
-                # 1次元比較
-                tester = CCDMethodTester(
-                    CCDCompositeSolver,
-                    grid_config,
-                    x_range,
-                    solver_kwargs={
-                        "scaling": scaling,
-                        "regularization": regularization,
-                        **params_copy,
-                    },
-                    coeffs=args.coeffs,
-                )
-            solvers_list.append((name, tester))
-
-        # 比較クラスを選択
-        if is_2d:
-            comparator = SolverComparator2D(solvers_list, grid_config, (x_range, y_range))
-        else:
-            comparator = SolverComparator(solvers_list, grid_config, x_range)
-
-        # 比較実行
-        dim_str = "2D" if is_2d else "1D"
-        print(f"{dim_str}比較実行中: {len(configs)}個の{args.mode}設定を比較します")
-        comparator.run_comparison(
-            save_results=True, visualize=not args.no_viz, prefix=f"{dim_str.lower()}_{args.mode}_"
+    # グリッドの作成
+    grid = Grid(args.n_points, tuple(args.x_range))
+    
+    # テスターの作成
+    tester = CCDTester(grid)
+    
+    # テスト関数の選択
+    test_funcs = TestFunctionFactory.create_standard_functions()
+    selected_func = next((f for f in test_funcs if f.name == args.test_func), test_funcs[0])
+    
+    # 境界条件の設定
+    use_dirichlet = args.boundary in ['dirichlet', 'mixed']
+    use_neumann = args.boundary in ['neumann', 'mixed']
+    
+    # テストの実行
+    print(f"Running test with {selected_func.name} function...")
+    print(f"Using {'Dirichlet' if use_dirichlet else ''} "
+          f"{'and ' if use_dirichlet and use_neumann else ''}"
+          f"{'Neumann' if use_neumann else ''} boundary conditions")
+    
+    results = tester.run_test_with_options(
+        selected_func, use_dirichlet=use_dirichlet, use_neumann=use_neumann
+    )
+    
+    # 結果の表示
+    print("\nError Analysis:")
+    print(f"  ψ error: {results['errors'][0]:.6e}")
+    print(f"  ψ' error: {results['errors'][1]:.6e}")
+    print(f"  ψ'' error: {results['errors'][2]:.6e}")
+    print(f"  ψ''' error: {results['errors'][3]:.6e}")
+    
+    # 可視化
+    if not args.no_visualization:
+        visualizer = CCDVisualizer()
+        visualizer.visualize_derivatives(
+            grid, 
+            results["function"],
+            results["numerical"],
+            results["exact"],
+            results["errors"],
+            prefix=args.prefix,
+            save=True,
+            show=args.show,
+            dpi=args.dpi
         )
-
-    elif args.command == "list":
-        # 利用可能なスケーリング・正則化手法を表示
-        if is_2d:
-            solver_class = CCDCompositeSolver2D
-            dim_str = "2D"
-        else:
-            solver_class = CCDCompositeSolver
-            dim_str = "1D"
-
-        print(f"=== {dim_str}で利用可能なスケーリング戦略 ===")
-        for method in solver_class.available_scaling_methods():
-            print(f"- {method}")
-
-        print(f"\n=== {dim_str}で利用可能な正則化戦略 ===")
-        for method in solver_class.available_regularization_methods():
-            print(f"- {method}")
-
 
 if __name__ == "__main__":
     run_cli()

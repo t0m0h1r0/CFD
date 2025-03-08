@@ -1,0 +1,175 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,amsfonts,bm}
+\usepackage{graphicx}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{here}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhead{}
+\fancyfoot{}
+\fancyhead[L]{高精度コンパクト差分法}
+\fancyhead[R]{\thepage}
+\fancyfoot[C]{}
+
+\title{高精度コンパクト差分法によるポアソン方程式解法とその2次元拡張}
+\author{執筆者：〇〇}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\section{はじめに}
+本章では、ポアソン方程式
+\begin{equation}
+  \psi''(x) - f(x) = 0,
+  \label{eq:poisson_1d}
+\end{equation}
+に対して、テイラー展開に基づく高精度コンパクト差分法（Combined Compact Difference, CCD）を用いて1次元ソルバを構築し、その理論を一般化した上で、クロネッカー積を利用して2次元へ拡張する方法について詳述する。\newline
+
+なお、ポアソン方程式以外の補助式（高精度近似式）は、全項を左辺に移項して
+\[
+\text{（係数付きの } \psi,\; \psi',\; \psi'',\; \psi''' \text{ の線形結合）} = 0
+\]
+の形で表現する。さらに、本節ではADI法を用いず、行列表現とクロネッカー積の性質を利用した直接的な2次元拡張法を採用する。
+
+\section{1次元問題の離散化}
+\subsection{基本方程式と局所Hermite多項式}
+1次元ポアソン方程式は式\eqref{eq:poisson_1d}のように表される。これに対して、グリッド点 $x_i$ ($i=1,2,\dots,N_x$) における関数 $\psi(x)$ とその微分値（$\psi'(x),\;\psi''(x),\;\psi'''(x)$）を高精度に近似するため、局所的なHermite補間多項式
+\begin{equation}
+  H_i(x) = \psi(x_i) + \psi'(x_i)(x-x_i) + \frac{\psi''(x_i)}{2!}(x-x_i)^2 + \frac{\psi'''(x_i)}{3!}(x-x_i)^3 + \cdots
+  \label{eq:hermite}
+\end{equation}
+を用いる。たとえば、隣接点 $x_{i\pm1}= x_i \pm h$ における展開は
+\begin{equation}
+  \psi(x_{i\pm1}) = \psi(x_i) \pm h\,\psi'(x_i) + \frac{h^2}{2}\,\psi''(x_i) \pm \frac{h^3}{6}\,\psi'''(x_i) + O(h^4)
+  \label{eq:taylor}
+\end{equation}
+と表される。同様に、$\psi'(x_{i\pm1})$ などもテイラー展開により記述できる。これらの展開を用いて、隣接3点（あるいは必要に応じてより高次の情報を含む）における $\psi$ およびその微分値の間の関係式を導出する。
+
+\subsection{高精度補助式の一般形}
+テイラー展開の一致条件から、グリッド点 $x_i$ において隣接点 $x_{i-1}$, $x_i$, $x_{i+1}$ の値および微分値の線形結合として、補助式を一般形で記述すると
+\begin{align}
+  & C^{(-1)}\,\psi_{i-1} + C^{(0)}\,\psi_i + C^{(1)}\,\psi_{i+1} \nonumber \\
+  & \quad + D^{(-1)}\,\psi'_{i-1} + D^{(0)}\,\psi'_i + D^{(1)}\,\psi'_{i+1} \nonumber \\
+  & \quad + E^{(-1)}\,\psi''_{i-1} + E^{(0)}\,\psi''_i + E^{(1)}\,\psi''_{i+1} \nonumber \\
+  & \quad + F^{(-1)}\,\psi'''_{i-1} + F^{(0)}\,\psi'''_i + F^{(1)}\,\psi'''_{i+1} = 0.
+  \label{eq:compact_general}
+\end{align}
+ここで、係数 $C^{(j)}$, $D^{(j)}$, $E^{(j)}$, $F^{(j)}$ ($j=-1,0,1$) は、所望の精度（例えば6次精度）を達成するためにテイラー展開から決定される。\newline
+
+また、ポアソン方程式自体は
+\begin{equation}
+  \psi''_i - f_i = 0,
+  \label{eq:poisson_discrete}
+\end{equation}
+として離散化される。
+
+\subsection{グローバル連立方程式の行列表現}
+各グリッド点 $x_i$ において未知数は $\psi_i$, $\psi'_i$, $\psi''_i$, $\psi'''_i$ の4つとする。これらを次のような未知数ベクトル $\mathbf{U}_x$ にまとめる：
+\begin{equation}
+  \mathbf{U}_x = \begin{bmatrix}
+    \psi_1 \\ \psi'_1 \\ \psi''_1 \\ \psi'''_1 \\ \psi_2 \\ \psi'_2 \\ \psi''_2 \\ \psi'''_2 \\ \vdots \\ \psi_{N_x} \\ \psi'_{N_x} \\ \psi''_{N_x} \\ \psi'''_{N_x}
+  \end{bmatrix}.
+\end{equation}
+全グリッド点に対して、ポアソン方程式\eqref{eq:poisson_discrete}と補助式\eqref{eq:compact_general}（および境界条件による修正）をまとめると、
+\begin{equation}
+  \mathbf{M}_x \,\mathbf{U}_x = \mathbf{b}_x,
+\end{equation}
+となる。行列 $\mathbf{M}_x$ は、各格子点で隣接点と結合するためブロック三重対角（またはその拡大系）の構造を持つ。
+
+\section{2次元問題への拡張：クロネッカー積の利用}
+\subsection{1次元離散オペレータ $L_x$ および $L_y$}
+まず、x 軸方向については前節で構成した離散オペレータを行列表現 $L_x$ として定式化する。  
+同様に、y 軸方向についても、グリッド点 $y_j$ ($j=1,2,\dots,N_y$) に対して、関数 $\psi(y)$ とその微分値 $\psi'_j$, $\psi''_j$, $\psi'''_j$ を高精度に近似するために、テイラー展開に基づく補助式を用いて離散オペレータ $L_y$ を構成する。\newline
+
+各方向とも、離散オペレータはブロック三重対角行列の形をとる。  
+例えば、$L_x$ は
+\begin{equation}
+  L_x = \begin{pmatrix}
+    B_1 & U_1 & 0 & \cdots & 0 \\
+    L_2 & B_2 & U_2 & \ddots & \vdots \\
+    0 & L_3 & B_3 & \ddots & 0 \\
+    \vdots & \ddots & \ddots & \ddots & U_{N_x-1} \\
+    0 & \cdots & 0 & L_{N_x} & B_{N_x}
+  \end{pmatrix},
+  \label{eq:Lx}
+\end{equation}
+ここで、各ブロック $B_i$（対角ブロック）はグリッド点 $x_i$ における補助式およびポアソン式の項を含み、$U_i$ （上部ブロック）および $L_i$ （下部ブロック）は隣接点との結合項を表す。同様に、y 軸方向の離散オペレータ $L_y$ も
+\begin{equation}
+  L_y = \begin{pmatrix}
+    B^{(y)}_1 & U^{(y)}_1 & 0 & \cdots & 0 \\
+    L^{(y)}_2 & B^{(y)}_2 & U^{(y)}_2 & \ddots & \vdots \\
+    0 & L^{(y)}_3 & B^{(y)}_3 & \ddots & 0 \\
+    \vdots & \ddots & \ddots & \ddots & U^{(y)}_{N_y-1} \\
+    0 & \cdots & 0 & L^{(y)}_{N_y} & B^{(y)}_{N_y}
+  \end{pmatrix},
+  \label{eq:Ly}
+\end{equation}
+と表される。境界条件に応じて、$B_1$, $B_{N_x}$（または $B^{(y)}_1$, $B^{(y)}_{N_y}$）は一側補正が適用される。
+
+\subsection{2次元離散ラプラシアンの構成}
+2次元ポアソン方程式
+\begin{equation}
+  \psi_{xx}(x,y) + \psi_{yy}(x,y) - f(x,y) = 0,
+  \label{eq:poisson_2d}
+\end{equation}
+を離散化するにあたり、x 軸方向と y 軸方向の1次元離散オペレータ $L_x$ と $L_y$ を用いる。ここで、グリッド全体の未知数ベクトル $\mathbf{U}_{2D}$ は、例えば
+\[
+\mathbf{U}_{2D} = \begin{bmatrix}
+  \psi_{1,1} \\ \psi_{x,1,1} \\ \psi_{xx,1,1} \\ \psi_{xxx,1,1} \\ \psi_{1,2} \\ \psi_{x,1,2} \\ \vdots \\ \psi_{N_x,N_y} \\ \cdots
+\end{bmatrix},
+\]
+と並べられる。\newline
+
+このとき、2次元離散ラプラシアンは、クロネッカー積を用いて次のように表される：
+\begin{equation}
+  L_{2D} = L_x \otimes I_y + I_x \otimes L_y,
+  \label{eq:kronecker}
+\end{equation}
+ここで、
+\begin{itemize}
+  \item $L_x$ は式\eqref{eq:Lx}で示されるx軸方向の離散オペレータ（サイズは $mN_x \times mN_x$、$m$ は各グリッド点での未知数の数）、
+  \item $L_y$ は式\eqref{eq:Ly}で示されるy軸方向の離散オペレータ（サイズは $mN_y \times mN_y$）、
+  \item $I_y$ は y 軸方向の単位行列（サイズ $mN_y \times mN_y$）、
+  \item $I_x$ は x 軸方向の単位行列（サイズ $mN_x \times mN_x$）。
+\end{itemize}
+式\eqref{eq:kronecker} の意味するところは以下の通りである：
+\begin{enumerate}
+  \item $L_x \otimes I_y$ は、各 y 座標の列に対して x 軸方向の離散オペレータ $L_x$ を一様に作用させる。
+  \item $I_x \otimes L_y$ は、各 x 座標の行に対して y 軸方向の離散オペレータ $L_y$ を一様に作用させる。
+\end{enumerate}
+この和により、離散化された2次元ラプラシアンが得られ、ポアソン方程式\eqref{eq:poisson_2d} は
+\begin{equation}
+  (L_x \otimes I_y + I_x \otimes L_y)\,\mathbf{U}_{2D} = \mathbf{F}_{2D},
+\end{equation}
+という大規模な連立方程式に帰着する。\newline
+
+\subsection{数値解法と利点}
+クロネッカー積による表現は、行列が非常に疎かつ規則的な構造を持つため、以下のような利点がある：
+\begin{itemize}
+  \item 各方向のオペレータは独立に設計され、1次元での高精度性が2次元全体に反映される。
+  \item ブロック構造および疎行列性を利用した専用の直接解法（前進消去・後退代入など）または反復解法を適用でき、計算効率が向上する。
+  \item 境界条件は1次元オペレータ $L_x$ および $L_y$ の設計時に組み込まれているため、2次元全体でも一貫した精度を保持できる。
+\end{itemize}
+
+\section{結論}
+本章では、テイラー展開に基づく高精度コンパクト差分法を用い、1次元ポアソン方程式
+\[
+\psi''(x) - f(x) = 0,
+\]
+を補助式（$\psi,\,\psi',\,\psi'',\,\psi'''$ の間の線形結合 = 0）と合わせて行列表現により離散化する方法を示した。グローバルな連立方程式はブロック三重対角構造を有し、逆行列を明示的に求めることなく効率的に解法が可能である。\newline
+
+さらに、1次元で構成した離散オペレータ $L_x$ および $L_y$ を用い、クロネッカー積の性質
+\[
+L_{2D} = L_x \otimes I_y + I_x \otimes L_y,
+\]
+によって2次元ポアソン方程式へと拡張する方法を詳述した。この手法により、各方向の高精度性を保ちつつ、効率的な数値解法が実現できる。\newline
+
+本手法は、広く科学技術計算や工学分野において、精度と計算効率の両立が求められる問題に対して有用であると考えられる。
+
+\end{document}
