@@ -1,237 +1,242 @@
-"""
-シンプル化された可視化モジュール
-
-CCDソルバーの結果を視覚化するためのユーティリティ関数を提供します。
-"""
-
-import cupy as cp
-import matplotlib.pyplot as plt
+# visualization.py
 import os
-from typing import Tuple, Dict
+import matplotlib.pyplot as plt
+import cupy as cp
+from typing import List, Dict, Tuple, Optional
+from grid import Grid
 
-from test_functions import TestFunction
-from grid_config import GridConfig
-
-
-def visualize_derivative_results(
-    test_func: TestFunction,
-    f_values: cp.ndarray,
-    numerical_derivatives: Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray],
-    analytical_derivatives: Tuple[cp.ndarray, cp.ndarray, cp.ndarray, cp.ndarray],
-    grid_config: GridConfig,
-    x_range: Tuple[float, float],
-    solver_name: str,
-    save_path: str = None,
-):
-    """
-    導関数の計算結果を可視化（CuPy対応）
-
-    Args:
-        test_func: テスト関数
-        f_values: グリッド点での関数値
-        numerical_derivatives: 数値計算された導関数のタプル (psi, psi_prime, psi_second, psi_third)
-        analytical_derivatives: 解析解の導関数のタプル (psi, psi_prime, psi_second, psi_third)
-        grid_config: グリッド設定
-        x_range: x軸の範囲 (開始位置, 終了位置)
-        solver_name: ソルバーの名前 (プロットタイトルに使用)
-        save_path: 保存先のパス (Noneの場合は保存しない)
-    """
-    n = grid_config.n_points
-    h = grid_config.h
-    x_start = x_range[0]
-
-    # グリッド点の計算
-    x_points = cp.array([x_start + i * h for i in range(n)])
-
-    # 高解像度の点での解析解（スムーズなグラフ表示用）
-    x_fine = cp.linspace(x_range[0], x_range[1], 200)
-    fine_analytical_psi = cp.array([test_func.f(x.item()) for x in x_fine])
-    fine_analytical_df = cp.array([test_func.df(x.item()) for x in x_fine])
-    fine_analytical_d2f = cp.array([test_func.d2f(x.item()) for x in x_fine])
-    fine_analytical_d3f = cp.array([test_func.d3f(x.item()) for x in x_fine])
-
-    # 色の定義
-    analytical_color = "blue"  # 解析解は青
-    numerical_color = "red"  # 数値解は赤
-    input_color = "green"  # 入力値は緑
-
-    # プロット - 5つのサブプロットを作成（入力関数値用に別のグラフを追加）
-    fig, axes = plt.subplots(3, 2, figsize=(15, 15))
-    fig.suptitle(f"Test Results for {test_func.name} Function using {solver_name}")
-
-    # 入力関数値 (左上)
-    axes[0, 0].plot(
-        x_points.get(),
-        f_values.get(),
-        color=input_color,
-        linestyle="-",
-        label="Input f Values",
-    )
-    axes[0, 0].set_title("Input Function Values")
-    axes[0, 0].legend()
-    axes[0, 0].grid(True)
-
-    # CuPy配列からNumPy配列に変換して描画
-    # 元関数 (右上)
-    axes[0, 1].plot(
-        x_fine.get(),
-        fine_analytical_psi.get(),
-        color=analytical_color,
-        linestyle="-",
-        label="ψ Analytical",
-    )
-    axes[0, 1].plot(
-        x_points.get(),
-        numerical_derivatives[0].get(),
-        color=numerical_color,
-        label="Computed ψ",
-    )
-    axes[0, 1].set_title("Function Values (ψ)")
-    axes[0, 1].legend()
-    axes[0, 1].grid(True)
-
-    # 1階導関数 (中央左)
-    axes[1, 0].plot(
-        x_fine.get(),
-        fine_analytical_df.get(),
-        color=analytical_color,
-        linestyle="-",
-        label="ψ' Analytical",
-    )
-    axes[1, 0].plot(
-        x_points.get(),
-        numerical_derivatives[1].get(),
-        color=numerical_color,
-        label="Computed ψ'",
-    )
-    axes[1, 0].set_title("First Derivative (ψ')")
-    axes[1, 0].legend()
-    axes[1, 0].grid(True)
-
-    # 2階導関数 (中央右)
-    axes[1, 1].plot(
-        x_fine.get(),
-        fine_analytical_d2f.get(),
-        color=analytical_color,
-        linestyle="-",
-        label="ψ'' Analytical",
-    )
-    axes[1, 1].plot(
-        x_points.get(),
-        numerical_derivatives[2].get(),
-        color=numerical_color,
-        label="Computed ψ''",
-    )
-    axes[1, 1].set_title("Second Derivative (ψ'')")
-    axes[1, 1].legend()
-    axes[1, 1].grid(True)
-
-    # 3階導関数 (左下)
-    axes[2, 0].plot(
-        x_fine.get(),
-        fine_analytical_d3f.get(),
-        color=analytical_color,
-        linestyle="-",
-        label="ψ''' Analytical",
-    )
-    axes[2, 0].plot(
-        x_points.get(),
-        numerical_derivatives[3].get(),
-        color=numerical_color,
-        label="Computed ψ'''",
-    )
-    axes[2, 0].set_title("Third Derivative (ψ''')")
-    axes[2, 0].legend()
-    axes[2, 0].grid(True)
-
-    # 右下のグラフは空白にする
-    fig.delaxes(axes[2, 1])
-
-    plt.tight_layout()
-    if save_path:
-        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
-        plt.savefig(save_path)
-    plt.close()
-
-
-def visualize_error_comparison(
-    results: Dict[str, Dict[str, list]],
-    timings: Dict[str, Dict[str, float]],
-    test_func_name: str,
-    save_path: str = None,
-):
-    """
-    異なるソルバー間の誤差比較をプロット（CuPy対応）
-
-    Args:
-        results: ソルバー名 -> {関数名 -> [1階誤差, 2階誤差, 3階誤差]} の辞書
-        timings: ソルバー名 -> {関数名 -> 計算時間} の辞書
-        test_func_name: テスト関数名
-        save_path: 保存先のパス（指定がなければ自動生成）
-    """
-    solver_names = list(results.keys())
-
-    # バープロット用のデータ準備
-    bar_width = 0.25
-    indexes = cp.arange(len(solver_names))
-
-    # 誤差データと計算時間を抽出
-    errors_1st = [results[name][test_func_name][0] for name in solver_names]
-    errors_2nd = [results[name][test_func_name][1] for name in solver_names]
-    errors_3rd = [results[name][test_func_name][2] for name in solver_names]
-    times = [timings[name][test_func_name] for name in solver_names]
-
-    # 色の定義
-    colors = ["#1f77b4", "#ff7f0e", "#2ca02c"]  # 青、オレンジ、緑
-
-    # プロット
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-
-    # 誤差のプロット
-    ax1.bar(
-        indexes.get() - bar_width,
-        errors_1st,
-        bar_width,
-        label="1st Derivative (ψ')",
-        color=colors[0],
-    )
-    ax1.bar(
-        indexes.get(),
-        errors_2nd,
-        bar_width,
-        label="2nd Derivative (ψ'')",
-        color=colors[1],
-    )
-    ax1.bar(
-        indexes.get() + bar_width,
-        errors_3rd,
-        bar_width,
-        label="3rd Derivative (ψ''')",
-        color=colors[2],
-    )
-
-    ax1.set_xlabel("Solver / Diff Mode")
-    ax1.set_ylabel("Error (L2 norm)")
-    ax1.set_title(f"Error Comparison for {test_func_name} Function")
-    ax1.set_xticks(indexes.get())
-    ax1.set_xticklabels(solver_names, rotation=45, ha="right")
-    ax1.legend()
-    ax1.set_yscale("log")  # 対数スケールで表示
-
-    # 計算時間のプロット
-    ax2.bar(indexes.get(), times, color="green")
-    ax2.set_xlabel("Solver / Diff Mode")
-    ax2.set_ylabel("Time (seconds)")
-    ax2.set_title("Computation Time")
-    ax2.set_xticks(indexes.get())
-    ax2.set_xticklabels(solver_names, rotation=45, ha="right")
-
-    plt.tight_layout()
-
-    # 保存先のパス処理
-    if save_path is None:
-        os.makedirs("results", exist_ok=True)
-        save_path = f"results/comparison_{test_func_name.lower()}.png"
-
-    plt.savefig(save_path)
-    plt.close()
+class CCDVisualizer:
+    """CCDソルバーの結果を可視化するクラス"""
+    
+    def __init__(self, output_dir: str = "results"):
+        """
+        初期化
+        
+        Args:
+            output_dir: 出力ディレクトリ
+        """
+        self.output_dir = output_dir
+        
+        # 出力ディレクトリの作成
+        os.makedirs(self.output_dir, exist_ok=True)
+    
+    def generate_filename(self, func_name: str, n_points: int, prefix: str = "") -> str:
+        """
+        出力ファイル名を生成
+        
+        Args:
+            func_name: テスト関数名
+            n_points: グリッド点数（解像度）
+            prefix: ファイル名の接頭辞
+            
+        Returns:
+            生成されたファイル名
+        """
+        if prefix:
+            return f"{self.output_dir}/{prefix}_{func_name.lower()}_{n_points}_points.png"
+        else:
+            return f"{self.output_dir}/{func_name.lower()}_{n_points}_points.png"
+    
+    def visualize_derivatives(
+        self,
+        grid: Grid,
+        function_name: str,
+        numerical: List[cp.ndarray],
+        exact: List[cp.ndarray],
+        errors: List[float],
+        prefix: str = "",
+        save: bool = True,
+        show: bool = False,
+        dpi: int = 150
+    ) -> str:
+        """
+        導関数の結果を可視化
+        
+        Args:
+            grid: 計算格子
+            function_name: テスト関数名
+            numerical: 数値解 [psi, psi', psi'', psi''']
+            exact: 解析解 [psi, psi', psi'', psi''']
+            errors: 誤差 [err_psi, err_psi', err_psi'', err_psi''']
+            prefix: ファイル名の接頭辞
+            save: 結果を保存するかどうか
+            show: 結果を画面に表示するかどうか
+            dpi: 画像解像度
+            
+        Returns:
+            保存したファイルのパス（saveがFalseの場合は空文字）
+        """
+        # グリッド点座標
+        x = grid.get_points()
+        n_points = grid.n_points
+        
+        # プロット作成
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        titles = ["$\\psi$", "$\\psi'$", "$\\psi''$", "$\\psi'''$"]
+        
+        # CuPy配列をNumPy配列に変換
+        x_np = x.get()
+        
+        for i, ax in enumerate(axes.flat):
+            # CuPy配列をNumPy配列に変換
+            exact_data = exact[i].get() if hasattr(exact[i], 'get') else exact[i]
+            num_data = numerical[i].get() if hasattr(numerical[i], 'get') else numerical[i]
+            
+            ax.plot(x_np, exact_data, 'b-', label='Exact')
+            ax.plot(x_np, num_data, 'r--', label='Numerical')
+            ax.set_title(f"{titles[i]} (error: {errors[i]:.2e})")
+            ax.legend()
+            ax.grid(True)
+        
+        # 全体のタイトル
+        plt.suptitle(f"Results for {function_name} function ({n_points} points)")
+        plt.tight_layout()
+        
+        # 保存
+        filepath = ""
+        if save:
+            filepath = self.generate_filename(function_name, n_points, prefix)
+            plt.savefig(filepath, dpi=dpi)
+            print(f"Plot saved to {filepath}")
+        
+        # 表示
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        
+        return filepath
+    
+    def visualize_error_comparison(
+        self,
+        function_name: str,
+        methods: List[str],
+        error_data: Dict[str, List[float]],
+        prefix: str = "",
+        save: bool = True,
+        show: bool = False,
+        dpi: int = 150
+    ) -> str:
+        """
+        異なる手法間の誤差比較を可視化
+        
+        Args:
+            function_name: テスト関数名
+            methods: 比較する手法のリスト
+            error_data: 誤差データ {method_name: [err_psi, err_psi', err_psi'', err_psi''']}
+            prefix: ファイル名の接頭辞
+            save: 結果を保存するかどうか
+            show: 結果を画面に表示するかどうか
+            dpi: 画像解像度
+            
+        Returns:
+            保存したファイルのパス（saveがFalseの場合は空文字）
+        """
+        # プロット作成
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # データ準備
+        x = range(len(methods))
+        bar_width = 0.2
+        titles = ["$\\psi$", "$\\psi'$", "$\\psi''$", "$\\psi'''$"]
+        colors = ['C0', 'C1', 'C2', 'C3']
+        
+        # 各種誤差データをプロット
+        for i in range(4):  # psi, psi', psi'', psi'''
+            errors = [error_data[method][i] for method in methods]
+            ax.bar([pos + i * bar_width for pos in x], errors, 
+                  bar_width, label=titles[i], color=colors[i])
+        
+        # 軸の設定
+        ax.set_xlabel('Method')
+        ax.set_ylabel('Error (log scale)')
+        ax.set_title(f'Error Comparison for {function_name}')
+        ax.set_xticks([pos + 1.5 * bar_width for pos in x])
+        ax.set_xticklabels(methods)
+        ax.legend()
+        ax.set_yscale('log')  # 対数スケール
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+        
+        plt.tight_layout()
+        
+        # 保存
+        filepath = ""
+        if save:
+            filepath = f"{self.output_dir}/{prefix}error_comparison_{function_name.lower()}.png"
+            plt.savefig(filepath, dpi=dpi)
+            print(f"Error comparison plot saved to {filepath}")
+        
+        # 表示
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        
+        return filepath
+    
+    def visualize_grid_convergence(
+        self,
+        function_name: str,
+        grid_sizes: List[int],
+        errors: Dict[int, List[float]],
+        prefix: str = "",
+        save: bool = True,
+        show: bool = False,
+        dpi: int = 150
+    ) -> str:
+        """
+        グリッドサイズによる収束性を可視化
+        
+        Args:
+            function_name: テスト関数名
+            grid_sizes: グリッドサイズのリスト
+            errors: グリッドサイズごとの誤差 {grid_size: [err_psi, err_psi', err_psi'', err_psi''']}
+            prefix: ファイル名の接頭辞
+            save: 結果を保存するかどうか
+            show: 結果を画面に表示するかどうか
+            dpi: 画像解像度
+            
+        Returns:
+            保存したファイルのパス（saveがFalseの場合は空文字）
+        """
+        # プロット作成
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # データ準備
+        h_values = [1.0 / (n - 1) for n in grid_sizes]  # グリッド幅
+        titles = ["$\\psi$", "$\\psi'$", "$\\psi''$", "$\\psi'''$"]
+        markers = ['o', 's', '^', 'd']
+        
+        # 各導関数の誤差を別々の線でプロット
+        for i in range(4):  # psi, psi', psi'', psi'''
+            error_values = [errors[size][i] for size in grid_sizes]
+            ax.loglog(h_values, error_values, marker=markers[i], label=titles[i])
+        
+        # 傾きの参照線（6次精度を想定）
+        x_ref = [min(h_values), max(h_values)]
+        y_ref_6th = [min(h_values)**6, max(h_values)**6]
+        ax.loglog(x_ref, y_ref_6th, 'k--', alpha=0.5, label='6th Order (h⁶)')
+        
+        # 軸の設定
+        ax.set_xlabel('Grid Size (h)')
+        ax.set_ylabel('Error')
+        ax.set_title(f'Grid Convergence for {function_name}')
+        ax.legend()
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+        
+        plt.tight_layout()
+        
+        # 保存
+        filepath = ""
+        if save:
+            filepath = f"{self.output_dir}/{prefix}grid_convergence_{function_name.lower()}.png"
+            plt.savefig(filepath, dpi=dpi)
+            print(f"Grid convergence plot saved to {filepath}")
+        
+        # 表示
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        
+        return filepath
