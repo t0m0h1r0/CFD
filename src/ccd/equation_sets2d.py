@@ -100,42 +100,22 @@ class Poisson2DEquationSet(EquationSet2D):
         system.add_left_boundary_equation(converter.to_x(LeftBoundary1stDerivativeEquation()))
         system.add_left_boundary_equation(converter.to_x(LeftBoundary2ndDerivativeEquation()))
         system.add_left_boundary_equation(converter.to_x(LeftBoundary3rdDerivativeEquation()))
-        
-        # Y方向微分も左境界に必要
-        system.add_left_boundary_equation(converter.to_y(Internal1stDerivativeEquation()))
-        system.add_left_boundary_equation(converter.to_y(Internal2ndDerivativeEquation()))
-        system.add_left_boundary_equation(converter.to_y(Internal3rdDerivativeEquation()))
-        
+                
         # 右境界 (i=nx-1)
         system.add_right_boundary_equation(converter.to_x(RightBoundary1stDerivativeEquation()))
         system.add_right_boundary_equation(converter.to_x(RightBoundary2ndDerivativeEquation()))
         system.add_right_boundary_equation(converter.to_x(RightBoundary3rdDerivativeEquation()))
-        
-        # Y方向微分も右境界に必要
-        system.add_right_boundary_equation(converter.to_y(Internal1stDerivativeEquation()))
-        system.add_right_boundary_equation(converter.to_y(Internal2ndDerivativeEquation()))
-        system.add_right_boundary_equation(converter.to_y(Internal3rdDerivativeEquation()))
-        
+                
         # 下境界 (j=0)
         system.add_bottom_boundary_equation(converter.to_y(LeftBoundary1stDerivativeEquation()))
         system.add_bottom_boundary_equation(converter.to_y(LeftBoundary2ndDerivativeEquation()))
         system.add_bottom_boundary_equation(converter.to_y(LeftBoundary3rdDerivativeEquation()))
-        
-        # X方向微分も下境界に必要
-        system.add_bottom_boundary_equation(converter.to_x(Internal1stDerivativeEquation()))
-        system.add_bottom_boundary_equation(converter.to_x(Internal2ndDerivativeEquation()))
-        system.add_bottom_boundary_equation(converter.to_x(Internal3rdDerivativeEquation()))
-        
+                
         # 上境界 (j=ny-1)
         system.add_top_boundary_equation(converter.to_y(RightBoundary1stDerivativeEquation()))
         system.add_top_boundary_equation(converter.to_y(RightBoundary2ndDerivativeEquation()))
         system.add_top_boundary_equation(converter.to_y(RightBoundary3rdDerivativeEquation()))
         
-        # X方向微分も上境界に必要
-        system.add_top_boundary_equation(converter.to_x(Internal1stDerivativeEquation()))
-        system.add_top_boundary_equation(converter.to_x(Internal2ndDerivativeEquation()))
-        system.add_top_boundary_equation(converter.to_x(Internal3rdDerivativeEquation()))
-
 class Derivative2DEquationSet(EquationSet2D):
     """2次元高階微分のための方程式セット"""
 
@@ -168,37 +148,17 @@ class Derivative2DEquationSet(EquationSet2D):
         system.add_left_boundary_equation(converter.to_x(LeftBoundary2ndDerivativeEquation()))
         system.add_left_boundary_equation(converter.to_x(LeftBoundary3rdDerivativeEquation()))
         
-        # Y方向微分も左境界に必要
-        system.add_left_boundary_equation(converter.to_y(Internal1stDerivativeEquation()))
-        system.add_left_boundary_equation(converter.to_y(Internal2ndDerivativeEquation()))
-        system.add_left_boundary_equation(converter.to_y(Internal3rdDerivativeEquation()))
-        
         # 右境界 (i=nx-1)
         system.add_right_boundary_equation(converter.to_x(RightBoundary1stDerivativeEquation()))
         system.add_right_boundary_equation(converter.to_x(RightBoundary2ndDerivativeEquation()))
         system.add_right_boundary_equation(converter.to_x(RightBoundary3rdDerivativeEquation()))
         
-        # Y方向微分も右境界に必要
-        system.add_right_boundary_equation(converter.to_y(Internal1stDerivativeEquation()))
-        system.add_right_boundary_equation(converter.to_y(Internal2ndDerivativeEquation()))
-        system.add_right_boundary_equation(converter.to_y(Internal3rdDerivativeEquation()))
-        
         # 下境界 (j=0)
         system.add_bottom_boundary_equation(converter.to_y(LeftBoundary1stDerivativeEquation()))
         system.add_bottom_boundary_equation(converter.to_y(LeftBoundary2ndDerivativeEquation()))
         system.add_bottom_boundary_equation(converter.to_y(LeftBoundary3rdDerivativeEquation()))
-        
-        # X方向微分も下境界に必要
-        system.add_bottom_boundary_equation(converter.to_x(Internal1stDerivativeEquation()))
-        system.add_bottom_boundary_equation(converter.to_x(Internal2ndDerivativeEquation()))
-        system.add_bottom_boundary_equation(converter.to_x(Internal3rdDerivativeEquation()))
-        
+                
         # 上境界 (j=ny-1)
         system.add_top_boundary_equation(converter.to_y(RightBoundary1stDerivativeEquation()))
         system.add_top_boundary_equation(converter.to_y(RightBoundary2ndDerivativeEquation()))
         system.add_top_boundary_equation(converter.to_y(RightBoundary3rdDerivativeEquation()))
-        
-        # X方向微分も上境界に必要
-        system.add_top_boundary_equation(converter.to_x(Internal1stDerivativeEquation()))
-        system.add_top_boundary_equation(converter.to_x(Internal2ndDerivativeEquation()))
-        system.add_top_boundary_equation(converter.to_x(Internal3rdDerivativeEquation()))
