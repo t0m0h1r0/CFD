@@ -83,14 +83,14 @@ class CCDVisualizer:
             exact_data = exact[i].get() if hasattr(exact[i], 'get') else exact[i]
             num_data = numerical[i].get() if hasattr(numerical[i], 'get') else numerical[i]
             
-            ax.plot(x_np, exact_data, 'b-', label='厳密解')
-            ax.plot(x_np, num_data, 'r--', label='数値解')
-            ax.set_title(f"{titles[i]} (誤差: {errors[i]:.2e})")
+            ax.plot(x_np, exact_data, 'b-', label='Exact')
+            ax.plot(x_np, num_data, 'r--', label='Numerical')
+            ax.set_title(f"{titles[i]} (error: {errors[i]:.2e})")
             ax.legend()
             ax.grid(True)
         
         # 全体のタイトル
-        plt.suptitle(f"{function_name}関数の結果 ({n_points} 点)")
+        plt.suptitle(f"Results for {function_name} function ({n_points} points)")
         plt.tight_layout()
         
         # 保存
@@ -98,7 +98,7 @@ class CCDVisualizer:
         if save:
             filepath = self.generate_filename(function_name, n_points, prefix)
             plt.savefig(filepath, dpi=dpi)
-            print(f"プロットを保存しました: {filepath}")
+            print(f"Plot saved to {filepath}")
         
         # 表示
         if show:
@@ -149,9 +149,9 @@ class CCDVisualizer:
                   bar_width, label=titles[i], color=colors[i])
         
         # 軸の設定
-        ax.set_xlabel('手法')
-        ax.set_ylabel('誤差 (対数スケール)')
-        ax.set_title(f'{function_name}の誤差比較')
+        ax.set_xlabel('Method')
+        ax.set_ylabel('Error (log scale)')
+        ax.set_title(f'Error Comparison for {function_name}')
         ax.set_xticks([pos + 1.5 * bar_width for pos in x])
         ax.set_xticklabels(methods)
         ax.legend()
@@ -165,7 +165,7 @@ class CCDVisualizer:
         if save:
             filepath = f"{self.output_dir}/{prefix}error_comparison_{function_name.lower()}.png"
             plt.savefig(filepath, dpi=dpi)
-            print(f"誤差比較プロットを保存しました: {filepath}")
+            print(f"Error comparison plot saved to {filepath}")
         
         # 表示
         if show:
@@ -216,12 +216,12 @@ class CCDVisualizer:
         # 傾きの参照線（6次精度を想定）
         x_ref = [min(h_values), max(h_values)]
         y_ref_6th = [min(h_values)**6, max(h_values)**6]
-        ax.loglog(x_ref, y_ref_6th, 'k--', alpha=0.5, label='6次精度 (h⁶)')
+        ax.loglog(x_ref, y_ref_6th, 'k--', alpha=0.5, label='6th Order (h⁶)')
         
         # 軸の設定
-        ax.set_xlabel('格子幅 (h)')
-        ax.set_ylabel('誤差')
-        ax.set_title(f'{function_name}の格子収束性')
+        ax.set_xlabel('Grid Size (h)')
+        ax.set_ylabel('Error')
+        ax.set_title(f'Grid Convergence for {function_name}')
         ax.legend()
         ax.grid(True, which='both', linestyle='--', linewidth=0.5)
         
@@ -232,7 +232,7 @@ class CCDVisualizer:
         if save:
             filepath = f"{self.output_dir}/{prefix}grid_convergence_{function_name.lower()}.png"
             plt.savefig(filepath, dpi=dpi)
-            print(f"格子収束性プロットを保存しました: {filepath}")
+            print(f"Grid convergence plot saved to {filepath}")
         
         # 表示
         if show:
@@ -287,13 +287,13 @@ class CCDVisualizer:
                 ax.set_yscale('log')
             else:
                 # 0値がある場合は線形スケールを使用し、注意書きを追加
-                ax.text(0.5, 0.95, "0値が存在するため線形スケールを使用", 
+                ax.text(0.5, 0.95, "Linear scale used due to zero values", 
                        transform=ax.transAxes, ha='center', fontsize=9,
                        bbox=dict(facecolor='yellow', alpha=0.3))
             
-            ax.set_title(f"{error_type} 誤差比較")
-            ax.set_xlabel("テスト関数")
-            ax.set_ylabel("誤差" + (" (対数スケール)" if not has_zero else ""))
+            ax.set_title(f"{error_type} Error Comparison")
+            ax.set_xlabel("Test Function")
+            ax.set_ylabel("Error" + (" (log scale)" if not has_zero else ""))
             ax.grid(True, which='both', linestyle='--', alpha=0.5)
             
             # 明示的に目盛りを設定してから、ラベルを設定（警告解消）
@@ -323,7 +323,7 @@ class CCDVisualizer:
         # 保存
         filename = f"{self.output_dir}/{prefix}_all_functions_comparison.png" if prefix else f"{self.output_dir}/all_functions_comparison.png"
         plt.savefig(filename, dpi=dpi)
-        print(f"全関数の比較グラフを保存しました: {filename}")
+        print(f"All functions comparison plot saved to {filename}")
         
         # 表示
         if show:
