@@ -1,27 +1,10 @@
 # tester.py
 import cupy as cp
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from grid import Grid
 from solver import CCDSolver
 from equation_system import EquationSystem
-from equation.poisson import PoissonEquation
-from equation.custom import CustomEquation
-from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
-from equation.compact_internal import (
-    Internal1stDerivativeEquation,
-    Internal2ndDerivativeEquation,
-    Internal3rdDerivativeEquation,
-)
-from equation.compact_left_boundary import (
-    LeftBoundary1stDerivativeEquation,
-    LeftBoundary2ndDerivativeEquation,
-    LeftBoundary3rdDerivativeEquation,
-)
-from equation.compact_right_boundary import (
-    RightBoundary1stDerivativeEquation,
-    RightBoundary2ndDerivativeEquation,
-    RightBoundary3rdDerivativeEquation,
-)
+from equation_sets import EquationSet
 from test_functions import TestFunction
 
 
@@ -36,13 +19,81 @@ class CCDTester:
             grid: 計算格子
         """
         self.grid = grid
+        self.system = None
+        self.solver = None
+        self.solver_method = "direct"
+        self.solver_options = None
+        self.analyze_matrix = False
+        self.equation_set = None
+
+    def set_solver_options(self, method: str, options: Dict[str, Any], analyze_matrix: bool = False):
+        """
+        ソルバーの種類とオプションを設定
+
+        Args:
+            method: ソルバーの種類 ('direct', 'gmres', 'cg', 'cgs')
+            options: ソルバーのオプション
+            analyze_matrix: 行列の疎性を分析するかどうか
+        """
+        self.solver_method = method
+        self.solver_options = options
+        self.analyze_matrix = analyze_matrix
+
+    def set_equation_set(self, equation_set_name: str):
+        """
+        使用する方程式セットを設定
+
+        Args:
+            equation_set_name: 方程式セットの名前 ('poisson', 'higher_derivative', 'custom')
+        """
+        self.equation_set = EquationSet.create(equation_set_name)
+        print(f"方程式セットを '{equation_set_name}' に設定しました")
+
+    def setup_equation_system(
+        self, 
+        test_func: TestFunction, 
+        use_dirichlet: bool = True,
+        use_neumann: bool = True
+    ):
+        """
+        方程式システムとソルバーを設定する（または再設定する）
+
+        Args:
+            test_func: テスト関数
+            use_dirichlet: ディリクレ境界条件を使用するかどうか
+            use_neumann: ノイマン境界条件を使用するかどうか
+        """
+        # システムを構築
+        self.system = EquationSystem(self.grid)
+
+        # 方程式セットが設定されていない場合はデフォルトのポアソン方程式を使用
+        if self.equation_set is None:
+            self.equation_set = EquationSet.create("poisson")
+
+        # 方程式セットを使って方程式を設定
+        self.equation_set.setup_equations(
+            self.system, 
+            self.grid, 
+            test_func, 
+            use_dirichlet, 
+            use_neumann
+        )
+
+        # ソルバーを作成または更新
+        if self.solver is None:
+            self.solver = CCDSolver(self.system, self.grid)
+        else:
+            self.solver.system = self.system  # システム参照を更新
+
+        # ソルバーの設定
+        if self.solver_method != "direct" or self.solver_options:
+            self.solver.set_solver(method=self.solver_method, options=self.solver_options)
 
     def run_test_with_options(
         self,
         test_func: TestFunction,
         use_dirichlet: bool = True,
         use_neumann: bool = True,
-        rehu_number: Optional[float] = None,
     ) -> Dict:
         """
         より柔軟なオプションでテストを実行
@@ -51,65 +102,19 @@ class CCDTester:
             test_func: テスト関数
             use_dirichlet: ディリクレ境界条件を使用するかどうか（デフォルトはTrue）
             use_neumann: ノイマン境界条件を使用するかどうか（デフォルトはTrue）
-            rehu_number: Reynolds-Hugoniot数（Noneの場合はスケーリングなし）
 
         Returns:
             テスト結果の辞書
         """
-        # システムを構築
-        system = EquationSystem(self.grid)
+        # 方程式システムとソルバーを設定
+        self.setup_equation_system(test_func, use_dirichlet, use_neumann)
 
-        # グリッド情報
-        x_min = self.grid.x_min
-        x_max = self.grid.x_max
-
-        # 支配方程式
-        system.add_equation(PoissonEquation(test_func.d2f))
-
-        # 内部点の方程式を設定
-        system.add_interior_equation(Internal1stDerivativeEquation())
-        system.add_interior_equation(Internal2ndDerivativeEquation())
-        system.add_interior_equation(Internal3rdDerivativeEquation())
-
-        # 左境界の方程式を設定
-        system.add_left_boundary_equation(
-            DirichletBoundaryEquation(value=test_func.f(x_min))
-        )
-        system.add_left_boundary_equation(
-            NeumannBoundaryEquation(value=test_func.df(x_min))
-        )
-        system.add_left_boundary_equation(
-            LeftBoundary1stDerivativeEquation()
-            + LeftBoundary2ndDerivativeEquation()
-            + LeftBoundary3rdDerivativeEquation()
-        )
-
-        # 右境界の方程式を設定
-        system.add_right_boundary_equation(
-            DirichletBoundaryEquation(value=test_func.f(x_max))
-        )
-        system.add_right_boundary_equation(
-            NeumannBoundaryEquation(value=test_func.df(x_max))
-        )
-        system.add_right_boundary_equation(
-            RightBoundary1stDerivativeEquation()
-            + RightBoundary2ndDerivativeEquation()
-            + RightBoundary3rdDerivativeEquation()
-        )
-
-        # ソルバーを作成
-        solver = CCDSolver(system, self.grid)
-
-        # Rehuスケーリングの設定
-        if rehu_number is not None:
-            solver.set_rehu_scaling(
-                rehu_number=rehu_number,
-                characteristic_velocity=1.0,
-                reference_length=1.0,
-            )
+        # 行列を分析（オプション）
+        if self.analyze_matrix:
+            self.solver.analyze_system()
 
         # 解く
-        psi, psi_prime, psi_second, psi_third = solver.solve()
+        psi, psi_prime, psi_second, psi_third = self.solver.solve(analyze_before_solve=False)
 
         # 解析解を計算
         x = self.grid.get_points()
@@ -139,7 +144,6 @@ class CCDTester:
         x_range: Tuple[float, float],
         use_dirichlet: bool = True,
         use_neumann: bool = True,
-        rehu_number: Optional[float] = None,
     ) -> Dict[int, List[float]]:
         """
         グリッドサイズによる収束性テストを実行
@@ -150,12 +154,17 @@ class CCDTester:
             x_range: 計算範囲
             use_dirichlet: ディリクレ境界条件を使用するかどうか（デフォルトはTrue）
             use_neumann: ノイマン境界条件を使用するかどうか（デフォルトはTrue）
-            rehu_number: Reynolds-Hugoniot数（Noneの場合はスケーリングなし）
 
         Returns:
             グリッドサイズごとの誤差 {grid_size: [err_psi, err_psi', err_psi'', err_psi''']}
         """
         results = {}
+
+        # 現在のソルバー設定とEquationSetを保存
+        original_method = self.solver_method
+        original_options = self.solver_options
+        original_analyze = self.analyze_matrix
+        original_equation_set = self.equation_set
 
         for n in grid_sizes:
             # グリッドを作成
@@ -163,13 +172,16 @@ class CCDTester:
 
             # このクラスのインスタンスを新しいグリッドで作成
             tester = CCDTester(grid)
+            
+            # ソルバー設定とEquationSetを引き継ぐ
+            tester.set_solver_options(original_method, original_options, original_analyze)
+            tester.equation_set = original_equation_set
 
             # テストを実行
             result = tester.run_test_with_options(
                 test_func,
                 use_dirichlet=use_dirichlet,
                 use_neumann=use_neumann,
-                rehu_number=rehu_number,
             )
 
             # 結果を保存
