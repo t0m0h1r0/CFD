@@ -73,10 +73,10 @@ class CCDTester:
 
         # 左境界の方程式を設定
         system.add_left_boundary_equation(
-            DirichletBoundaryEquation(test_func.f(x_min), is_left=True)
+            DirichletBoundaryEquation(value=test_func.f(x_min))
         )
         system.add_left_boundary_equation(
-            NeumannBoundaryEquation(test_func.df(x_min), is_left=True)
+            NeumannBoundaryEquation(value=test_func.df(x_min))
         )
         system.add_left_boundary_equation(
             LeftBoundary1stDerivativeEquation()
@@ -86,10 +86,10 @@ class CCDTester:
 
         # 右境界の方程式を設定
         system.add_right_boundary_equation(
-            DirichletBoundaryEquation(test_func.f(x_max), is_left=False)
+            DirichletBoundaryEquation(value=test_func.f(x_max))
         )
         system.add_right_boundary_equation(
-            NeumannBoundaryEquation(test_func.df(x_max), is_left=False)
+            NeumannBoundaryEquation(value=test_func.df(x_max))
         )
         system.add_right_boundary_equation(
             RightBoundary1stDerivativeEquation()
