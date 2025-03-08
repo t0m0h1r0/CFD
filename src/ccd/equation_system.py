@@ -1,5 +1,5 @@
 # equation_system.py
-import cupy as cp  # NumPyではなくCuPyを使用
+import cupy as cp
 from typing import List, Tuple, Dict
 from equation.base import Equation
 from grid import Grid
@@ -35,8 +35,6 @@ class EquationSystem:
     def build_matrix_system(self) -> Tuple[cp.ndarray, cp.ndarray]:
         """行列システムを構築"""
         n = self.grid.n_points
-        h = self.grid.h
-        print(h)
         
         # マトリックスサイズ: 各点に4つの値 (psi, psi', psi'', psi''') がある
         size = 4 * n
@@ -64,14 +62,22 @@ class EquationSystem:
             
             # 各方程式を行列に反映
             for k, eq in enumerate(equations_to_use):
+                # この方程式がこの点に適用可能か確認
+                if not eq.is_valid_at(self.grid, i):
+                    raise ValueError(f"方程式 {k} は点 {i} に適用できません")
+                
                 # 方程式のステンシル係数を取得
-                stencil_coeffs = eq.get_stencil_coefficients(i, n, h)
-                rhs_value = eq.get_rhs(i, n, h)
+                stencil_coeffs = eq.get_stencil_coefficients(self.grid, i)
+                rhs_value = eq.get_rhs(self.grid, i)
                 
                 # 各ステンシル点の係数を行列に設定
                 for offset, coeffs in stencil_coeffs.items():
                     j = i + offset  # ステンシル点のインデックス
-                    A[i*4 + k, j*4:(j+1)*4] = coeffs
+                    
+                    # インデックスが有効範囲内かチェック
+                    if 0 <= j < n:
+                        # 係数を行列の適切な位置に設定
+                        A[i*4 + k, j*4:(j+1)*4] = coeffs
                 
                 # 右辺ベクトルを設定
                 b[i*4 + k] = rhs_value

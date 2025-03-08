@@ -1,6 +1,6 @@
 # equation/essential.py
 import cupy as cp
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Callable
 from grid import Grid
 from .base import Equation
 
@@ -10,7 +10,7 @@ class EssentialEquation(Equation):
     特定のグリッド点において、指定した未知数の係数を1に、それ以外を0にする方程式を表現
     """
     
-    def __init__(self, k: int, value: float = 0.0, target_point: Optional[int] = None):
+    def __init__(self, k: int, f_func: Callable[[float], float]):
         """
         初期化
         
@@ -23,8 +23,7 @@ class EssentialEquation(Equation):
             raise ValueError("Index k must be in [0, 1, 2, 3]")
             
         self.k = k
-        self.value = value
-        self.target_point = target_point
+        self.f_func = f_func
     
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
@@ -58,22 +57,10 @@ class EssentialEquation(Equation):
         Returns:
             指定された値
         """
-        return self.value
+        # グリッド点の座標値を取得
+        x = grid.get_point(i)
+        return self.f_func(x)
     
     def is_valid_at(self, grid: Grid, i: int) -> bool:
-        """
-        方程式がグリッド点iに適用可能かを判定
-        target_pointが指定されている場合はその点のみでTrue
-        
-        Args:
-            grid: 計算格子
-            i: グリッド点のインデックス
-            
-        Returns:
-            方程式が適用可能な場合True
-        """
-        if self.target_point is not None:
-            return i == self.target_point
-        
         # デフォルトでは全てのグリッド点で有効
         return True
