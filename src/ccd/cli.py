@@ -5,7 +5,7 @@ import cupy as cp
 from typing import List, Tuple, Dict, Optional
 from grid import Grid
 from tester import CCDTester
-from ccd.test_functions import TestFunctionFactory, TestFunction
+from test_functions import TestFunctionFactory, TestFunction
 from visualization import CCDVisualizer
 
 def parse_args():

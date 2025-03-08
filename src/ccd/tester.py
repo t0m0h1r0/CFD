@@ -23,7 +23,7 @@ from equation.compact_right_boundary import (
     RightBoundary2ndDerivativeEquation,
     RightBoundary3rdDerivativeEquation
 )
-from ccd.test_functions import TestFunction, TestFunctionFactory
+from test_functions import TestFunction, TestFunctionFactory
 
 class CCDTester:
     """CCDメソッドのテストを行うクラス"""
