@@ -17,6 +17,7 @@ class Grid:
         self.x_min, self.x_max = x_range
         self.h = (self.x_max - self.x_min) / (self.n_points - 1)
         self.x = cp.linspace(self.x_min, self.x_max, self.n_points)
+        print(self.h, self.n_points, self.x_min, self.x_max)
     
     def get_point(self, i: int) -> float:
         """i番目の格子点の座標を返す"""

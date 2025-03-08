@@ -5,22 +5,20 @@ from typing import Dict, List, Optional, Tuple
 from grid import Grid
 from solver import CCDSolver
 from equation_system import EquationSystem
+from equation.essential import EssentialEquation
 from equation.poisson import PoissonEquation
 from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
 from equation.compact_internal import (
-    InternalFunctionEquation, 
     Internal1stDerivativeEquation, 
     Internal2ndDerivativeEquation, 
     Internal3rdDerivativeEquation
 )
 from equation.compact_left_boundary import (
-    LeftBoundaryFunctionEquation,
     LeftBoundary1stDerivativeEquation,
     LeftBoundary2ndDerivativeEquation,
     LeftBoundary3rdDerivativeEquation
 )
 from equation.compact_right_boundary import (
-    RightBoundaryFunctionEquation,
     RightBoundary1stDerivativeEquation,
     RightBoundary2ndDerivativeEquation,
     RightBoundary3rdDerivativeEquation
@@ -62,26 +60,29 @@ class CCDTester:
         x_max = self.grid.x_max
         
         # 内部点の方程式を設定
-        system.add_interior_equation(PoissonEquation(test_func.d2f))
+        system.add_interior_equation(EssentialEquation(test_func.f))
+        #system.add_interior_equation(PoissonEquation(test_func.d2f))
         system.add_interior_equation(Internal1stDerivativeEquation())
         system.add_interior_equation(Internal2ndDerivativeEquation())
         system.add_interior_equation(Internal3rdDerivativeEquation())
         
         # 左境界の方程式を設定
-        system.add_left_boundary_equation(PoissonEquation(test_func.d2f))
-        system.add_left_boundary_equation(DirichletBoundaryEquation(test_func.f(x_min), is_left=True))
-        system.add_left_boundary_equation(NeumannBoundaryEquation(test_func.df(x_min), is_left=True))
+        system.add_left_boundary_equation(EssentialEquation(test_func.f))
         system.add_left_boundary_equation(LeftBoundary1stDerivativeEquation())
+        system.add_left_boundary_equation(LeftBoundary2ndDerivativeEquation())
+        system.add_left_boundary_equation(LeftBoundary3rdDerivativeEquation())
+        #system.add_left_boundary_equation(PoissonEquation(test_func.d2f))
+        #system.add_left_boundary_equation(DirichletBoundaryEquation(test_func.f(x_min), is_left=True))
+        #system.add_left_boundary_equation(NeumannBoundaryEquation(test_func.df(x_min), is_left=True))
 
-
-        system.add_right_boundary_equation(PoissonEquation(test_func.d2f))
-        system.add_right_boundary_equation(DirichletBoundaryEquation(test_func.f(x_max), is_left=False))
-        system.add_right_boundary_equation(NeumannBoundaryEquation(test_func.df(x_max), is_left=False))
+        system.add_right_boundary_equation(EssentialEquation(test_func.f))
         system.add_right_boundary_equation(RightBoundary1stDerivativeEquation())
+        system.add_right_boundary_equation(RightBoundary2ndDerivativeEquation())
+        system.add_right_boundary_equation(RightBoundary3rdDerivativeEquation())     
+        #system.add_right_boundary_equation(PoissonEquation(test_func.d2f))
+        #system.add_right_boundary_equation(DirichletBoundaryEquation(test_func.f(x_max), is_left=False))
+        #system.add_right_boundary_equation(NeumannBoundaryEquation(test_func.df(x_max), is_left=False))
 
-        print(Internal1stDerivativeEquation())        
-        print(Internal2ndDerivativeEquation())        
-        print(Internal3rdDerivativeEquation())        
         
         # ソルバーを作成して解く
         solver = CCDSolver(system, self.grid)

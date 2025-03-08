@@ -3,28 +3,6 @@ import cupy as np
 from typing import Dict
 from .base import Equation
 
-
-class InternalFunctionEquation(Equation):
-    """内部点での関数値関係式"""
-
-    def get_stencil_coefficients(
-        self, i: int, n: int, h: float
-    ) -> Dict[int, np.ndarray]:
-        # 関数値の関係式に関する係数
-        coeffs = {
-            0: np.array([1, 0, 0, 0]),  # 中央点の係数
-        }
-
-        return coeffs
-
-    def get_rhs(self, i: int, n: int, h: float) -> float:
-        return 0.0
-
-    def is_valid_at(self, i: int, n: int) -> bool:
-        """内部点でのみ有効"""
-        return 0 < i < n - 1
-
-
 class Internal1stDerivativeEquation(Equation):
     """内部点での1階導関数関係式"""
 
@@ -40,7 +18,7 @@ class Internal1stDerivativeEquation(Equation):
 
         # スケール調整
         for offset, coef in coeffs.items():
-            coeffs[offset] = coef * np.array([1, h**-1, h**-2, h**-3])
+            coeffs[offset] = coef * np.array([h**-1, h**0, h**1, h**2])
 
         return coeffs
 
@@ -67,7 +45,7 @@ class Internal2ndDerivativeEquation(Equation):
 
         # スケール調整
         for offset, coef in coeffs.items():
-            coeffs[offset] = coef * np.array([1, h**-1, h**-2, h**-3])
+            coeffs[offset] = coef * np.array([h**-2, h**-1, h**0, h**1])
 
         return coeffs
 
@@ -94,7 +72,7 @@ class Internal3rdDerivativeEquation(Equation):
 
         # スケール調整
         for offset, coef in coeffs.items():
-            coeffs[offset] = coef * np.array([1, h**-1, h**-2, h**-3])
+            coeffs[offset] = coef * np.array([h**-3, h**-2, h**-1, h**0])
 
         return coeffs
 
