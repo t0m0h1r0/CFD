@@ -11,22 +11,22 @@ class RightBoundary1stDerivativeEquation(Equation):
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         右境界点の1階導関数関係式のステンシル係数を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             ステンシル係数の辞書
         """
         # グリッド間隔を取得
         h = grid.get_spacing()
-        
+
         # 既存コードから流用した右境界点の係数
         coeffs = {
-            -2: cp.array([59 / 2, 10, 1, 0]),       # i-2点
-            -1: cp.array([-24, 24, -4, 4 / 3]),     # i-1点
-            0: cp.array([-11 / 2, 1, 0, 0]),        # i点（境界点）
+            -2: cp.array([59 / 2, 10, 1, 0]),  # i-2点
+            -1: cp.array([-24, 24, -4, 4 / 3]),  # i-1点
+            0: cp.array([-11 / 2, 1, 0, 0]),  # i点（境界点）
         }
 
         # スケール調整
@@ -38,11 +38,11 @@ class RightBoundary1stDerivativeEquation(Equation):
     def get_rhs(self, grid: Grid, i: int) -> float:
         """
         右境界点の1階導関数関係式の右辺を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右辺の値
         """
@@ -51,11 +51,11 @@ class RightBoundary1stDerivativeEquation(Equation):
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         右境界でのみ有効かを判定
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右境界の場合True
         """
@@ -69,22 +69,22 @@ class RightBoundary2ndDerivativeEquation(Equation):
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         右境界点の2階導関数関係式のステンシル係数を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             ステンシル係数の辞書
         """
         # グリッド間隔を取得
         h = grid.get_spacing()
-        
+
         # 既存コードから流用した右境界点の係数
         coeffs = {
-            -2: cp.array([579 / 2, 99, 10, 0]),    # i-2点
-            -1: cp.array([-264, 216, -44, 12]),     # i-1点
-            0: cp.array([-51 / 2, 0, 1, 0]),        # i点（境界点）
+            -2: cp.array([579 / 2, 99, 10, 0]),  # i-2点
+            -1: cp.array([-264, 216, -44, 12]),  # i-1点
+            0: cp.array([-51 / 2, 0, 1, 0]),  # i点（境界点）
         }
 
         # スケール調整
@@ -96,11 +96,11 @@ class RightBoundary2ndDerivativeEquation(Equation):
     def get_rhs(self, grid: Grid, i: int) -> float:
         """
         右境界点の2階導関数関係式の右辺を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右辺の値
         """
@@ -109,11 +109,11 @@ class RightBoundary2ndDerivativeEquation(Equation):
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         右境界でのみ有効かを判定
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右境界の場合True
         """
@@ -127,22 +127,22 @@ class RightBoundary3rdDerivativeEquation(Equation):
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         右境界点の3階導関数関係式のステンシル係数を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             ステンシル係数の辞書
         """
         # グリッド間隔を取得
         h = grid.get_spacing()
-        
+
         # 既存コードから流用した右境界点の係数
         coeffs = {
             -2: cp.array([6963 / 4, 1203 / 2, 123 / 2, 0]),  # i-2点
-            -1: cp.array([-1644, 1236, -282, 66]),              # i-1点
-            0: cp.array([-387 / 4, 0, 0, 1]),                   # i点（境界点）
+            -1: cp.array([-1644, 1236, -282, 66]),  # i-1点
+            0: cp.array([-387 / 4, 0, 0, 1]),  # i点（境界点）
         }
 
         # スケール調整
@@ -154,11 +154,11 @@ class RightBoundary3rdDerivativeEquation(Equation):
     def get_rhs(self, grid: Grid, i: int) -> float:
         """
         右境界点の3階導関数関係式の右辺を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右辺の値
         """
@@ -167,11 +167,11 @@ class RightBoundary3rdDerivativeEquation(Equation):
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         右境界でのみ有効かを判定
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右境界の場合True
         """

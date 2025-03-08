@@ -22,11 +22,11 @@ class DirichletBoundaryEquation(Equation):
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         ディリクレ境界条件のステンシル係数を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             ステンシル係数の辞書
         """
@@ -40,11 +40,11 @@ class DirichletBoundaryEquation(Equation):
     def get_rhs(self, grid: Grid, i: int) -> float:
         """
         指定された境界値を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             境界値
         """
@@ -53,11 +53,11 @@ class DirichletBoundaryEquation(Equation):
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         境界点でのみ有効かを判定
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             境界点の場合True
         """
@@ -85,11 +85,11 @@ class NeumannBoundaryEquation(Equation):
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         ノイマン境界条件のステンシル係数を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             ステンシル係数の辞書
         """
@@ -103,11 +103,11 @@ class NeumannBoundaryEquation(Equation):
     def get_rhs(self, grid: Grid, i: int) -> float:
         """
         指定された微分値を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             境界での微分値
         """
@@ -116,11 +116,11 @@ class NeumannBoundaryEquation(Equation):
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         境界点でのみ有効かを判定
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             境界点の場合True
         """

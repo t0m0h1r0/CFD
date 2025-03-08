@@ -11,17 +11,17 @@ class Internal1stDerivativeEquation(Equation):
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         1階導関数関係式のステンシル係数を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             ステンシル係数の辞書
         """
         # グリッド間隔を取得
         h = grid.get_spacing()
-        
+
         # 既存コードから流用した内部点の係数
         coeffs = {
             -1: cp.array([35 / 32, 19 / 32, 1 / 8, 1 / 96]),  # 左隣接点
@@ -38,11 +38,11 @@ class Internal1stDerivativeEquation(Equation):
     def get_rhs(self, grid: Grid, i: int) -> float:
         """
         1階導関数関係式の右辺を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右辺の値
         """
@@ -51,11 +51,11 @@ class Internal1stDerivativeEquation(Equation):
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         内部点でのみ有効
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             内部点の場合True
         """
@@ -69,17 +69,17 @@ class Internal2ndDerivativeEquation(Equation):
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         2階導関数関係式のステンシル係数を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             ステンシル係数の辞書
         """
         # グリッド間隔を取得
         h = grid.get_spacing()
-        
+
         # 既存コードから流用した内部点の係数
         coeffs = {
             -1: cp.array([-4, -29 / 16, -5 / 16, -1 / 48]),  # 左隣接点
@@ -96,11 +96,11 @@ class Internal2ndDerivativeEquation(Equation):
     def get_rhs(self, grid: Grid, i: int) -> float:
         """
         2階導関数関係式の右辺を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右辺の値
         """
@@ -109,11 +109,11 @@ class Internal2ndDerivativeEquation(Equation):
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         内部点でのみ有効
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             内部点の場合True
         """
@@ -127,17 +127,17 @@ class Internal3rdDerivativeEquation(Equation):
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         3階導関数関係式のステンシル係数を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             ステンシル係数の辞書
         """
         # グリッド間隔を取得
         h = grid.get_spacing()
-        
+
         # 既存コードから流用した内部点の係数
         coeffs = {
             -1: cp.array([-105 / 16, -105 / 16, -15 / 8, -3 / 16]),  # 左隣接点
@@ -154,11 +154,11 @@ class Internal3rdDerivativeEquation(Equation):
     def get_rhs(self, grid: Grid, i: int) -> float:
         """
         3階導関数関係式の右辺を返す
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             右辺の値
         """
@@ -167,11 +167,11 @@ class Internal3rdDerivativeEquation(Equation):
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         内部点でのみ有効
-        
+
         Args:
             grid: 計算格子
             i: グリッド点のインデックス
-            
+
         Returns:
             内部点の場合True
         """
