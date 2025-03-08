@@ -1,6 +1,6 @@
 display2d:false;
 
-sgn:-1;
+sgn:+1;
 p[0,0] : f[0,1]*(-sgn*h)^0/0! + f[1,1]*(-sgn*h)^1/1! + f[2,1]*(-sgn*h)^2/2! + f[3,1]*(-sgn*h)^3/3! + f[4,1]*(-sgn*h)^4/4! + f[5,1]*(-sgn*h)^5/5! + f[6,1]*(-sgn*h)^6/6!;
 p[0,2] : f[0,1]*(+sgn*h)^0/0! + f[1,1]*(+sgn*h)^1/1! + f[2,1]*(+sgn*h)^2/2! + f[3,1]*(+sgn*h)^3/3! + f[4,1]*(+sgn*h)^4/4! + f[5,1]*(+sgn*h)^5/5! + f[6,1]*(+sgn*h)^6/6!;
 p[1,0] :                        f[1,1]*(-sgn*h)^0/0! + f[2,1]*(-sgn*h)^1/1! + f[3,1]*(-sgn*h)^2/2! + f[4,1]*(-sgn*h)^3/3! + f[5,1]*(-sgn*h)^4/4! + f[6,1]*(-sgn*h)^5/5!;
@@ -48,28 +48,25 @@ ccd[0]: expand(subst(solution[0][1], expanded));
 ccd[1]: expand(subst(solution[1][1], expanded));
 ccd[2]: expand(subst(solution[2][1], expanded));
 
-matrix_B0: matrix(
-    [1, 0, 0, 0],
+matrix_1: matrix(
     [coeff(coeff(ccd[0],h,0),f[0,0]), coeff(coeff(ccd[0],h,1),f[1,0]), coeff(coeff(ccd[0],h,2),f[2,0]), coeff(coeff(ccd[0],h,3),f[3,0])],
-    [coeff(coeff(ccd[1],h,0),f[0,0]), coeff(coeff(ccd[1],h,1),f[1,0]), coeff(coeff(ccd[1],h,2),f[2,0]), coeff(coeff(ccd[1],h,3),f[3,0])],
-    [coeff(coeff(ccd[2],h,0),f[0,0]), coeff(coeff(ccd[2],h,1),f[1,0]), coeff(coeff(ccd[2],h,2),f[2,0]), coeff(coeff(ccd[2],h,3),f[3,0])]
-);
-
-matrix_C0: matrix(
-    [0, 0, 0, 0],
     [coeff(coeff(ccd[0],h,0),f[0,1]), coeff(coeff(ccd[0],h,1),f[1,1]), coeff(coeff(ccd[0],h,2),f[2,1]), coeff(coeff(ccd[0],h,3),f[3,1])],
-    [coeff(coeff(ccd[1],h,0),f[0,1]), coeff(coeff(ccd[1],h,1),f[1,1]), coeff(coeff(ccd[1],h,2),f[2,1]), coeff(coeff(ccd[1],h,3),f[3,1])],
-    [coeff(coeff(ccd[2],h,0),f[0,1]), coeff(coeff(ccd[2],h,1),f[1,1]), coeff(coeff(ccd[2],h,2),f[2,1]), coeff(coeff(ccd[2],h,3),f[3,1])]
+    [coeff(coeff(ccd[0],h,0),f[0,2]), coeff(coeff(ccd[0],h,1),f[1,2]), coeff(coeff(ccd[0],h,2),f[2,2]), coeff(coeff(ccd[0],h,3),f[3,2])]
 );
 
-matrix_D0: matrix(
-    [0, 0, 0, 0],
-    [coeff(coeff(ccd[0],h,0),f[0,2]), coeff(coeff(ccd[0],h,1),f[1,2]), coeff(coeff(ccd[0],h,2),f[2,2]), coeff(coeff(ccd[0],h,3),f[3,2])],
-    [coeff(coeff(ccd[1],h,0),f[0,2]), coeff(coeff(ccd[1],h,1),f[1,2]), coeff(coeff(ccd[1],h,2),f[2,2]), coeff(coeff(ccd[1],h,3),f[3,2])],
+matrix_2: matrix(
+    [coeff(coeff(ccd[1],h,0),f[0,0]), coeff(coeff(ccd[1],h,1),f[1,0]), coeff(coeff(ccd[1],h,2),f[2,0]), coeff(coeff(ccd[1],h,3),f[3,0])],
+    [coeff(coeff(ccd[1],h,0),f[0,1]), coeff(coeff(ccd[1],h,1),f[1,1]), coeff(coeff(ccd[1],h,2),f[2,1]), coeff(coeff(ccd[1],h,3),f[3,1])],
+    [coeff(coeff(ccd[1],h,0),f[0,2]), coeff(coeff(ccd[1],h,1),f[1,2]), coeff(coeff(ccd[1],h,2),f[2,2]), coeff(coeff(ccd[1],h,3),f[3,2])]
+);
+
+matrix_3: matrix(
+    [coeff(coeff(ccd[2],h,0),f[0,0]), coeff(coeff(ccd[2],h,1),f[1,0]), coeff(coeff(ccd[2],h,2),f[2,0]), coeff(coeff(ccd[2],h,3),f[3,0])],
+    [coeff(coeff(ccd[2],h,0),f[0,1]), coeff(coeff(ccd[2],h,1),f[1,1]), coeff(coeff(ccd[2],h,2),f[2,1]), coeff(coeff(ccd[2],h,3),f[3,1])],
     [coeff(coeff(ccd[2],h,0),f[0,2]), coeff(coeff(ccd[2],h,1),f[1,2]), coeff(coeff(ccd[2],h,2),f[2,2]), coeff(coeff(ccd[2],h,3),f[3,2])]
 );
 
 linel: 1000;
-ratsimp(matrix_B0);
-ratsimp(matrix_C0);
-ratsimp(matrix_D0);
+ratsimp(matrix_1);
+ratsimp(matrix_2);
+ratsimp(matrix_3);

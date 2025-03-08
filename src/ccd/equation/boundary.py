@@ -8,7 +8,7 @@ from .base import Equation
 class DirichletBoundaryEquation(Equation):
     """ディリクレ境界条件: psi(x) = alpha"""
 
-    def __init__(self, alpha: float, is_left: bool = True):
+    def __init__(self, value: float):
         """
         ディリクレ境界条件の初期化
 
@@ -16,8 +16,7 @@ class DirichletBoundaryEquation(Equation):
             alpha: 境界値
             is_left: 左境界ならTrue、右境界ならFalse
         """
-        self.alpha = alpha
-        self.is_left = is_left
+        self.value = value
 
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
@@ -48,7 +47,7 @@ class DirichletBoundaryEquation(Equation):
         Returns:
             境界値
         """
-        return self.alpha
+        return self.value
 
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
@@ -62,16 +61,13 @@ class DirichletBoundaryEquation(Equation):
             境界点の場合True
         """
         n = grid.n_points
-        if self.is_left:
-            return i == 0
-        else:
-            return i == n - 1
+        return i == 0 or i == n - 1
 
 
 class NeumannBoundaryEquation(Equation):
     """ノイマン境界条件: psi'(x) = beta"""
 
-    def __init__(self, beta: float, is_left: bool = True):
+    def __init__(self, value: float):
         """
         ノイマン境界条件の初期化
 
@@ -79,8 +75,7 @@ class NeumannBoundaryEquation(Equation):
             beta: 境界での微分値
             is_left: 左境界ならTrue、右境界ならFalse
         """
-        self.beta = beta
-        self.is_left = is_left
+        self.value = value
 
     def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
@@ -111,7 +106,7 @@ class NeumannBoundaryEquation(Equation):
         Returns:
             境界での微分値
         """
-        return self.beta
+        return self.value
 
     def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
@@ -125,7 +120,4 @@ class NeumannBoundaryEquation(Equation):
             境界点の場合True
         """
         n = grid.n_points
-        if self.is_left:
-            return i == 0
-        else:
-            return i == n - 1
+        return i == 0 or i == n - 1
