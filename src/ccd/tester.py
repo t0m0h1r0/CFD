@@ -60,25 +60,36 @@ class CCDTester:
         x_max = self.grid.x_max
         
         # 内部点の方程式を設定
-        system.add_interior_equation(EssentialEquation(test_func.f))
+        system.add_interior_equation(EssentialEquation(k=0,f_func=test_func.f))
+        system.add_interior_equation(EssentialEquation(k=1,f_func=test_func.df))
+        system.add_interior_equation(EssentialEquation(k=2,f_func=test_func.d2f))
+        system.add_interior_equation(EssentialEquation(k=3,f_func=test_func.d3f))
         #system.add_interior_equation(PoissonEquation(test_func.d2f))
-        system.add_interior_equation(Internal1stDerivativeEquation())
-        system.add_interior_equation(Internal2ndDerivativeEquation())
-        system.add_interior_equation(Internal3rdDerivativeEquation())
+        #system.add_interior_equation(Internal1stDerivativeEquation())
+        #system.add_interior_equation(Internal2ndDerivativeEquation())
+        #system.add_interior_equation(Internal3rdDerivativeEquation())
         
         # 左境界の方程式を設定
-        system.add_left_boundary_equation(EssentialEquation(test_func.f))
-        system.add_left_boundary_equation(LeftBoundary1stDerivativeEquation())
-        system.add_left_boundary_equation(LeftBoundary2ndDerivativeEquation())
-        system.add_left_boundary_equation(LeftBoundary3rdDerivativeEquation())
+        system.add_left_boundary_equation(EssentialEquation(k=0,f_func=test_func.f))
+        system.add_left_boundary_equation(EssentialEquation(k=1,f_func=test_func.df))
+        system.add_left_boundary_equation(EssentialEquation(k=2,f_func=test_func.d2f))
+        system.add_left_boundary_equation(EssentialEquation(k=3,f_func=test_func.d3f))
+        #system.add_left_boundary_equation(EssentialEquation(test_func.f))
+        #system.add_left_boundary_equation(LeftBoundary1stDerivativeEquation())
+        #system.add_left_boundary_equation(LeftBoundary2ndDerivativeEquation())
+        #system.add_left_boundary_equation(LeftBoundary3rdDerivativeEquation())
         #system.add_left_boundary_equation(PoissonEquation(test_func.d2f))
         #system.add_left_boundary_equation(DirichletBoundaryEquation(test_func.f(x_min), is_left=True))
         #system.add_left_boundary_equation(NeumannBoundaryEquation(test_func.df(x_min), is_left=True))
 
-        system.add_right_boundary_equation(EssentialEquation(test_func.f))
-        system.add_right_boundary_equation(RightBoundary1stDerivativeEquation())
-        system.add_right_boundary_equation(RightBoundary2ndDerivativeEquation())
-        system.add_right_boundary_equation(RightBoundary3rdDerivativeEquation())     
+        system.add_right_boundary_equation(EssentialEquation(k=0,f_func=test_func.f))
+        system.add_right_boundary_equation(EssentialEquation(k=1,f_func=test_func.df))
+        system.add_right_boundary_equation(EssentialEquation(k=2,f_func=test_func.d2f))
+        system.add_right_boundary_equation(EssentialEquation(k=3,f_func=test_func.d3f))
+        #system.add_right_boundary_equation(EssentialEquation(test_func.f))
+        #system.add_right_boundary_equation(RightBoundary1stDerivativeEquation())
+        #system.add_right_boundary_equation(RightBoundary2ndDerivativeEquation())
+        #system.add_right_boundary_equation(RightBoundary3rdDerivativeEquation())     
         #system.add_right_boundary_equation(PoissonEquation(test_func.d2f))
         #system.add_right_boundary_equation(DirichletBoundaryEquation(test_func.f(x_max), is_left=False))
         #system.add_right_boundary_equation(NeumannBoundaryEquation(test_func.df(x_max), is_left=False))
@@ -86,6 +97,7 @@ class CCDTester:
         
         # ソルバーを作成して解く
         solver = CCDSolver(system, self.grid)
+        solver.set_rehu_scaling()
         psi, psi_prime, psi_second, psi_third = solver.solve()
         
         # 解析解を計算
@@ -94,6 +106,7 @@ class CCDTester:
         exact_psi_prime = cp.array([test_func.df(xi) for xi in x])
         exact_psi_second = cp.array([test_func.d2f(xi) for xi in x])
         exact_psi_third = cp.array([test_func.d3f(xi) for xi in x])
+        print(exact_psi,x)
         
         # 誤差を計算（CuPy配列のまま）
         err_psi = float(cp.max(cp.abs(psi - exact_psi)))

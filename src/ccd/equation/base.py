@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 import cupy as cp
 from typing import Dict, Optional, TypeVar, Type
+from grid import Grid
 
 # Type variable for self-referencing
 T = TypeVar('T', bound='Equation')
@@ -10,14 +11,13 @@ class Equation(ABC):
     """差分方程式の基底クラス"""
     
     @abstractmethod
-    def get_stencil_coefficients(self, i: int, n: int, h: float) -> Dict[int, cp.ndarray]:
+    def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         グリッド点iにおけるステンシル係数を返す
         
         Args:
+            grid: 計算格子
             i: グリッド点のインデックス
-            n: グリッド点の総数
-            h: グリッド間隔
             
         Returns:
             {offset: coeffs, ...} の辞書
@@ -27,13 +27,31 @@ class Equation(ABC):
         pass
     
     @abstractmethod
-    def get_rhs(self, i: int, n: int, h: float) -> float:
-        """方程式の右辺を返す"""
+    def get_rhs(self, grid: Grid, i: int) -> float:
+        """
+        方程式の右辺を返す
+        
+        Args:
+            grid: 計算格子
+            i: グリッド点のインデックス
+            
+        Returns:
+            右辺の値
+        """
         pass
     
     @abstractmethod
-    def is_valid_at(self, i: int, n: int) -> bool:
-        """方程式がグリッド点iに適用可能かを判定"""
+    def is_valid_at(self, grid: Grid, i: int) -> bool:
+        """
+        方程式がグリッド点iに適用可能かを判定
+        
+        Args:
+            grid: 計算格子
+            i: グリッド点のインデックス
+            
+        Returns:
+            方程式が適用可能な場合True
+        """
         pass
     
     def __add__(self: T, other: T) -> 'CombinedEquation':
@@ -125,21 +143,20 @@ class CombinedEquation(Equation):
         self.eq2 = eq2
         self.operation = operation
     
-    def get_stencil_coefficients(self, i: int, n: int, h: float) -> Dict[int, cp.ndarray]:
+    def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         組み合わせた方程式のステンシル係数を計算
         
         Args:
+            grid: 計算格子
             i: グリッド点のインデックス
-            n: グリッド点の総数
-            h: グリッド間隔
             
         Returns:
             組み合わせた係数の辞書
         """
         # 両方の方程式からステンシル係数を取得
-        coeffs1 = self.eq1.get_stencil_coefficients(i, n, h)
-        coeffs2 = self.eq2.get_stencil_coefficients(i, n, h)
+        coeffs1 = self.eq1.get_stencil_coefficients(grid, i)
+        coeffs2 = self.eq2.get_stencil_coefficients(grid, i)
         
         # 組み合わせた係数を格納する辞書
         combined_coeffs = {}
@@ -161,39 +178,38 @@ class CombinedEquation(Equation):
         
         return combined_coeffs
     
-    def get_rhs(self, i: int, n: int, h: float) -> float:
+    def get_rhs(self, grid: Grid, i: int) -> float:
         """
         組み合わせた方程式の右辺を計算
         
         Args:
+            grid: 計算格子
             i: グリッド点のインデックス
-            n: グリッド点の総数
-            h: グリッド間隔
             
         Returns:
             組み合わせた右辺の値
         """
-        rhs1 = self.eq1.get_rhs(i, n, h)
-        rhs2 = self.eq2.get_rhs(i, n, h)
+        rhs1 = self.eq1.get_rhs(grid, i)
+        rhs2 = self.eq2.get_rhs(grid, i)
         
         if self.operation == '+':
             return rhs1 + rhs2
         else:  # self.operation == '-'
             return rhs1 - rhs2
     
-    def is_valid_at(self, i: int, n: int) -> bool:
+    def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         組み合わせた方程式が適用可能かを判定
         
         Args:
+            grid: 計算格子
             i: グリッド点のインデックス
-            n: グリッド点の総数
             
         Returns:
             両方の方程式が適用可能な場合にTrue
         """
         # 両方の方程式が適用可能である必要がある
-        return self.eq1.is_valid_at(i, n) and self.eq2.is_valid_at(i, n)
+        return self.eq1.is_valid_at(grid, i) and self.eq2.is_valid_at(grid, i)
 
 
 class ScaledEquation(Equation):
@@ -210,48 +226,46 @@ class ScaledEquation(Equation):
         self.equation = equation
         self.scalar = scalar
     
-    def get_stencil_coefficients(self, i: int, n: int, h: float) -> Dict[int, cp.ndarray]:
+    def get_stencil_coefficients(self, grid: Grid, i: int) -> Dict[int, cp.ndarray]:
         """
         スケールされた方程式のステンシル係数を計算
         
         Args:
+            grid: 計算格子
             i: グリッド点のインデックス
-            n: グリッド点の総数
-            h: グリッド間隔
             
         Returns:
             スケールされた係数の辞書
         """
-        coeffs = self.equation.get_stencil_coefficients(i, n, h)
+        coeffs = self.equation.get_stencil_coefficients(grid, i)
         
         # 各係数をスカラー倍
         scaled_coeffs = {offset: self.scalar * coeff for offset, coeff in coeffs.items()}
         
         return scaled_coeffs
     
-    def get_rhs(self, i: int, n: int, h: float) -> float:
+    def get_rhs(self, grid: Grid, i: int) -> float:
         """
         スケールされた方程式の右辺を計算
         
         Args:
+            grid: 計算格子
             i: グリッド点のインデックス
-            n: グリッド点の総数
-            h: グリッド間隔
             
         Returns:
             スケールされた右辺の値
         """
-        return self.scalar * self.equation.get_rhs(i, n, h)
+        return self.scalar * self.equation.get_rhs(grid, i)
     
-    def is_valid_at(self, i: int, n: int) -> bool:
+    def is_valid_at(self, grid: Grid, i: int) -> bool:
         """
         スケールされた方程式が適用可能かを判定
         
         Args:
+            grid: 計算格子
             i: グリッド点のインデックス
-            n: グリッド点の総数
             
         Returns:
             元の方程式が適用可能な場合にTrue
         """
-        return self.equation.is_valid_at(i, n)
+        return self.equation.is_valid_at(grid, i)
