@@ -1,5 +1,5 @@
 import cupy as cp
-from .base import Equation
+from .base1d import Equation
 
 class EssentialEquation(Equation):
     """特定の未知数に対する基本方程式"""

@@ -2,11 +2,11 @@
 import argparse
 import os
 from typing import Tuple, Optional, Dict, Any
-from grid import Grid
-from tester import CCDTester
-from test_functions import TestFunctionFactory
-from visualization import CCDVisualizer
-from equation_sets import EquationSet
+from grid1d import Grid
+from tester1d import CCDTester
+from test_functions1d import TestFunctionFactory
+from visualization1d import CCDVisualizer
+from equation_sets1d import EquationSet
 
 
 def parse_args():
@@ -118,8 +118,6 @@ def run_convergence_test(
     func_name: str,
     x_range: Tuple[float, float],
     prefix: str,
-    dpi: int,
-    show: bool,
     solver_method: str = "direct",
     solver_options: Optional[Dict[str, Any]] = None,
     analyze_matrix: bool = False,
@@ -175,8 +173,6 @@ def run_convergence_test(
         results,
         prefix=prefix,
         save=True,
-        show=show,
-        dpi=dpi,
     )
 
 
@@ -185,8 +181,6 @@ def test_all_functions(
     x_range: Tuple[float, float],
     visualize: bool,
     prefix: str,
-    dpi: int,
-    show: bool,
     solver_method: str = "direct",
     solver_options: Optional[Dict[str, Any]] = None,
     analyze_matrix: bool = False,
@@ -248,8 +242,6 @@ def test_all_functions(
                 results["errors"],
                 prefix=f"{prefix}_{func.name.lower()}" if prefix else func.name.lower(),
                 save=True,
-                show=show,
-                dpi=dpi,
             )
 
     print("-" * 80)
@@ -257,7 +249,7 @@ def test_all_functions(
     # すべての関数の誤差を比較するグラフを生成
     if visualize:
         visualizer.compare_all_functions_errors(
-            results_summary, prefix=prefix, dpi=dpi, show=show
+            results_summary, prefix=prefix,
         )
 
     return results_summary
@@ -280,8 +272,6 @@ def run_cli():
             tuple(args.x_range),
             not args.no_visualization,
             args.prefix,
-            args.dpi,
-            args.show,
             args.solver,
             solver_options,
             args.analyze_matrix,
@@ -295,8 +285,6 @@ def run_cli():
             args.test_func,
             tuple(args.x_range),
             args.prefix,
-            args.dpi,
-            args.show,
             args.solver,
             solver_options,
             args.analyze_matrix,
@@ -349,8 +337,6 @@ def run_cli():
             results["errors"],
             prefix=args.prefix,
             save=True,
-            show=args.show,
-            dpi=args.dpi,
         )
 
 
