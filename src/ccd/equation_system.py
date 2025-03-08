@@ -1,12 +1,13 @@
 # equation_system.py
 import cupy as cp
-from typing import List, Tuple
+import cupyx.scipy.sparse as sp
+from typing import List, Tuple, Dict
 from equation.base import Equation
 from grid import Grid
 
 
 class EquationSystem:
-    """方程式システムを管理するクラス"""
+    """方程式システムを管理するクラス (スパース行列最適化版)"""
 
     def __init__(self, grid: Grid):
         """
@@ -38,13 +39,24 @@ class EquationSystem:
         self.interior_equations.append(equation)
         self.right_boundary_equations.append(equation)
 
-    def build_matrix_system(self) -> Tuple[cp.ndarray, cp.ndarray]:
-        """行列システムを構築"""
+    def build_matrix_system(self) -> Tuple[sp.csr_matrix, cp.ndarray]:
+        """
+        スパース行列システムを構築
+        
+        Returns:
+            Tuple[sp.csr_matrix, cp.ndarray]: スパース行列Aとベクトルbのタプル
+        """
         n = self.grid.n_points
 
         # マトリックスサイズ: 各点に4つの値 (psi, psi', psi'', psi''') がある
         size = 4 * n
-        A = cp.zeros((size, size))
+        
+        # 疎行列用の座標形式データを格納するリスト
+        data = []      # 非ゼロ値
+        row_indices = []  # 行インデックス
+        col_indices = []  # 列インデックス
+        
+        # 右辺ベクトル
         b = cp.zeros(size)
 
         # 各格子点での方程式を評価
@@ -84,13 +96,58 @@ class EquationSystem:
 
                     # インデックスが有効範囲内かチェック
                     if 0 <= j < n:
-                        # 係数を行列の適切な位置に設定
-                        A[i * 4 + k, j * 4 : (j + 1) * 4] = coeffs
+                        # 係数を疎行列形式で格納
+                        for l, coeff in enumerate(coeffs):
+                            if coeff != 0.0:  # ゼロでない要素のみ格納
+                                row_indices.append(i * 4 + k)
+                                col_indices.append(j * 4 + l)
+                                data.append(coeff)
 
                 # 右辺ベクトルを設定
                 b[i * 4 + k] = rhs_value
-        '''
-        cp.set_printoptions(precision=2,suppress=True,linewidth=300)
-        print(A)
-        '''
+
+        # COO形式からCSR形式のスパース行列を構築
+        A = sp.csr_matrix(
+            (cp.array(data), (cp.array(row_indices), cp.array(col_indices))), 
+            shape=(size, size)
+        )
+
         return A, b
+
+    def analyze_sparsity(self) -> Dict:
+        """
+        行列の疎性を分析し、統計情報を返す
+        
+        Returns:
+            Dict: 疎性の統計情報を含む辞書
+        """
+        A, _ = self.build_matrix_system()
+        size = A.shape[0]
+        nnz = A.nnz  # 非ゼロ要素数
+        density = nnz / (size * size)
+        
+        # ステンシル構造の分析（行ごとの非ゼロ要素数の平均と最大）
+        row_nnz = cp.diff(A.indptr)
+        avg_row_nnz = float(cp.mean(row_nnz))
+        max_row_nnz = int(cp.max(row_nnz))
+        
+        # バンド幅の推定
+        if nnz > 0:
+            row_indices = cp.zeros(nnz, dtype=cp.int32)
+            for i in range(size):
+                row_indices[A.indptr[i]:A.indptr[i+1]] = i
+            col_indices = A.indices
+            bandwidth = int(cp.max(cp.abs(row_indices - col_indices))) + 1
+        else:
+            bandwidth = 0
+            
+        return {
+            "size": size,
+            "nonzeros": nnz,
+            "density": density,
+            "avg_nonzeros_per_row": avg_row_nnz,
+            "max_nonzeros_per_row": max_row_nnz,
+            "estimated_bandwidth": bandwidth,
+            "memory_dense_MB": size * size * 8 / (1024 * 1024),  # 8バイト/要素と仮定
+            "memory_sparse_MB": (nnz + size + 1) * 8 / (1024 * 1024)  # CSR形式の概算
+        }

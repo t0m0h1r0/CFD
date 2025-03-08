@@ -1,10 +1,11 @@
 # matrix_scaling.py
 import cupy as cp
-from typing import Tuple
+import cupyx.scipy.sparse as sp
+from typing import Tuple, Optional, Union
 
 
 class MatrixRehuScaling:
-    """行列システム全体に対してReynolds-Hugoniotスケーリングを適用するクラス"""
+    """行列システム全体に対してReynolds-Hugoniotスケーリングを適用するクラス (スパース行列最適化版)"""
 
     def __init__(
         self,
@@ -26,31 +27,39 @@ class MatrixRehuScaling:
         self.rehu_number = rehu_number
 
     def scale_matrix_system(
-        self, A: cp.ndarray, b: cp.ndarray, n_points: int
-    ) -> Tuple[cp.ndarray, cp.ndarray]:
+        self, A: Union[cp.ndarray, sp.spmatrix], b: cp.ndarray, n_points: int
+    ) -> Tuple[Union[cp.ndarray, sp.spmatrix], cp.ndarray]:
         """
-        行列システム全体に対してスケーリングを適用
+        行列システム全体に対してスケーリングを適用 (スパースおよび密行列対応)
 
         Args:
-            A: 元の係数行列
+            A: 元の係数行列（スパースまたは密）
             b: 元の右辺ベクトル
             n_points: グリッド点の数
 
         Returns:
             スケーリングされた行列システム (A_scaled, b_scaled)
         """
-        # 行列のサイズを取得
-        n_rows, n_cols = A.shape
-
         # スケーリング行列の作成
         S = self._create_scaling_matrix(n_points)
-
-        # 行列システムのスケーリング
-        # A' = S⁻¹ A S
-        # b' = S⁻¹ b
-        S_inv = cp.linalg.inv(S)  # あるいはS_invを直接計算することも可能
-
-        A_scaled = S_inv @ A @ S
+        S_inv = cp.linalg.inv(S)  # 逆行列
+        
+        # 行列がスパースかどうか判定
+        is_sparse = isinstance(A, sp.spmatrix)
+        
+        if is_sparse:
+            # スパース行列用のスケーリング
+            # 対角スケーリング行列を使用して効率的に計算
+            S_diag = sp.dia_matrix((S.diagonal(), [0]), shape=S.shape)
+            S_inv_diag = sp.dia_matrix((S_inv.diagonal(), [0]), shape=S_inv.shape)
+            
+            # A' = S⁻¹ A S の計算
+            A_scaled = S_inv_diag @ A @ S_diag
+        else:
+            # 密行列用のスケーリング
+            A_scaled = S_inv @ A @ S
+        
+        # 右辺ベクトルのスケーリング
         b_scaled = S_inv @ b
 
         return A_scaled, b_scaled
@@ -88,7 +97,7 @@ class MatrixRehuScaling:
         # 行列のサイズ (各点に4つの未知数: ψ, ψ', ψ'', ψ''')
         n = 4 * n_points
 
-        # 対角行列を初期化
+        # 対角行列を初期化 (密行列で十分、後でスパース対角行列に変換可能)
         S = cp.eye(n)
 
         # Reynolds-Hugoniot則に基づくスケーリング係数を設定
