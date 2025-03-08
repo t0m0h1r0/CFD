@@ -1,6 +1,6 @@
 # tester.py
 import cupy as cp
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from grid import Grid
 from solver import CCDSolver
 from equation_system import EquationSystem
@@ -38,6 +38,22 @@ class CCDTester:
         self.grid = grid
         self.system = None
         self.solver = None
+        self.solver_method = "direct"
+        self.solver_options = None
+        self.analyze_matrix = False
+
+    def set_solver_options(self, method: str, options: Dict[str, Any], analyze_matrix: bool = False):
+        """
+        ソルバーの種類とオプションを設定
+
+        Args:
+            method: ソルバーの種類 ('direct', 'gmres', 'bicgstab', 'cg')
+            options: ソルバーのオプション
+            analyze_matrix: 行列の疎性を分析するかどうか
+        """
+        self.solver_method = method
+        self.solver_options = options
+        self.analyze_matrix = analyze_matrix
 
     def setup_equation_system(self, test_func: TestFunction, use_dirichlet: bool = True, 
                              use_neumann: bool = True, rehu_number: Optional[float] = None):
@@ -97,6 +113,10 @@ class CCDTester:
         else:
             self.solver.system = self.system  # システム参照を更新
 
+        # ソルバーの設定
+        if self.solver_method != "direct" or self.solver_options:
+            self.solver.set_solver(method=self.solver_method, options=self.solver_options)
+
         # Rehuスケーリングの設定
         if rehu_number is not None:
             self.solver.set_rehu_scaling(
@@ -127,8 +147,12 @@ class CCDTester:
         # 方程式システムとソルバーを設定
         self.setup_equation_system(test_func, use_dirichlet, use_neumann, rehu_number)
 
+        # 行列を分析（オプション）
+        if self.analyze_matrix:
+            self.solver.analyze_system()
+
         # 解く
-        psi, psi_prime, psi_second, psi_third = self.solver.solve()
+        psi, psi_prime, psi_second, psi_third = self.solver.solve(analyze_before_solve=False)
 
         # 解析解を計算
         x = self.grid.get_points()
@@ -176,12 +200,20 @@ class CCDTester:
         """
         results = {}
 
+        # 現在のソルバー設定を保存
+        original_method = self.solver_method
+        original_options = self.solver_options
+        original_analyze = self.analyze_matrix
+
         for n in grid_sizes:
             # グリッドを作成
             grid = Grid(n, x_range)
 
             # このクラスのインスタンスを新しいグリッドで作成
             tester = CCDTester(grid)
+            
+            # ソルバー設定を引き継ぐ
+            tester.set_solver_options(original_method, original_options, original_analyze)
 
             # テストを実行
             result = tester.run_test_with_options(
