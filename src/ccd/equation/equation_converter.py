@@ -219,11 +219,9 @@ class DirectionalEquation2D(Equation2D):
         # 方向に応じたインデックスと座標値を選択
         if self.direction == 'x':
             # x方向の場合は1次元方程式にiを渡す
-            i_1d = i
             is_boundary = i == 0 or i == self.grid.nx_points - 1
         else:  # self.direction == 'y'
             # y方向の場合は1次元方程式にjを渡す
-            i_1d = j
             is_boundary = j == 0 or j == self.grid.ny_points - 1
         
         # 境界点で特定方向のみの場合は右辺値を0とする
@@ -251,12 +249,12 @@ class DirectionalEquation2D(Equation2D):
             point = self.grid.get_point(i, j)[0]  # x座標のみ
             h = self.grid.get_spacing()[0]
             n = self.grid.nx_points
-            emulated_grid = Grid1DEmulator([point], h, n)
+            Grid1DEmulator([point], h, n)
         else:  # self.direction == 'y'
             point = self.grid.get_point(i, j)[1]  # y座標のみ
             h = self.grid.get_spacing()[1]
             n = self.grid.ny_points
-            emulated_grid = Grid1DEmulator([point], h, n)
+            Grid1DEmulator([point], h, n)
         
         # 1次元方程式から右辺値を取得
         return self.equation_1d.get_rhs(0)  # インデックスは常に0
@@ -292,7 +290,7 @@ class DirectionalEquation2D(Equation2D):
                     return False
             
             # 1次元方程式のvalid判定を使用
-            emulated_grid = Grid1DEmulator(self.grid.nx_points)
+            Grid1DEmulator(self.grid.nx_points)
             return self.equation_1d.is_valid_at(i)
             
         else:  # self.direction == 'y'
@@ -303,7 +301,7 @@ class DirectionalEquation2D(Equation2D):
                     return False
             
             # 1次元方程式のvalid判定を使用
-            emulated_grid = Grid1DEmulator(self.grid.ny_points)
+            Grid1DEmulator(self.grid.ny_points)
             return self.equation_1d.is_valid_at(j)
 
 
