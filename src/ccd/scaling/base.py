@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-import cupy as cp
 
 class BaseScaling(ABC):
     """行列スケーリング手法の基底クラス

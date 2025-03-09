@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import cm
 
 class CCD2DVisualizer:
     """CCDソルバーの2D結果を可視化するクラス"""

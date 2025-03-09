@@ -1,7 +1,6 @@
 import os
 import importlib
 import inspect
-import sys
 from pathlib import Path
 from .base import BaseScaling
 
