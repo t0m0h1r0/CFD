@@ -93,19 +93,19 @@ class Poisson2DEquationSet(EquationSet2D):
         
         # 内部点の方程式 - 1次元方程式を各方向に拡張
         # X方向
-        system.add_interior_equation(converter.to_x(Internal1stDerivativeEquation()))
-        system.add_interior_equation(converter.to_x(Internal2ndDerivativeEquation()))
-        system.add_interior_equation(converter.to_x(Internal3rdDerivativeEquation()))
+        system.add_interior_x_equation(converter.to_x(Internal1stDerivativeEquation()))
+        system.add_interior_x_equation(converter.to_x(Internal2ndDerivativeEquation()))
+        system.add_interior_x_equation(converter.to_x(Internal3rdDerivativeEquation()))
         
         # Y方向
-        system.add_interior_equation(converter.to_y(Internal1stDerivativeEquation()))
-        system.add_interior_equation(converter.to_y(Internal2ndDerivativeEquation()))
-        system.add_interior_equation(converter.to_y(Internal3rdDerivativeEquation()))
+        system.add_interior_y_equation(converter.to_y(Internal1stDerivativeEquation()))
+        system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation()))
+        system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation()))
         
         # 境界点の方程式 - 1次元と同様の考え方
         # 左境界 (i=0)
-        #system.add_left_boundary_equation(DirichletXBoundaryEquation2D(value=left_values))
-        system.add_left_boundary_equation(converter.to_x(LeftBoundary1stDerivativeEquation()))
+        system.add_left_boundary_equation(DirichletXBoundaryEquation2D(value=left_values))
+        #system.add_left_boundary_equation(converter.to_x(LeftBoundary1stDerivativeEquation()))
         system.add_left_boundary_equation(converter.to_x(LeftBoundary2ndDerivativeEquation()))
         system.add_left_boundary_equation(converter.to_x(
             LeftBoundary1stDerivativeEquation()
@@ -158,14 +158,14 @@ class Derivative2DEquationSet(EquationSet2D):
         # X方向微分
         # 内部点の方程式 - 1次元方程式を各方向に拡張
         # X方向
-        system.add_interior_equation(converter.to_x(Internal1stDerivativeEquation()))
-        system.add_interior_equation(converter.to_x(Internal2ndDerivativeEquation()))
-        system.add_interior_equation(converter.to_x(Internal3rdDerivativeEquation()))
+        system.add_interior_x_equation(converter.to_x(Internal1stDerivativeEquation()))
+        system.add_interior_x_equation(converter.to_x(Internal2ndDerivativeEquation()))
+        system.add_interior_x_equation(converter.to_x(Internal3rdDerivativeEquation()))
         
         # Y方向
-        system.add_interior_equation(converter.to_y(Internal1stDerivativeEquation()))
-        system.add_interior_equation(converter.to_y(Internal2ndDerivativeEquation()))
-        system.add_interior_equation(converter.to_y(Internal3rdDerivativeEquation()))
+        system.add_interior_y_equation(converter.to_y(Internal1stDerivativeEquation()))
+        system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation()))
+        system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation()))
         
         # 境界点の方程式 - 1次元と同様の考え方
         # 左境界 (i=0)

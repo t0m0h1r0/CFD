@@ -28,10 +28,18 @@ class EquationSystem2D:
         self.left_top_equations = []         # i = 0, j = ny-1
         self.right_top_equations = []        # i = nx-1, j = ny-1
     
-    def add_interior_equation(self, equation):
+    def add_interior_x_equation(self, equation):
         """内部点の方程式を追加"""
         self.interior_equations.append(equation)
+        self.bottom_boundary_equations.append(equation)
+        self.top_boundary_equations.append(equation)
     
+    def add_interior_y_equation(self, equation):
+        """内部点の方程式を追加"""
+        self.interior_equations.append(equation)
+        self.left_boundary_equations.append(equation)
+        self.right_boundary_equations.append(equation)
+
     def add_left_boundary_equation(self, equation):
         """左境界の方程式を追加 (i=0)"""
         self.left_boundary_equations.append(equation)
@@ -59,23 +67,7 @@ class EquationSystem2D:
         # 上側の角にも同じ方程式を追加
         self.left_top_equations.append(equation)
         self.right_top_equations.append(equation)
-    
-    def add_left_bottom_equation(self, equation):
-        """左下の角の方程式を追加 (i=0, j=0)"""
-        self.left_bottom_equations.append(equation)
-    
-    def add_right_bottom_equation(self, equation):
-        """右下の角の方程式を追加 (i=nx-1, j=0)"""
-        self.right_bottom_equations.append(equation)
-    
-    def add_left_top_equation(self, equation):
-        """左上の角の方程式を追加 (i=0, j=ny-1)"""
-        self.left_top_equations.append(equation)
-    
-    def add_right_top_equation(self, equation):
-        """右上の角の方程式を追加 (i=nx-1, j=ny-1)"""
-        self.right_top_equations.append(equation)
-        
+
     def add_equation(self, equation):
         """全ての型の方程式リストに追加"""
         self.interior_equations.append(equation)
