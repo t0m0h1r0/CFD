@@ -126,14 +126,14 @@ class Poisson2DEquationSet(EquationSet2D):
         
         # 内部点の方程式 - 1次元方程式を各方向に拡張（gridも渡す）
         # X方向
-        system.add_interior_x_equation(converter.to_x(Internal1stDerivativeEquation(grid), grid=grid))
-        system.add_interior_x_equation(converter.to_x(Internal2ndDerivativeEquation(grid), grid=grid))
-        system.add_interior_x_equation(converter.to_x(Internal3rdDerivativeEquation(grid), grid=grid))
+        system.add_interior_x_equation(converter.to_x(Internal1stDerivativeEquation(), grid=grid))
+        system.add_interior_x_equation(converter.to_x(Internal2ndDerivativeEquation(), grid=grid))
+        system.add_interior_x_equation(converter.to_x(Internal3rdDerivativeEquation(), grid=grid))
         
         # Y方向
-        system.add_interior_y_equation(converter.to_y(Internal1stDerivativeEquation(grid), grid=grid))
-        system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation(grid), grid=grid))
-        system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation(grid), grid=grid))
+        system.add_interior_y_equation(converter.to_y(Internal1stDerivativeEquation(), grid=grid))
+        system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation(), grid=grid))
+        system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation(), grid=grid))
         
         # 境界点の方程式 - gridを渡す
         # 左境界 (i=0)
@@ -141,9 +141,9 @@ class Poisson2DEquationSet(EquationSet2D):
         system.add_left_boundary_equation(NeumannXBoundaryEquation2D(value=d_left_values, grid=grid))
         # 左境界の補助方程式（複合）
         left_combined = (
-            LeftBoundary1stDerivativeEquation(grid) +
-            LeftBoundary2ndDerivativeEquation(grid) +
-            LeftBoundary3rdDerivativeEquation(grid)
+            LeftBoundary1stDerivativeEquation() +
+            LeftBoundary2ndDerivativeEquation() +
+            LeftBoundary3rdDerivativeEquation()
         )
         system.add_left_boundary_equation(converter.to_x(left_combined, grid=grid))
                 
@@ -152,9 +152,9 @@ class Poisson2DEquationSet(EquationSet2D):
         system.add_right_boundary_equation(NeumannXBoundaryEquation2D(value=d_right_values, grid=grid))
         # 右境界の補助方程式（複合）
         right_combined = (
-            RightBoundary1stDerivativeEquation(grid) +
-            RightBoundary2ndDerivativeEquation(grid) +
-            RightBoundary3rdDerivativeEquation(grid)
+            RightBoundary1stDerivativeEquation() +
+            RightBoundary2ndDerivativeEquation() +
+            RightBoundary3rdDerivativeEquation()
         )
         system.add_right_boundary_equation(converter.to_x(right_combined, grid=grid))
                 
@@ -163,9 +163,9 @@ class Poisson2DEquationSet(EquationSet2D):
         system.add_bottom_boundary_equation(NeumannYBoundaryEquation2D(value=d_bottom_values, grid=grid))
         # 下境界の補助方程式（複合）
         bottom_combined = (
-            LeftBoundary1stDerivativeEquation(grid) +
-            LeftBoundary2ndDerivativeEquation(grid) +
-            LeftBoundary3rdDerivativeEquation(grid)
+            LeftBoundary1stDerivativeEquation() +
+            LeftBoundary2ndDerivativeEquation() +
+            LeftBoundary3rdDerivativeEquation()
         )
         system.add_bottom_boundary_equation(converter.to_y(bottom_combined, grid=grid))
                 
@@ -174,9 +174,9 @@ class Poisson2DEquationSet(EquationSet2D):
         system.add_top_boundary_equation(NeumannYBoundaryEquation2D(value=d_top_values, grid=grid))
         # 上境界の補助方程式（複合）
         top_combined = (
-            RightBoundary1stDerivativeEquation(grid) +
-            RightBoundary2ndDerivativeEquation(grid) +
-            RightBoundary3rdDerivativeEquation(grid)
+            RightBoundary1stDerivativeEquation() +
+            RightBoundary2ndDerivativeEquation() +
+            RightBoundary3rdDerivativeEquation()
         )
         system.add_top_boundary_equation(converter.to_y(top_combined, grid=grid))
         
@@ -206,32 +206,32 @@ class Derivative2DEquationSet(EquationSet2D):
         
         # 内部点の方程式 - 1次元方程式を各方向に拡張（gridも渡す）
         # X方向
-        system.add_interior_x_equation(converter.to_x(Internal1stDerivativeEquation(grid), grid=grid))
-        system.add_interior_x_equation(converter.to_x(Internal2ndDerivativeEquation(grid), grid=grid))
-        system.add_interior_x_equation(converter.to_x(Internal3rdDerivativeEquation(grid), grid=grid))
+        system.add_interior_x_equation(converter.to_x(Internal1stDerivativeEquation(), grid=grid))
+        system.add_interior_x_equation(converter.to_x(Internal2ndDerivativeEquation(), grid=grid))
+        system.add_interior_x_equation(converter.to_x(Internal3rdDerivativeEquation(), grid=grid))
         
         # Y方向
-        system.add_interior_y_equation(converter.to_y(Internal1stDerivativeEquation(grid), grid=grid))
-        system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation(grid), grid=grid))
-        system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation(grid), grid=grid))
+        system.add_interior_y_equation(converter.to_y(Internal1stDerivativeEquation(), grid=grid))
+        system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation(), grid=grid))
+        system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation(), grid=grid))
         
         # 境界点の方程式 - 1次元方程式を各方向に拡張（gridも渡す）
         # 左境界 (i=0)
-        system.add_left_boundary_equation(converter.to_x(LeftBoundary1stDerivativeEquation(grid), grid=grid))
-        system.add_left_boundary_equation(converter.to_x(LeftBoundary2ndDerivativeEquation(grid), grid=grid))
-        system.add_left_boundary_equation(converter.to_x(LeftBoundary3rdDerivativeEquation(grid), grid=grid))
+        system.add_left_boundary_equation(converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid))
+        system.add_left_boundary_equation(converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid))
+        system.add_left_boundary_equation(converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid))
         
         # 右境界 (i=nx-1)
-        system.add_right_boundary_equation(converter.to_x(RightBoundary1stDerivativeEquation(grid), grid=grid))
-        system.add_right_boundary_equation(converter.to_x(RightBoundary2ndDerivativeEquation(grid), grid=grid))
-        system.add_right_boundary_equation(converter.to_x(RightBoundary3rdDerivativeEquation(grid), grid=grid))
+        system.add_right_boundary_equation(converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid))
+        system.add_right_boundary_equation(converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid))
+        system.add_right_boundary_equation(converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid))
         
         # 下境界 (j=0)
-        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary1stDerivativeEquation(grid), grid=grid))
-        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary2ndDerivativeEquation(grid), grid=grid))
-        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary3rdDerivativeEquation(grid), grid=grid))
+        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid))
+        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid))
+        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid))
                 
         # 上境界 (j=ny-1)
-        system.add_top_boundary_equation(converter.to_y(RightBoundary1stDerivativeEquation(grid), grid=grid))
-        system.add_top_boundary_equation(converter.to_y(RightBoundary2ndDerivativeEquation(grid), grid=grid))
-        system.add_top_boundary_equation(converter.to_y(RightBoundary3rdDerivativeEquation(grid), grid=grid))
+        system.add_top_boundary_equation(converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid))
+        system.add_top_boundary_equation(converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid))
+        system.add_top_boundary_equation(converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid))
