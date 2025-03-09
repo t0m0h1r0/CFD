@@ -20,7 +20,7 @@ class CCD2DVisualizer:
     
     def visualize_solution(self, grid, function_name, numerical, exact, errors, prefix="", save=True, show=False, dpi=150):
         """
-        2Dソリューションを可視化
+        2Dソリューションを可視化（平面図として、すべての解を1ファイルにまとめる）
         
         Args:
             grid: Grid2D オブジェクト
@@ -46,66 +46,72 @@ class CCD2DVisualizer:
         # 可視化するソリューションのリスト
         solution_names = ["ψ", "ψ_x", "ψ_y", "ψ_xx", "ψ_yy", "ψ_xxx", "ψ_yyy"]
         
-        # マルチページの図を作成
-        len(solution_names)
+        # すべての解を1つの図にまとめる
+        fig, axes = plt.subplots(len(solution_names), 3, figsize=(15, 4*len(solution_names)))
         
-        for sol_idx, (name, num, ex, err) in enumerate(zip(solution_names, numerical, exact, errors)):
-            fig = plt.figure(figsize=(15, 5))
-            
-            # 数値解
-            ax1 = fig.add_subplot(1, 3, 1, projection='3d')
+        # カラーマップ
+        cmap_sol = 'viridis'
+        cmap_err = 'hot'
+        
+        for i, (name, num, ex, err) in enumerate(zip(solution_names, numerical, exact, errors)):
             num_np = to_numpy(num)
-            ax1.plot_surface(X_np, Y_np, num_np, cmap=cm.viridis, alpha=0.8)
-            ax1.set_title(f"{name} (Numerical Solution)")
-            ax1.set_xlabel('X')
-            ax1.set_ylabel('Y')
-            
-            # 厳密解
-            ax2 = fig.add_subplot(1, 3, 2, projection='3d')
             ex_np = to_numpy(ex)
-            ax2.plot_surface(X_np, Y_np, ex_np, cmap=cm.viridis, alpha=0.8)
-            ax2.set_title(f"{name} (Exact Solution)")
-            ax2.set_xlabel('X')
-            ax2.set_ylabel('Y')
-            
-            # 誤差
-            ax3 = fig.add_subplot(1, 3, 3)
             error_np = to_numpy(np.abs(num - ex))
-            im = ax3.pcolormesh(X_np, Y_np, error_np, cmap='hot', shading='auto')
-            fig.colorbar(im, ax=ax3)
-            ax3.set_title(f"{name} Error (Max: {err:.2e})")
-            ax3.set_xlabel('X')
-            ax3.set_ylabel('Y')
             
-            plt.suptitle(f"{function_name} Function: {name} ({nx_points}x{ny_points} points)")
-            plt.tight_layout()
+            # 同じカラーバーの範囲を使用するため、最小値と最大値を計算
+            vmin = min(np.min(num_np), np.min(ex_np))
+            vmax = max(np.max(num_np), np.max(ex_np))
             
-            # 保存ファイル名
-            if save:
-                # 各ソリューションタイプ用に個別のファイル名を生成
-                solution_type = name.replace("ψ", "psi").replace("'", "p").replace("''", "pp").replace("'''", "ppp")
-                filepath = self.generate_filename(
-                    f"{function_name}_{solution_type}", 
-                    nx_points, 
-                    ny_points, 
-                    prefix
-                )
-                plt.savefig(filepath, dpi=dpi)
+            # Numerical solution
+            im1 = axes[i, 0].contourf(X_np, Y_np, num_np, 50, cmap=cmap_sol, vmin=vmin, vmax=vmax)
+            axes[i, 0].set_title(f"{name} (Numerical)")
+            axes[i, 0].set_xlabel('X')
+            axes[i, 0].set_ylabel('Y')
+            plt.colorbar(im1, ax=axes[i, 0])
             
-            if show:
-                plt.show()
-            else:
-                plt.close(fig)
+            # Exact solution
+            im2 = axes[i, 1].contourf(X_np, Y_np, ex_np, 50, cmap=cmap_sol, vmin=vmin, vmax=vmax)
+            axes[i, 1].set_title(f"{name} (Exact)")
+            axes[i, 1].set_xlabel('X')
+            axes[i, 1].set_ylabel('Y')
+            plt.colorbar(im2, ax=axes[i, 1])
+            
+            # Error
+            im3 = axes[i, 2].contourf(X_np, Y_np, error_np, 50, cmap=cmap_err)
+            axes[i, 2].set_title(f"{name} Error (Max: {err:.2e})")
+            axes[i, 2].set_xlabel('X')
+            axes[i, 2].set_ylabel('Y')
+            plt.colorbar(im3, ax=axes[i, 2])
+        
+        plt.suptitle(f"{function_name} Function Analysis ({nx_points}x{ny_points} points)")
+        plt.tight_layout()
+        
+        # 保存ファイル名
+        if save:
+            filepath = self.generate_filename(function_name, nx_points, ny_points, prefix)
+            plt.savefig(filepath, dpi=dpi)
+        
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
         
         # 誤差サマリー図を作成
+        self._create_error_summary(function_name, solution_names, errors, nx_points, ny_points, prefix, save, show, dpi)
+        
+        return True
+    
+    def _create_error_summary(self, function_name, solution_names, errors, nx_points, ny_points, prefix="", save=True, show=False, dpi=150):
+        """誤差のサマリーグラフを作成"""
         fig, ax = plt.subplots(figsize=(10, 6))
         x_pos = np.arange(len(solution_names))
         bars = ax.bar(x_pos, errors)
         
         # 対数スケール（ゼロを小さな値に置き換え）
-        for i, err in enumerate(errors):
+        error_values = errors.copy()
+        for i, err in enumerate(error_values):
             if err == 0:
-                errors[i] = self.min_log_value
+                error_values[i] = self.min_log_value
         
         ax.set_yscale('log')
         ax.set_title(f"{function_name} Function: Error Summary ({nx_points}x{ny_points} points)")
@@ -139,20 +145,9 @@ class CCD2DVisualizer:
             plt.show()
         else:
             plt.close(fig)
-        
-        return True
     
     def compare_all_functions_errors(self, results_summary, grid_size, prefix="", dpi=150, show=False):
-        """
-        すべてのテスト関数の誤差を比較するグラフを生成
-        
-        Args:
-            results_summary: 各関数の誤差結果を持つ辞書
-            grid_size: グリッドサイズ
-            prefix: ファイル名の接頭辞
-            dpi: 保存する図のDPI
-            show: 図を表示するかどうか
-        """
+        """すべてのテスト関数の誤差を比較するグラフを生成"""
         func_names = list(results_summary.keys())
         
         fig, axes = plt.subplots(2, 4, figsize=(15, 10))
@@ -212,18 +207,7 @@ class CCD2DVisualizer:
         return filename
         
     def visualize_grid_convergence(self, function_name, grid_sizes, results, prefix="", save=True, show=False, dpi=150):
-        """
-        グリッド収束性のグラフを生成
-        
-        Args:
-            function_name: テスト関数の名前
-            grid_sizes: テストしたグリッドサイズのリスト
-            results: 各グリッドサイズでの誤差結果の辞書
-            prefix: ファイル名の接頭辞
-            save: 図を保存するかどうか
-            show: 図を表示するかどうか
-            dpi: 保存する図のDPI
-        """
+        """グリッド収束性のグラフを生成"""
         fig, axes = plt.subplots(2, 4, figsize=(15, 10))
         solution_names = ["ψ", "ψ_x", "ψ_y", "ψ_xx", "ψ_yy", "ψ_xxx", "ψ_yyy"]
         
