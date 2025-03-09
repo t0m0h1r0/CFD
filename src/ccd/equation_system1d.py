@@ -93,7 +93,7 @@ class EquationSystem:
                 raise ValueError(f"点 {i} に対する方程式が4つではありません")
 
             for k, eq in enumerate(equations):
-                # 新しいインターフェースを使用: 各方程式にはすでにgridが設定されている
+                # 新しいインターフェースのみを使用
                 stencil_coeffs = eq.get_stencil_coefficients(i=i)
                 rhs_value = eq.get_rhs(i=i)
 

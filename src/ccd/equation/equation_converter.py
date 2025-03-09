@@ -12,7 +12,7 @@ class Equation1Dto2DConverter:
         Args:
             equation_1d: 1次元方程式クラスのインスタンス
             x_only: True の場合、y方向の成分を無視
-            grid: Grid2Dオブジェクト（オプション）
+            grid: Grid2Dオブジェクト
             
         Returns:
             x方向用の2次元方程式インスタンス
@@ -27,7 +27,7 @@ class Equation1Dto2DConverter:
         Args:
             equation_1d: 1次元方程式クラスのインスタンス
             y_only: True の場合、x方向の成分を無視
-            grid: Grid2Dオブジェクト（オプション）
+            grid: Grid2Dオブジェクト
             
         Returns:
             y方向用の2次元方程式インスタンス
@@ -42,7 +42,7 @@ class Equation1Dto2DConverter:
         Args:
             equation_1d_x: x方向に適用する1次元方程式
             equation_1d_y: y方向に適用する1次元方程式（指定しない場合はequation_1d_xと同じ）
-            grid: Grid2Dオブジェクト（オプション）
+            grid: Grid2Dオブジェクト
             
         Returns:
             両方向に対応する2次元方程式インスタンス
@@ -69,7 +69,7 @@ class DirectionalEquation2D(Equation2D):
             equation_1d: 1次元方程式のインスタンス
             direction: 'x'または'y'
             direction_only: 特定の方向のみ処理する場合True
-            grid: Grid2Dオブジェクト（オプション）
+            grid: Grid2Dオブジェクト
         """
         super().__init__(grid)
         self.equation_1d = equation_1d
@@ -148,24 +148,19 @@ class DirectionalEquation2D(Equation2D):
         
         return self
     
-    def get_stencil_coefficients(self, grid=None, i=None, j=None):
+    def get_stencil_coefficients(self, i=None, j=None):
         """
         ステンシル係数を取得
         
         Args:
-            grid: Grid2D（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             2D方程式用のステンシル係数
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
             
         if i is None or j is None:
             raise ValueError("グリッド点のインデックスiとjを指定する必要があります。")
@@ -173,41 +168,17 @@ class DirectionalEquation2D(Equation2D):
         # 方向に応じた1次元のインデックスと境界判定
         if self.direction == 'x':
             i_1d = i  # x方向のインデックス
-            is_boundary = i == 0 or i == using_grid.nx_points - 1
+            is_boundary = i == 0 or i == self.grid.nx_points - 1
         else:  # self.direction == 'y'
             i_1d = j  # y方向のインデックス
-            is_boundary = j == 0 or j == using_grid.ny_points - 1
+            is_boundary = j == 0 or j == self.grid.ny_points - 1
         
         # 境界点で特定方向のみの場合は処理を飛ばす
         if self.direction_only and is_boundary:
             return {}
         
-        # 1D Grid オブジェクトをエミュレート
-        class Grid1DEmulator:
-            def __init__(self, points, spacing, n_points):
-                self.points = points
-                self.h = spacing
-                self.n_points = n_points
-            
-            def get_point(self, idx):
-                return self.points[idx]
-            
-            def get_points(self):
-                return self.points
-            
-            def get_spacing(self):
-                return self.h
-        
-        # 方向に応じた1Dグリッドを作成
-        if self.direction == 'x':
-            h = using_grid.get_spacing()[0]  # hx
-            emulated_grid = Grid1DEmulator(using_grid.x, h, using_grid.nx_points)
-        else:  # self.direction == 'y'
-            h = using_grid.get_spacing()[1]  # hy
-            emulated_grid = Grid1DEmulator(using_grid.y, h, using_grid.ny_points)
-        
         # 1次元方程式からステンシル係数を取得
-        coeffs_1d = self.equation_1d.get_stencil_coefficients(emulated_grid, i_1d)
+        coeffs_1d = self.equation_1d.get_stencil_coefficients(i_1d)
         
         # 1次元の係数を2次元に変換
         coeffs_2d = {}
@@ -228,24 +199,19 @@ class DirectionalEquation2D(Equation2D):
         
         return coeffs_2d
     
-    def get_rhs(self, grid=None, i=None, j=None):
+    def get_rhs(self, i=None, j=None):
         """
         右辺値を取得
         
         Args:
-            grid: Grid2D（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             右辺値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
             
         if i is None or j is None:
             raise ValueError("グリッド点のインデックスiとjを指定する必要があります。")
@@ -254,11 +220,11 @@ class DirectionalEquation2D(Equation2D):
         if self.direction == 'x':
             # x方向の場合は1次元方程式にiを渡す
             i_1d = i
-            is_boundary = i == 0 or i == using_grid.nx_points - 1
+            is_boundary = i == 0 or i == self.grid.nx_points - 1
         else:  # self.direction == 'y'
             # y方向の場合は1次元方程式にjを渡す
             i_1d = j
-            is_boundary = j == 0 or j == using_grid.ny_points - 1
+            is_boundary = j == 0 or j == self.grid.ny_points - 1
         
         # 境界点で特定方向のみの場合は右辺値を0とする
         if self.direction_only and is_boundary:
@@ -282,37 +248,32 @@ class DirectionalEquation2D(Equation2D):
         
         # 方向に応じた1Dグリッドを作成
         if self.direction == 'x':
-            point = using_grid.get_point(i, j)[0]  # x座標のみ
-            h = using_grid.get_spacing()[0]
-            n = using_grid.nx_points
+            point = self.grid.get_point(i, j)[0]  # x座標のみ
+            h = self.grid.get_spacing()[0]
+            n = self.grid.nx_points
             emulated_grid = Grid1DEmulator([point], h, n)
         else:  # self.direction == 'y'
-            point = using_grid.get_point(i, j)[1]  # y座標のみ
-            h = using_grid.get_spacing()[1]
-            n = using_grid.ny_points
+            point = self.grid.get_point(i, j)[1]  # y座標のみ
+            h = self.grid.get_spacing()[1]
+            n = self.grid.ny_points
             emulated_grid = Grid1DEmulator([point], h, n)
         
         # 1次元方程式から右辺値を取得
-        return self.equation_1d.get_rhs(emulated_grid, 0)  # インデックスは常に0
+        return self.equation_1d.get_rhs(0)  # インデックスは常に0
     
-    def is_valid_at(self, grid=None, i=None, j=None):
+    def is_valid_at(self, i=None, j=None):
         """
         方程式が指定点で有効かどうかを判定
         
         Args:
-            grid: Grid2D（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             有効性を示すブール値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
             
         if i is None or j is None:
             raise ValueError("グリッド点のインデックスiとjを指定する必要があります。")
@@ -327,23 +288,23 @@ class DirectionalEquation2D(Equation2D):
             # x方向の境界判定
             if self.direction_only:
                 # x方向のみの場合、内部点および左右境界のみで有効（上下境界では無効）
-                if j == 0 or j == using_grid.ny_points - 1:
+                if j == 0 or j == self.grid.ny_points - 1:
                     return False
             
             # 1次元方程式のvalid判定を使用
-            emulated_grid = Grid1DEmulator(using_grid.nx_points)
-            return self.equation_1d.is_valid_at(emulated_grid, i)
+            emulated_grid = Grid1DEmulator(self.grid.nx_points)
+            return self.equation_1d.is_valid_at(i)
             
         else:  # self.direction == 'y'
             # y方向の境界判定
             if self.direction_only:
                 # y方向のみの場合、内部点および上下境界のみで有効（左右境界では無効）
-                if i == 0 or i == using_grid.nx_points - 1:
+                if i == 0 or i == self.grid.nx_points - 1:
                     return False
             
             # 1次元方程式のvalid判定を使用
-            emulated_grid = Grid1DEmulator(using_grid.ny_points)
-            return self.equation_1d.is_valid_at(emulated_grid, j)
+            emulated_grid = Grid1DEmulator(self.grid.ny_points)
+            return self.equation_1d.is_valid_at(j)
 
 
 class CombinedDirectionalEquation2D(Equation2D):
@@ -358,7 +319,7 @@ class CombinedDirectionalEquation2D(Equation2D):
         Args:
             x_direction_eq: x方向の2次元方程式
             y_direction_eq: y方向の2次元方程式
-            grid: Grid2Dオブジェクト（オプション）
+            grid: Grid2Dオブジェクト
         """
         # gridが指定されていなければ、部分方程式のものを使用
         if grid is None:
@@ -398,28 +359,23 @@ class CombinedDirectionalEquation2D(Equation2D):
             
         return self
     
-    def get_stencil_coefficients(self, grid=None, i=None, j=None):
+    def get_stencil_coefficients(self, i=None, j=None):
         """
         ステンシル係数を取得（両方向の係数を結合）
         
         Args:
-            grid: Grid2D（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             2D方程式用のステンシル係数
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
         
         # 両方の方程式から係数を取得
-        x_coeffs = self.x_eq.get_stencil_coefficients(using_grid, i, j)
-        y_coeffs = self.y_eq.get_stencil_coefficients(using_grid, i, j)
+        x_coeffs = self.x_eq.get_stencil_coefficients(i, j)
+        y_coeffs = self.y_eq.get_stencil_coefficients(i, j)
         
         # 係数を結合（オフセットが重複する場合は加算）
         combined_coeffs = {}
@@ -437,46 +393,36 @@ class CombinedDirectionalEquation2D(Equation2D):
         
         return combined_coeffs
     
-    def get_rhs(self, grid=None, i=None, j=None):
+    def get_rhs(self, i=None, j=None):
         """
         右辺値を取得（両方向の右辺値を加算）
         
         Args:
-            grid: Grid2D（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             右辺値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
         
         # 両方の方程式から右辺値を取得して加算
-        return self.x_eq.get_rhs(using_grid, i, j) + self.y_eq.get_rhs(using_grid, i, j)
+        return self.x_eq.get_rhs(i, j) + self.y_eq.get_rhs(i, j)
     
-    def is_valid_at(self, grid=None, i=None, j=None):
+    def is_valid_at(self, i=None, j=None):
         """
         方程式が指定点で有効かどうかを判定（両方向とも有効な場合のみ有効）
         
         Args:
-            grid: Grid2D（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             有効性を示すブール値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
         
         # 両方の方程式が有効な場合のみ有効
-        return self.x_eq.is_valid_at(using_grid, i, j) and self.y_eq.is_valid_at(using_grid, i, j)
+        return self.x_eq.is_valid_at(i, j) and self.y_eq.is_valid_at(i, j)

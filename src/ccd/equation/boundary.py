@@ -11,17 +11,16 @@ class DirichletBoundaryEquation(Equation):
         
         Args:
             value: 境界値
-            grid: 計算格子オブジェクト（オプション）
+            grid: 計算格子オブジェクト
         """
         super().__init__(grid)
         self.value = value
 
-    def get_stencil_coefficients(self, grid=None, i=None):
+    def get_stencil_coefficients(self, i=None):
         """
         ステンシル係数を返す
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: グリッド点のインデックス
             
         Returns:
@@ -29,12 +28,11 @@ class DirichletBoundaryEquation(Equation):
         """
         return {0: cp.array([1, 0, 0, 0])}
 
-    def get_rhs(self, grid=None, i=None):
+    def get_rhs(self, i=None):
         """
         右辺値を返す
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: グリッド点のインデックス
             
         Returns:
@@ -42,28 +40,23 @@ class DirichletBoundaryEquation(Equation):
         """
         return self.value
 
-    def is_valid_at(self, grid=None, i=None):
+    def is_valid_at(self, i=None):
         """
         境界条件が有効かどうかを判定
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: グリッド点のインデックス
             
         Returns:
             有効性を示すブール値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
             
         if i is None:
             raise ValueError("グリッド点のインデックスiを指定する必要があります。")
             
-        n = using_grid.n_points
+        n = self.grid.n_points
         return i == 0 or i == n - 1
 
 
@@ -76,17 +69,16 @@ class NeumannBoundaryEquation(Equation):
         
         Args:
             value: 境界値
-            grid: 計算格子オブジェクト（オプション）
+            grid: 計算格子オブジェクト
         """
         super().__init__(grid)
         self.value = value
 
-    def get_stencil_coefficients(self, grid=None, i=None):
+    def get_stencil_coefficients(self, i=None):
         """
         ステンシル係数を返す
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: グリッド点のインデックス
             
         Returns:
@@ -94,12 +86,11 @@ class NeumannBoundaryEquation(Equation):
         """
         return {0: cp.array([0, 1, 0, 0])}
 
-    def get_rhs(self, grid=None, i=None):
+    def get_rhs(self, i=None):
         """
         右辺値を返す
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: グリッド点のインデックス
             
         Returns:
@@ -107,28 +98,23 @@ class NeumannBoundaryEquation(Equation):
         """
         return self.value
 
-    def is_valid_at(self, grid=None, i=None):
+    def is_valid_at(self, i=None):
         """
         境界条件が有効かどうかを判定
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: グリッド点のインデックス
             
         Returns:
             有効性を示すブール値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
             
         if i is None:
             raise ValueError("グリッド点のインデックスiを指定する必要があります。")
             
-        n = using_grid.n_points
+        n = self.grid.n_points
         return i == 0 or i == n - 1
 
 
@@ -142,17 +128,16 @@ class DirichletXBoundaryEquation2D(Equation2D):
         
         Args:
             value: 境界値を格納したCuPy配列
-            grid: 計算格子オブジェクト（オプション）
+            grid: 計算格子オブジェクト
         """
         super().__init__(grid)
         self.value = value
     
-    def get_stencil_coefficients(self, grid=None, i=None, j=None):
+    def get_stencil_coefficients(self, i=None, j=None):
         """
         格子点(i,j)におけるステンシル係数を取得
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
@@ -162,12 +147,11 @@ class DirichletXBoundaryEquation2D(Equation2D):
         coeffs = {(0, 0): cp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])}
         return coeffs
     
-    def get_rhs(self, grid=None, i=None, j=None):
+    def get_rhs(self, i=None, j=None):
         """
         境界値を取得
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
@@ -181,29 +165,24 @@ class DirichletXBoundaryEquation2D(Equation2D):
             return self.value[j]
         return 0.0
     
-    def is_valid_at(self, grid=None, i=None, j=None):
+    def is_valid_at(self, i=None, j=None):
         """
         この境界条件が有効かどうかをチェック
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             有効性を示すブール値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
             
         if i is None:
             raise ValueError("x方向のグリッド点インデックスiを指定する必要があります。")
             
-        return i == 0 or i == using_grid.nx_points - 1
+        return i == 0 or i == self.grid.nx_points - 1
 
 
 class DirichletYBoundaryEquation2D(Equation2D):
@@ -216,17 +195,16 @@ class DirichletYBoundaryEquation2D(Equation2D):
         
         Args:
             value: 境界値を格納したCuPy配列
-            grid: 計算格子オブジェクト（オプション）
+            grid: 計算格子オブジェクト
         """
         super().__init__(grid)
         self.value = value
     
-    def get_stencil_coefficients(self, grid=None, i=None, j=None):
+    def get_stencil_coefficients(self, i=None, j=None):
         """
         格子点(i,j)におけるステンシル係数を取得
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
@@ -236,12 +214,11 @@ class DirichletYBoundaryEquation2D(Equation2D):
         coeffs = {(0, 0): cp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])}
         return coeffs
     
-    def get_rhs(self, grid=None, i=None, j=None):
+    def get_rhs(self, i=None, j=None):
         """
         境界値を取得
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
@@ -255,29 +232,24 @@ class DirichletYBoundaryEquation2D(Equation2D):
             return self.value[i]
         return 0.0
     
-    def is_valid_at(self, grid=None, i=None, j=None):
+    def is_valid_at(self, i=None, j=None):
         """
         この境界条件が有効かどうかをチェック
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             有効性を示すブール値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
             
         if j is None:
             raise ValueError("y方向のグリッド点インデックスjを指定する必要があります。")
             
-        return j == 0 or j == using_grid.ny_points - 1
+        return j == 0 or j == self.grid.ny_points - 1
 
 class NeumannXBoundaryEquation2D(Equation2D):
     """
@@ -289,17 +261,16 @@ class NeumannXBoundaryEquation2D(Equation2D):
         
         Args:
             value: 境界値を格納したCuPy配列
-            grid: 計算格子オブジェクト（オプション）
+            grid: 計算格子オブジェクト
         """
         super().__init__(grid)
         self.value = value
     
-    def get_stencil_coefficients(self, grid=None, i=None, j=None):
+    def get_stencil_coefficients(self, i=None, j=None):
         """
         格子点(i,j)におけるステンシル係数を取得
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
@@ -309,12 +280,11 @@ class NeumannXBoundaryEquation2D(Equation2D):
         coeffs = {(0, 0): cp.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])}
         return coeffs
     
-    def get_rhs(self, grid=None, i=None, j=None):
+    def get_rhs(self, i=None, j=None):
         """
         境界値を取得
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
@@ -328,29 +298,24 @@ class NeumannXBoundaryEquation2D(Equation2D):
             return self.value[j]
         return 0.0
     
-    def is_valid_at(self, grid=None, i=None, j=None):
+    def is_valid_at(self, i=None, j=None):
         """
         この境界条件が有効かどうかをチェック
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             有効性を示すブール値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
             
         if i is None:
             raise ValueError("x方向のグリッド点インデックスiを指定する必要があります。")
             
-        return i == 0 or i == using_grid.nx_points - 1
+        return i == 0 or i == self.grid.nx_points - 1
 
 
 class NeumannYBoundaryEquation2D(Equation2D):
@@ -363,17 +328,16 @@ class NeumannYBoundaryEquation2D(Equation2D):
         
         Args:
             value: 境界値を格納したCuPy配列
-            grid: 計算格子オブジェクト（オプション）
+            grid: 計算格子オブジェクト
         """
         super().__init__(grid)
         self.value = value
     
-    def get_stencil_coefficients(self, grid=None, i=None, j=None):
+    def get_stencil_coefficients(self, i=None, j=None):
         """
         格子点(i,j)におけるステンシル係数を取得
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
@@ -383,12 +347,11 @@ class NeumannYBoundaryEquation2D(Equation2D):
         coeffs = {(0, 0): cp.array([0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])}
         return coeffs
     
-    def get_rhs(self, grid=None, i=None, j=None):
+    def get_rhs(self, i=None, j=None):
         """
         境界値を取得
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
@@ -402,26 +365,21 @@ class NeumannYBoundaryEquation2D(Equation2D):
             return self.value[i]
         return 0.0
     
-    def is_valid_at(self, grid=None, i=None, j=None):
+    def is_valid_at(self, i=None, j=None):
         """
         この境界条件が有効かどうかをチェック
         
         Args:
-            grid: 計算格子（Noneの場合はself.gridを使用）
             i: x方向のグリッド点インデックス
             j: y方向のグリッド点インデックス
             
         Returns:
             有効性を示すブール値
         """
-        # gridパラメータの処理
-        using_grid = grid
-        if using_grid is None:
-            if self.grid is None:
-                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
-            using_grid = self.grid
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
             
         if j is None:
             raise ValueError("y方向のグリッド点インデックスjを指定する必要があります。")
             
-        return j == 0 or j == using_grid.ny_points - 1
+        return j == 0 or j == self.grid.ny_points - 1

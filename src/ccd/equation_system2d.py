@@ -205,7 +205,7 @@ class EquationSystem2D:
                         row = base_idx + eq_count
                         eq_count += 1
                         
-                        # ステンシル係数を取得（gridは渡さない）
+                        # ステンシル係数を取得（新インターフェースのみ使用）
                         stencil_coeffs = eq.get_stencil_coefficients(i=i, j=j)
                         
                         # 行列に係数を追加
@@ -219,7 +219,7 @@ class EquationSystem2D:
                                         col_indices.append(col_base + m)
                                         data.append(float(coeff))
                         
-                        # 右辺値を設定（gridは渡さない）
+                        # 右辺値を設定（新インターフェースのみ使用）
                         b[row] = eq.get_rhs(i=i, j=j)
                 
                 # 方程式が不足している場合、単位行列で補完
