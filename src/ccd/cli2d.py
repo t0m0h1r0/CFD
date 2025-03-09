@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 from grid2d import Grid2D
 from tester2d import CCD2DTester
 from test_functions2d import TestFunction2DGenerator
@@ -69,6 +70,25 @@ def parse_args():
         help="行列の疎性を分析して表示"
     )
     
+    # スケーリングオプション
+    scaling_group = parser.add_argument_group('スケーリングオプション')
+    scaling_group.add_argument(
+        "--scaling", 
+        type=str,
+        default=None,
+        help="使用するスケーリング手法 (デフォルト: なし)"
+    )
+    scaling_group.add_argument(
+        "--list-scaling", 
+        action="store_true",
+        help="利用可能なスケーリング手法の一覧を表示"
+    )
+    scaling_group.add_argument(
+        "--compare-scaling", 
+        action="store_true",
+        help="異なるスケーリング手法の性能を比較"
+    )
+    
     return parser.parse_args()
 
 def get_solver_options(args):
@@ -89,6 +109,72 @@ def list_available_functions():
         print(f"{i:2d}. {func.name}")
     print("\n注: 1次元の関数名を指定すると、自動的にテンソル積拡張された2次元関数が使用されます。")
 
+def list_scaling_methods():
+    """利用可能なスケーリング手法の一覧を表示"""
+    from scaling import plugin_manager
+    
+    plugins = plugin_manager.get_available_plugins()
+    
+    print("\n利用可能なスケーリング手法:")
+    for i, name in enumerate(plugins, 1):
+        scaler = plugin_manager.get_plugin(name)
+        print(f"{i:2d}. {name}: {scaler.description}")
+    print()
+
+def compare_scaling_methods(func_name, nx_points, ny_points, x_range, y_range, solver_method, solver_options):
+    """異なるスケーリング手法の性能を比較"""
+    from scaling import plugin_manager
+    import time
+    
+    # 利用可能なすべてのスケーリング手法を取得
+    scaling_methods = plugin_manager.get_available_plugins()
+    
+    # グリッドを作成
+    grid = Grid2D(nx_points, ny_points, x_range, y_range)
+    
+    # テスター作成（後でスケーリング方法ごとに設定更新）
+    tester = CCD2DTester(grid)
+    
+    results = {}
+    
+    print(f"\n{func_name}関数でスケーリング手法を比較しています...")
+    print(f"グリッドサイズ: {nx_points}x{ny_points} 点")
+    print(f"ソルバー: {solver_method}")
+    print("\n" + "-" * 100)
+    print(f"{'スケーリング手法':<25} {'実行時間 (s)':<15} {'反復回数':<15} {'誤差':<15}")
+    print("-" * 100)
+    
+    for method in scaling_methods:
+        # このスケーリング手法でテスターを設定
+        tester.set_solver_options(solver_method, solver_options, False)
+        tester.scaling_method = method
+        
+        # 解の時間を計測
+        start_time = time.time()
+        result = tester.run_test_with_options(func_name)
+        end_time = time.time()
+        
+        # 反復回数を取得（反復ソルバーの場合）
+        iter_count = "N/A"
+        if hasattr(tester.solver, 'last_iterations') and tester.solver.last_iterations is not None:
+            iter_count = str(tester.solver.last_iterations)
+        
+        # 最大誤差を計算
+        max_error = max(result['errors'])
+        
+        # 結果を表示
+        print(f"{method:<25} {end_time - start_time:<15.4f} {iter_count:<15} {max_error:<15.6e}")
+        
+        # 後の分析のために保存
+        results[method] = {
+            'time': end_time - start_time,
+            'iterations': tester.solver.last_iterations if hasattr(tester.solver, 'last_iterations') else None,
+            'errors': result['errors']
+        }
+    
+    print("-" * 100)
+    return results
+
 def run_convergence_test(
     func_name,
     x_range,
@@ -97,7 +183,8 @@ def run_convergence_test(
     solver_method="direct",
     solver_options=None,
     analyze_matrix=False,
-    equation_set_name="poisson"
+    equation_set_name="poisson",
+    scaling_method=None
 ):
     """格子収束性テストを実行"""
     # グリッドサイズ
@@ -109,16 +196,16 @@ def run_convergence_test(
     
     # ソルバー設定
     tester.set_solver_options(solver_method, solver_options, analyze_matrix)
+    tester.scaling_method = scaling_method
     
     # 方程式セット設定
     tester.set_equation_set(equation_set_name)
-    
-    # テスト関数を取得（文字列名で）
     
     # 収束性テストを実行
     print(f"{func_name}関数での格子収束性テストを実行しています...")
     print(f"ソルバー: {solver_method}")
     print(f"方程式セット: {equation_set_name}")
+    print(f"スケーリング: {scaling_method if scaling_method else 'なし'}")
     
     results = tester.run_grid_convergence_test(
         func_name, grid_sizes, x_range, y_range
@@ -156,7 +243,8 @@ def test_all_functions(
     solver_method="direct",
     solver_options=None,
     analyze_matrix=False,
-    equation_set_name="poisson"
+    equation_set_name="poisson",
+    scaling_method=None
 ):
     """全てのテスト関数に対してテストを実行"""
     # テスト関数の取得
@@ -174,6 +262,7 @@ def test_all_functions(
     
     # ソルバー設定
     tester.set_solver_options(solver_method, solver_options, analyze_matrix)
+    tester.scaling_method = scaling_method  # scaling_methodをクラスの属性として設定
     
     # 方程式セット設定
     tester.set_equation_set(equation_set_name)
@@ -181,6 +270,7 @@ def test_all_functions(
     print(f"\n==== 全関数のテスト ({nx_points}x{ny_points} 点) ====")
     print(f"ソルバー: {solver_method}")
     print(f"方程式セット: {equation_set_name}")
+    print(f"スケーリング: {scaling_method if scaling_method else 'なし'}")
     
     print("\n" + "-" * 125)
     print(f"{'関数名':<15} {'ψ誤差':<15} {'ψx誤差':<15} {'ψy誤差':<15} {'ψxx誤差':<15} {'ψyy誤差':<15} {'ψxxx誤差':<15} {'ψyyy誤差':<15}")
@@ -237,6 +327,24 @@ def run_cli():
         list_available_functions()
         return
     
+    # スケーリング手法一覧の表示
+    if args.list_scaling:
+        list_scaling_methods()
+        return
+        
+    # スケーリング手法の比較
+    if args.compare_scaling:
+        compare_scaling_methods(
+            args.test_func, 
+            args.nx_points, 
+            args.ny_points, 
+            tuple(args.x_range),
+            tuple(args.y_range),
+            args.solver,
+            get_solver_options(args)
+        )
+        return
+    
     # ソルバーオプションの取得
     solver_options = get_solver_options(args)
     
@@ -253,6 +361,7 @@ def run_cli():
             solver_options,
             args.analyze_matrix,
             args.equation_set,
+            args.scaling,
         )
         return
     
@@ -267,6 +376,7 @@ def run_cli():
             solver_options,
             args.analyze_matrix,
             args.equation_set,
+            args.scaling,
         )
         return
     
@@ -279,6 +389,7 @@ def run_cli():
     
     # ソルバー設定
     tester.set_solver_options(args.solver, solver_options, args.analyze_matrix)
+    tester.scaling_method = args.scaling
     
     # 方程式セット設定
     tester.set_equation_set(args.equation_set)
@@ -287,8 +398,17 @@ def run_cli():
     print(f"\n{args.test_func}関数でテストを実行しています...")
     print(f"ソルバー: {args.solver}")
     print(f"方程式セット: {args.equation_set}")
+    print(f"スケーリング: {args.scaling if args.scaling else 'なし'}")
     
+    # 解の時間を計測
+    start_time = time.time()
     results = tester.run_test_with_options(args.test_func)
+    end_time = time.time()
+    
+    # 反復回数を取得（反復ソルバーの場合）
+    iter_count = "N/A"
+    if hasattr(tester.solver, 'last_iterations') and tester.solver.last_iterations is not None:
+        iter_count = str(tester.solver.last_iterations)
     
     # 結果の表示
     print("\n誤差分析:")
@@ -299,6 +419,10 @@ def run_cli():
     print(f"  ψyy誤差: {results['errors'][4]:.6e}")
     print(f"  ψxxx誤差:{results['errors'][5]:.6e}")
     print(f"  ψyyy誤差:{results['errors'][6]:.6e}")
+    print(f"  実行時間: {end_time - start_time:.4f} 秒")
+    
+    if iter_count != "N/A":
+        print(f"  反復回数: {iter_count}")
     
     # 可視化
     if not args.no_visualization:

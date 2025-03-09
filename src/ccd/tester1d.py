@@ -13,6 +13,7 @@ class CCDTester:
         self.solver = None
         self.solver_method = "direct"
         self.solver_options = None
+        self.scaling_method = None
         self.analyze_matrix = False
         self.equation_set = None
 
@@ -20,6 +21,12 @@ class CCDTester:
         self.solver_method = method
         self.solver_options = options
         self.analyze_matrix = analyze_matrix
+        
+        # すでにソルバーが存在する場合は設定を更新
+        if self.solver is not None:
+            self.solver.set_solver(method=self.solver_method, options=self.solver_options)
+            if hasattr(self, 'scaling_method') and self.scaling_method is not None:
+                self.solver.scaling_method = self.scaling_method
 
     def set_equation_set(self, equation_set_name):
         self.equation_set = EquationSet.create(equation_set_name)
@@ -45,6 +52,10 @@ class CCDTester:
 
         if self.solver_method != "direct" or self.solver_options:
             self.solver.set_solver(method=self.solver_method, options=self.solver_options)
+        
+        # スケーリング手法を設定
+        if hasattr(self, 'scaling_method') and self.scaling_method is not None:
+            self.solver.scaling_method = self.scaling_method
 
     def run_test_with_options(self, test_func, use_dirichlet=True, use_neumann=True):
         self.setup_equation_system(test_func, use_dirichlet, use_neumann)
@@ -78,12 +89,14 @@ class CCDTester:
         original_options = self.solver_options
         original_analyze = self.analyze_matrix
         original_equation_set = self.equation_set
+        original_scaling_method = self.scaling_method if hasattr(self, 'scaling_method') else None
 
         for n in grid_sizes:
             grid = Grid(n, x_range)
             tester = CCDTester(grid)
             tester.set_solver_options(original_method, original_options, original_analyze)
             tester.equation_set = original_equation_set
+            tester.scaling_method = original_scaling_method
             result = tester.run_test_with_options(test_func, use_dirichlet, use_neumann)
             results[n] = result["errors"]
 
