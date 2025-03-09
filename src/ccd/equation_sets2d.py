@@ -8,7 +8,7 @@ from equation.compact_internal import Internal1stDerivativeEquation, Internal2nd
 from equation.compact_left_boundary import LeftBoundary1stDerivativeEquation, LeftBoundary2ndDerivativeEquation, LeftBoundary3rdDerivativeEquation
 from equation.compact_right_boundary import RightBoundary1stDerivativeEquation, RightBoundary2ndDerivativeEquation, RightBoundary3rdDerivativeEquation
 from equation.base2d import Equation2D
-from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation, DirichletXBoundaryEquation2D, DirichletYBoundaryEquation2D, NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
+from equation.boundary import DirichletXBoundaryEquation2D, DirichletYBoundaryEquation2D, NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
 from grid2d import Grid2D
 
 class CustomEquation2D(Equation2D):

@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from equation.poisson import PoissonEquation
 from equation.original import OriginalEquation
-from equation.custom import CustomEquation
 from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
 from equation.compact_internal import Internal1stDerivativeEquation, Internal2ndDerivativeEquation, Internal3rdDerivativeEquation
 from equation.compact_left_boundary import LeftBoundary1stDerivativeEquation, LeftBoundary2ndDerivativeEquation, LeftBoundary3rdDerivativeEquation

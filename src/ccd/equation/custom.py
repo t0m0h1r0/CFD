@@ -1,7 +1,6 @@
 # equation/custom.py
 import cupy as cp
-from typing import Dict, Callable, List
-from grid1d import Grid
+from typing import Callable
 from .base1d import Equation
 
 
