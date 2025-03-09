@@ -10,15 +10,24 @@ class CCDSolver:
         self.grid = grid
         self.solver_method = "direct"
         self.solver_options = {}
+        self.scaling_method = None
+        self.last_iterations = None
 
-    def set_solver(self, method="direct", options=None):
-        """使用するソルバーを設定"""
+    def set_solver(self, method="direct", options=None, scaling_method=None):
+        """使用するソルバーを設定
+        
+        Args:
+            method: 解法 ("direct", "gmres", "cg", "cgs")
+            options: ソルバーオプション辞書
+            scaling_method: 使用するスケーリング手法の名前（Noneの場合はスケーリングなし）
+        """
         valid_methods = ["direct", "gmres", "cg", "cgs"]
         if method not in valid_methods:
             method = "direct"
             
         self.solver_method = method
         self.solver_options = options or {}
+        self.scaling_method = scaling_method
 
     def _create_preconditioner(self, A):
         """前処理器を作成"""
@@ -41,6 +50,7 @@ class CCDSolver:
         restart = self.solver_options.get("restart", 100)
         
         precond = self._create_preconditioner(A)
+        self.last_iterations = None
         
         try:
             x, info = splinalg.gmres(
@@ -51,10 +61,18 @@ class CCDSolver:
                 restart=restart
             )
             
+            # 反復回数が利用可能な場合は保存
+            if hasattr(info, 'iterations'):
+                self.last_iterations = info.iterations
+            elif isinstance(info, tuple) and len(info) > 0:
+                self.last_iterations = info[0]
+            else:
+                self.last_iterations = maxiter if info != 0 else None
+            
             if info == 0:
                 return x
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"GMRES解法でエラーが発生しました: {e}")
             
         return splinalg.spsolve(A, b)
 
@@ -64,13 +82,21 @@ class CCDSolver:
         maxiter = self.solver_options.get("maxiter", 1000)
         
         precond = self._create_preconditioner(A)
+        self.last_iterations = None
         
         try:
             x, info = splinalg.cg(A, b, tol=tol, maxiter=maxiter, M=precond)
+            
+            # 反復回数が利用可能な場合は保存
+            if hasattr(info, 'iterations'):
+                self.last_iterations = info.iterations
+            else:
+                self.last_iterations = maxiter if info != 0 else None
+                
             if info == 0:
                 return x
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"CG解法でエラーが発生しました: {e}")
             
         return splinalg.spsolve(A, b)
         
@@ -80,13 +106,21 @@ class CCDSolver:
         maxiter = self.solver_options.get("maxiter", 1000)
         
         precond = self._create_preconditioner(A)
+        self.last_iterations = None
         
         try:
             x, info = splinalg.cgs(A, b, tol=tol, maxiter=maxiter, M=precond)
+            
+            # 反復回数が利用可能な場合は保存
+            if hasattr(info, 'iterations'):
+                self.last_iterations = info.iterations
+            else:
+                self.last_iterations = maxiter if info != 0 else None
+                
             if info == 0:
                 return x
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"CGS解法でエラーが発生しました: {e}")
             
         return splinalg.spsolve(A, b)
 
@@ -96,7 +130,18 @@ class CCDSolver:
 
         if analyze_before_solve:
             self.analyze_system()
+            
+        # スケーリングを適用（要求された場合）
+        scaling_info = None
+        scaler = None
+        if self.scaling_method is not None:
+            from scaling import plugin_manager
+            scaler = plugin_manager.get_plugin(self.scaling_method)
+            if scaler:
+                print(f"スケーリング手法を適用: {scaler.name} - {scaler.description}")
+                A, b, scaling_info = scaler.scale(A, b)
 
+        # システムを解く
         if self.solver_method == "gmres":
             sol = self._solve_gmres(A, b)
         elif self.solver_method == "cg":
@@ -105,6 +150,10 @@ class CCDSolver:
             sol = self._solve_cgs(A, b)
         else:
             sol = splinalg.spsolve(A, b)
+            
+        # スケーリングが適用された場合は解をアンスケール
+        if scaling_info is not None and scaler is not None:
+            sol = scaler.unscale(sol, scaling_info)
 
         n = self.grid.n_points
         psi = sol[0::4][:n]

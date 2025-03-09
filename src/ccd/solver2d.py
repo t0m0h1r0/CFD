@@ -16,15 +16,18 @@ class CCD2DSolver:
         self.grid = grid
         self.solver_method = "direct"
         self.solver_options = {}
+        self.scaling_method = None
         self.sparsity_info = None
+        self.last_iterations = None
     
-    def set_solver(self, method="direct", options=None):
+    def set_solver(self, method="direct", options=None, scaling_method=None):
         """
         Set the solver method and options
         
         Args:
             method: One of "direct", "gmres", "cg", "cgs"
             options: Solver options dictionary
+            scaling_method: Name of scaling method to use (None for no scaling)
         """
         valid_methods = ["direct", "gmres", "cg", "cgs"]
         if method not in valid_methods:
@@ -32,6 +35,7 @@ class CCD2DSolver:
         
         self.solver_method = method
         self.solver_options = options or {}
+        self.scaling_method = scaling_method
     
     def _create_preconditioner(self, A):
         """
@@ -72,6 +76,7 @@ class CCD2DSolver:
         restart = self.solver_options.get("restart", 100)
         
         precond = self._create_preconditioner(A)
+        self.last_iterations = None
         
         try:
             x, info = splinalg.gmres(
@@ -81,6 +86,14 @@ class CCD2DSolver:
                 M=precond,
                 restart=restart
             )
+            
+            # 反復回数が利用可能な場合は保存
+            if hasattr(info, 'iterations'):
+                self.last_iterations = info.iterations
+            elif isinstance(info, tuple) and len(info) > 0:
+                self.last_iterations = info[0]
+            else:
+                self.last_iterations = maxiter if info != 0 else None
             
             if info == 0:
                 return x
@@ -105,9 +118,17 @@ class CCD2DSolver:
         maxiter = self.solver_options.get("maxiter", 1000)
         
         precond = self._create_preconditioner(A)
+        self.last_iterations = None
         
         try:
             x, info = splinalg.cg(A, b, tol=tol, maxiter=maxiter, M=precond)
+            
+            # 反復回数が利用可能な場合は保存
+            if hasattr(info, 'iterations'):
+                self.last_iterations = info.iterations
+            else:
+                self.last_iterations = maxiter if info != 0 else None
+            
             if info == 0:
                 return x
         except Exception as e:
@@ -131,9 +152,17 @@ class CCD2DSolver:
         maxiter = self.solver_options.get("maxiter", 1000)
         
         precond = self._create_preconditioner(A)
+        self.last_iterations = None
         
         try:
             x, info = splinalg.cgs(A, b, tol=tol, maxiter=maxiter, M=precond)
+            
+            # 反復回数が利用可能な場合は保存
+            if hasattr(info, 'iterations'):
+                self.last_iterations = info.iterations
+            else:
+                self.last_iterations = maxiter if info != 0 else None
+            
             if info == 0:
                 return x
         except Exception as e:
@@ -159,6 +188,16 @@ class CCD2DSolver:
         # Build the matrix system
         A, b = self.system.build_matrix_system()
         
+        # スケーリングを適用（要求された場合）
+        scaling_info = None
+        scaler = None
+        if self.scaling_method is not None:
+            from scaling import plugin_manager
+            scaler = plugin_manager.get_plugin(self.scaling_method)
+            if scaler:
+                print(f"スケーリング手法を適用: {scaler.name} - {scaler.description}")
+                A, b, scaling_info = scaler.scale(A, b)
+        
         # Solve based on selected method
         if self.solver_method == "gmres":
             sol = self._solve_gmres(A, b)
@@ -168,6 +207,10 @@ class CCD2DSolver:
             sol = self._solve_cgs(A, b)
         else:
             sol = splinalg.spsolve(A, b)
+        
+        # スケーリングが適用された場合は解をアンスケール
+        if scaling_info is not None and scaler is not None:
+            sol = scaler.unscale(sol, scaling_info)
         
         # Extract solution components
         nx, ny = self.grid.nx_points, self.grid.ny_points
