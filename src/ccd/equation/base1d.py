@@ -4,19 +4,63 @@ import cupy as cp
 class Equation(ABC):
     """差分方程式の基底クラス"""
 
+    def __init__(self, grid=None):
+        """初期化
+        
+        Args:
+            grid: 計算格子オブジェクト（オプション）
+        """
+        self.grid = grid
+
+    def set_grid(self, grid):
+        """グリッドを設定
+        
+        Args:
+            grid: 計算格子オブジェクト
+            
+        Returns:
+            self: メソッドチェーン用
+        """
+        self.grid = grid
+        return self
+
     @abstractmethod
-    def get_stencil_coefficients(self, grid, i):
-        """グリッド点iにおけるステンシル係数を返す"""
+    def get_stencil_coefficients(self, grid=None, i=None):
+        """グリッド点iにおけるステンシル係数を返す
+        
+        Args:
+            grid: 計算格子（Noneの場合はself.gridを使用）
+            i: グリッド点のインデックス
+            
+        Returns:
+            ステンシル係数の辞書
+        """
         pass
 
     @abstractmethod
-    def get_rhs(self, grid, i):
-        """方程式の右辺を返す"""
+    def get_rhs(self, grid=None, i=None):
+        """方程式の右辺を返す
+        
+        Args:
+            grid: 計算格子（Noneの場合はself.gridを使用）
+            i: グリッド点のインデックス
+            
+        Returns:
+            右辺の値
+        """
         pass
 
     @abstractmethod
-    def is_valid_at(self, grid, i):
-        """方程式がグリッド点iに適用可能かを判定"""
+    def is_valid_at(self, grid=None, i=None):
+        """方程式がグリッド点iに適用可能かを判定
+        
+        Args:
+            grid: 計算格子（Noneの場合はself.gridを使用）
+            i: グリッド点のインデックス
+            
+        Returns:
+            有効性を示すブール値
+        """
         pass
 
     def __add__(self, other):
@@ -34,14 +78,77 @@ class Equation(ABC):
 class CombinedEquation(Equation):
     """二つの方程式を組み合わせた方程式"""
 
-    def __init__(self, eq1, eq2, operation="+"):
+    def __init__(self, eq1, eq2, operation="+", grid=None):
+        """二つの方程式を組み合わせた方程式を初期化
+        
+        Args:
+            eq1: 1つ目の方程式
+            eq2: 2つ目の方程式
+            operation: 演算子（"+"または"-"）
+            grid: 計算格子オブジェクト（オプション）
+        """
+        # gridが指定されなかった場合、eq1またはeq2のgridを使用（存在すれば）
+        if grid is None:
+            if hasattr(eq1, 'grid') and eq1.grid is not None:
+                grid = eq1.grid
+            elif hasattr(eq2, 'grid') and eq2.grid is not None:
+                grid = eq2.grid
+                
+        super().__init__(grid)
         self.eq1 = eq1
         self.eq2 = eq2
         self.operation = operation
+        
+        # 部分方程式にも同じgridを設定（ある場合）
+        if self.grid is not None:
+            if hasattr(eq1, 'set_grid'):
+                eq1.set_grid(self.grid)
+            if hasattr(eq2, 'set_grid'):
+                eq2.set_grid(self.grid)
 
-    def get_stencil_coefficients(self, grid, i):
-        coeffs1 = self.eq1.get_stencil_coefficients(grid, i)
-        coeffs2 = self.eq2.get_stencil_coefficients(grid, i)
+    def set_grid(self, grid):
+        """グリッドを設定
+        
+        両方の部分方程式にも同じグリッドを設定する
+        
+        Args:
+            grid: 計算格子オブジェクト
+            
+        Returns:
+            self: メソッドチェーン用
+        """
+        super().set_grid(grid)
+        
+        # 部分方程式にもgridを設定
+        if hasattr(self.eq1, 'set_grid'):
+            self.eq1.set_grid(grid)
+        if hasattr(self.eq2, 'set_grid'):
+            self.eq2.set_grid(grid)
+            
+        return self
+
+    def get_stencil_coefficients(self, grid=None, i=None):
+        """結合されたステンシル係数を返す
+        
+        Args:
+            grid: 計算格子（Noneの場合はself.gridを使用）
+            i: グリッド点のインデックス
+            
+        Returns:
+            ステンシル係数の辞書
+        """
+        # gridパラメータの処理
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
+            using_grid = self.grid
+        
+        # 両方の方程式のステンシル係数を取得
+        coeffs1 = self.eq1.get_stencil_coefficients(using_grid, i)
+        coeffs2 = self.eq2.get_stencil_coefficients(using_grid, i)
+        
+        # 結合
         combined_coeffs = {}
         all_offsets = set(list(coeffs1.keys()) + list(coeffs2.keys()))
 
@@ -55,28 +162,143 @@ class CombinedEquation(Equation):
 
         return combined_coeffs
 
-    def get_rhs(self, grid, i):
-        rhs1 = self.eq1.get_rhs(grid, i)
-        rhs2 = self.eq2.get_rhs(grid, i)
+    def get_rhs(self, grid=None, i=None):
+        """結合された右辺を返す
+        
+        Args:
+            grid: 計算格子（Noneの場合はself.gridを使用）
+            i: グリッド点のインデックス
+            
+        Returns:
+            右辺の値
+        """
+        # gridパラメータの処理
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
+            using_grid = self.grid
+        
+        rhs1 = self.eq1.get_rhs(using_grid, i)
+        rhs2 = self.eq2.get_rhs(using_grid, i)
         return rhs1 + rhs2 if self.operation == "+" else rhs1 - rhs2
 
-    def is_valid_at(self, grid, i):
-        return self.eq1.is_valid_at(grid, i) and self.eq2.is_valid_at(grid, i)
+    def is_valid_at(self, grid=None, i=None):
+        """結合された方程式が有効かどうかを判定
+        
+        Args:
+            grid: 計算格子（Noneの場合はself.gridを使用）
+            i: グリッド点のインデックス
+            
+        Returns:
+            有効性を示すブール値
+        """
+        # gridパラメータの処理
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
+            using_grid = self.grid
+        
+        return self.eq1.is_valid_at(using_grid, i) and self.eq2.is_valid_at(using_grid, i)
 
 
 class ScaledEquation(Equation):
     """スカラー倍された方程式"""
 
-    def __init__(self, equation, scalar):
+    def __init__(self, equation, scalar, grid=None):
+        """スカラー倍された方程式を初期化
+        
+        Args:
+            equation: 元の方程式
+            scalar: スカラー倍する値
+            grid: 計算格子オブジェクト（オプション）
+        """
+        # gridが指定されなかった場合、equationのgridを使用（存在すれば）
+        if grid is None and hasattr(equation, 'grid'):
+            grid = equation.grid
+            
+        super().__init__(grid)
         self.equation = equation
         self.scalar = scalar
+        
+        # 元の方程式にも同じgridを設定（ある場合）
+        if self.grid is not None and hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
 
-    def get_stencil_coefficients(self, grid, i):
-        coeffs = self.equation.get_stencil_coefficients(grid, i)
+    def set_grid(self, grid):
+        """グリッドを設定
+        
+        元の方程式にも同じグリッドを設定する
+        
+        Args:
+            grid: 計算格子オブジェクト
+            
+        Returns:
+            self: メソッドチェーン用
+        """
+        super().set_grid(grid)
+        
+        # 元の方程式にもgridを設定
+        if hasattr(self.equation, 'set_grid'):
+            self.equation.set_grid(grid)
+            
+        return self
+
+    def get_stencil_coefficients(self, grid=None, i=None):
+        """スケールされたステンシル係数を返す
+        
+        Args:
+            grid: 計算格子（Noneの場合はself.gridを使用）
+            i: グリッド点のインデックス
+            
+        Returns:
+            ステンシル係数の辞書
+        """
+        # gridパラメータの処理
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
+            using_grid = self.grid
+        
+        coeffs = self.equation.get_stencil_coefficients(using_grid, i)
         return {offset: self.scalar * coeff for offset, coeff in coeffs.items()}
 
-    def get_rhs(self, grid, i):
-        return self.scalar * self.equation.get_rhs(grid, i)
+    def get_rhs(self, grid=None, i=None):
+        """スケールされた右辺を返す
+        
+        Args:
+            grid: 計算格子（Noneの場合はself.gridを使用）
+            i: グリッド点のインデックス
+            
+        Returns:
+            右辺の値
+        """
+        # gridパラメータの処理
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
+            using_grid = self.grid
+        
+        return self.scalar * self.equation.get_rhs(using_grid, i)
 
-    def is_valid_at(self, grid, i):
-        return self.equation.is_valid_at(grid, i)
+    def is_valid_at(self, grid=None, i=None):
+        """方程式が有効かどうかを判定
+        
+        Args:
+            grid: 計算格子（Noneの場合はself.gridを使用）
+            i: グリッド点のインデックス
+            
+        Returns:
+            有効性を示すブール値
+        """
+        # gridパラメータの処理
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("gridが設定されていません。set_grid()で設定するか、引数で指定してください。")
+            using_grid = self.grid
+        
+        return self.equation.is_valid_at(using_grid, i)

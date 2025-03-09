@@ -29,19 +29,28 @@ class EquationSystem2D:
         self.right_top_equations = []        # i = nx-1, j = ny-1
     
     def add_interior_x_equation(self, equation):
-        """内部点の方程式を追加"""
+        """内部点のx方向の方程式を追加"""
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.interior_equations.append(equation)
         self.bottom_boundary_equations.append(equation)
         self.top_boundary_equations.append(equation)
     
     def add_interior_y_equation(self, equation):
-        """内部点の方程式を追加"""
+        """内部点のy方向の方程式を追加"""
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.interior_equations.append(equation)
         self.left_boundary_equations.append(equation)
         self.right_boundary_equations.append(equation)
 
     def add_left_boundary_equation(self, equation):
         """左境界の方程式を追加 (i=0)"""
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.left_boundary_equations.append(equation)
         # 左側の角にも同じ方程式を追加
         self.left_bottom_equations.append(equation)
@@ -49,6 +58,9 @@ class EquationSystem2D:
     
     def add_right_boundary_equation(self, equation):
         """右境界の方程式を追加 (i=nx-1)"""
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.right_boundary_equations.append(equation)
         # 右側の角にも同じ方程式を追加
         self.right_bottom_equations.append(equation)
@@ -56,6 +68,9 @@ class EquationSystem2D:
     
     def add_bottom_boundary_equation(self, equation):
         """下境界の方程式を追加 (j=0)"""
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.bottom_boundary_equations.append(equation)
         # 下側の角にも同じ方程式を追加
         self.left_bottom_equations.append(equation)
@@ -63,6 +78,9 @@ class EquationSystem2D:
     
     def add_top_boundary_equation(self, equation):
         """上境界の方程式を追加 (j=ny-1)"""
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.top_boundary_equations.append(equation)
         # 上側の角にも同じ方程式を追加
         self.left_top_equations.append(equation)
@@ -70,6 +88,9 @@ class EquationSystem2D:
 
     def add_equation(self, equation):
         """全ての型の方程式リストに追加"""
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.interior_equations.append(equation)
         self.left_boundary_equations.append(equation)
         self.right_boundary_equations.append(equation)
@@ -175,7 +196,7 @@ class EquationSystem2D:
                 
                 # 各方程式を適用
                 for eq in applicable_equations:
-                    if eq.is_valid_at(self.grid, i, j):
+                    if eq.is_valid_at(i=i, j=j):
                         # 最大7つまで（オーバーフロー防止）
                         if eq_count >= n_unknowns_per_point:
                             break
@@ -184,8 +205,8 @@ class EquationSystem2D:
                         row = base_idx + eq_count
                         eq_count += 1
                         
-                        # ステンシル係数を取得
-                        stencil_coeffs = eq.get_stencil_coefficients(self.grid, i, j)
+                        # ステンシル係数を取得（gridは渡さない）
+                        stencil_coeffs = eq.get_stencil_coefficients(i=i, j=j)
                         
                         # 行列に係数を追加
                         for (di, dj), coeffs in stencil_coeffs.items():
@@ -198,8 +219,8 @@ class EquationSystem2D:
                                         col_indices.append(col_base + m)
                                         data.append(float(coeff))
                         
-                        # 右辺値を設定
-                        b[row] = eq.get_rhs(self.grid, i, j)
+                        # 右辺値を設定（gridは渡さない）
+                        b[row] = eq.get_rhs(i=i, j=j)
                 
                 # 方程式が不足している場合、単位行列で補完
                 if eq_count < n_unknowns_per_point:

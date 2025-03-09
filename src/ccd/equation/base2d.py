@@ -4,13 +4,35 @@ import cupy as cp
 class Equation2D(ABC):
     """Base class for 2D difference equations"""
     
+    def __init__(self, grid=None):
+        """
+        Initialize with optional grid
+        
+        Args:
+            grid: Grid2D object (optional)
+        """
+        self.grid = grid
+    
+    def set_grid(self, grid):
+        """
+        Set the grid for this equation
+        
+        Args:
+            grid: Grid2D object
+            
+        Returns:
+            self: For method chaining
+        """
+        self.grid = grid
+        return self
+    
     @abstractmethod
-    def get_stencil_coefficients(self, grid, i, j):
+    def get_stencil_coefficients(self, grid=None, i=None, j=None):
         """
         Get stencil coefficients at grid point (i,j)
         
         Args:
-            grid: Grid2D object
+            grid: Grid2D object (if None, uses self.grid)
             i, j: Grid indices
             
         Returns:
@@ -20,12 +42,12 @@ class Equation2D(ABC):
         pass
     
     @abstractmethod
-    def get_rhs(self, grid, i, j):
+    def get_rhs(self, grid=None, i=None, j=None):
         """
         Get right-hand side value at grid point (i,j)
         
         Args:
-            grid: Grid2D object
+            grid: Grid2D object (if None, uses self.grid)
             i, j: Grid indices
             
         Returns:
@@ -34,12 +56,12 @@ class Equation2D(ABC):
         pass
     
     @abstractmethod
-    def is_valid_at(self, grid, i, j):
+    def is_valid_at(self, grid=None, i=None, j=None):
         """
         Check if equation is valid at grid point (i,j)
         
         Args:
-            grid: Grid2D object
+            grid: Grid2D object (if None, uses self.grid)
             i, j: Grid indices
             
         Returns:
@@ -65,23 +87,77 @@ class Equation2D(ABC):
 class CombinedEquation2D(Equation2D):
     """Combination of two 2D equations"""
     
-    def __init__(self, eq1, eq2, operation="+"):
+    def __init__(self, eq1, eq2, operation="+", grid=None):
         """
         Initialize with two equations and operation
         
         Args:
             eq1, eq2: Equation2D objects
             operation: "+" or "-"
+            grid: Grid2D object (optional)
         """
+        # If grid is not provided, try to use grid from eq1 or eq2
+        if grid is None:
+            if hasattr(eq1, 'grid') and eq1.grid is not None:
+                grid = eq1.grid
+            elif hasattr(eq2, 'grid') and eq2.grid is not None:
+                grid = eq2.grid
+                
+        super().__init__(grid)
         self.eq1 = eq1
         self.eq2 = eq2
         self.operation = operation
-    
-    def get_stencil_coefficients(self, grid, i, j):
-        """Combine stencil coefficients from both equations"""
-        coeffs1 = self.eq1.get_stencil_coefficients(grid, i, j)
-        coeffs2 = self.eq2.get_stencil_coefficients(grid, i, j)
         
+        # Set grid to both sub-equations if we have a grid
+        if self.grid is not None:
+            if hasattr(eq1, 'set_grid'):
+                eq1.set_grid(self.grid)
+            if hasattr(eq2, 'set_grid'):
+                eq2.set_grid(self.grid)
+    
+    def set_grid(self, grid):
+        """
+        Set the grid for this equation and its sub-equations
+        
+        Args:
+            grid: Grid2D object
+            
+        Returns:
+            self: For method chaining
+        """
+        super().set_grid(grid)
+        
+        # Set grid to both sub-equations
+        if hasattr(self.eq1, 'set_grid'):
+            self.eq1.set_grid(grid)
+        if hasattr(self.eq2, 'set_grid'):
+            self.eq2.set_grid(grid)
+            
+        return self
+    
+    def get_stencil_coefficients(self, grid=None, i=None, j=None):
+        """
+        Combine stencil coefficients from both equations
+        
+        Args:
+            grid: Grid2D object (if None, uses self.grid)
+            i, j: Grid indices
+            
+        Returns:
+            Combined stencil coefficients
+        """
+        # Handle grid parameter
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("Grid is not set. Use set_grid() or provide grid parameter.")
+            using_grid = self.grid
+        
+        # Get coefficients from both equations
+        coeffs1 = self.eq1.get_stencil_coefficients(using_grid, i, j)
+        coeffs2 = self.eq2.get_stencil_coefficients(using_grid, i, j)
+        
+        # Combine coefficients
         combined_coeffs = {}
         all_offsets = set(list(coeffs1.keys()) + list(coeffs2.keys()))
         
@@ -96,44 +172,158 @@ class CombinedEquation2D(Equation2D):
         
         return combined_coeffs
     
-    def get_rhs(self, grid, i, j):
-        """Combine right-hand sides from both equations"""
-        rhs1 = self.eq1.get_rhs(grid, i, j)
-        rhs2 = self.eq2.get_rhs(grid, i, j)
+    def get_rhs(self, grid=None, i=None, j=None):
+        """
+        Combine right-hand sides from both equations
         
+        Args:
+            grid: Grid2D object (if None, uses self.grid)
+            i, j: Grid indices
+            
+        Returns:
+            Combined right-hand side
+        """
+        # Handle grid parameter
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("Grid is not set. Use set_grid() or provide grid parameter.")
+            using_grid = self.grid
+        
+        # Get RHS from both equations
+        rhs1 = self.eq1.get_rhs(using_grid, i, j)
+        rhs2 = self.eq2.get_rhs(using_grid, i, j)
+        
+        # Combine according to operation
         if self.operation == "+":
             return rhs1 + rhs2
         else:
             return rhs1 - rhs2
     
-    def is_valid_at(self, grid, i, j):
-        """Valid where both equations are valid"""
-        return self.eq1.is_valid_at(grid, i, j) and self.eq2.is_valid_at(grid, i, j)
+    def is_valid_at(self, grid=None, i=None, j=None):
+        """
+        Valid where both equations are valid
+        
+        Args:
+            grid: Grid2D object (if None, uses self.grid)
+            i, j: Grid indices
+            
+        Returns:
+            Boolean validity
+        """
+        # Handle grid parameter
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("Grid is not set. Use set_grid() or provide grid parameter.")
+            using_grid = self.grid
+        
+        # Valid only if both equations are valid
+        return self.eq1.is_valid_at(using_grid, i, j) and self.eq2.is_valid_at(using_grid, i, j)
 
 
 class ScaledEquation2D(Equation2D):
     """Equation scaled by a constant"""
     
-    def __init__(self, equation, scalar):
+    def __init__(self, equation, scalar, grid=None):
         """
         Initialize with equation and scaling factor
         
         Args:
             equation: Equation2D object
             scalar: Scaling factor
+            grid: Grid2D object (optional)
         """
+        # If grid is not provided, try to use grid from equation
+        if grid is None and hasattr(equation, 'grid'):
+            grid = equation.grid
+            
+        super().__init__(grid)
         self.equation = equation
         self.scalar = scalar
+        
+        # Set grid to sub-equation if we have a grid
+        if self.grid is not None and hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
     
-    def get_stencil_coefficients(self, grid, i, j):
-        """Scale all coefficients"""
-        coeffs = self.equation.get_stencil_coefficients(grid, i, j)
+    def set_grid(self, grid):
+        """
+        Set the grid for this equation and its sub-equation
+        
+        Args:
+            grid: Grid2D object
+            
+        Returns:
+            self: For method chaining
+        """
+        super().set_grid(grid)
+        
+        # Set grid to sub-equation
+        if hasattr(self.equation, 'set_grid'):
+            self.equation.set_grid(grid)
+            
+        return self
+    
+    def get_stencil_coefficients(self, grid=None, i=None, j=None):
+        """
+        Scale all coefficients from sub-equation
+        
+        Args:
+            grid: Grid2D object (if None, uses self.grid)
+            i, j: Grid indices
+            
+        Returns:
+            Scaled stencil coefficients
+        """
+        # Handle grid parameter
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("Grid is not set. Use set_grid() or provide grid parameter.")
+            using_grid = self.grid
+        
+        # Get coefficients from sub-equation and scale them
+        coeffs = self.equation.get_stencil_coefficients(using_grid, i, j)
         return {offset: self.scalar * coeff for offset, coeff in coeffs.items()}
     
-    def get_rhs(self, grid, i, j):
-        """Scale right-hand side"""
-        return self.scalar * self.equation.get_rhs(grid, i, j)
+    def get_rhs(self, grid=None, i=None, j=None):
+        """
+        Scale right-hand side from sub-equation
+        
+        Args:
+            grid: Grid2D object (if None, uses self.grid)
+            i, j: Grid indices
+            
+        Returns:
+            Scaled right-hand side
+        """
+        # Handle grid parameter
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("Grid is not set. Use set_grid() or provide grid parameter.")
+            using_grid = self.grid
+        
+        # Get RHS from sub-equation and scale it
+        return self.scalar * self.equation.get_rhs(using_grid, i, j)
     
-    def is_valid_at(self, grid, i, j):
-        """Valid where the original equation is valid"""
-        return self.equation.is_valid_at(grid, i, j)
+    def is_valid_at(self, grid=None, i=None, j=None):
+        """
+        Valid where the original equation is valid
+        
+        Args:
+            grid: Grid2D object (if None, uses self.grid)
+            i, j: Grid indices
+            
+        Returns:
+            Boolean validity
+        """
+        # Handle grid parameter
+        using_grid = grid
+        if using_grid is None:
+            if self.grid is None:
+                raise ValueError("Grid is not set. Use set_grid() or provide grid parameter.")
+            using_grid = self.grid
+        
+        # Valid only if sub-equation is valid
+        return self.equation.is_valid_at(using_grid, i, j)

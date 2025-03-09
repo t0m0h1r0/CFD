@@ -5,27 +5,74 @@ class EquationSystem:
     """方程式システムを管理するクラス"""
 
     def __init__(self, grid):
+        """
+        方程式システムを初期化
+        
+        Args:
+            grid: 計算格子オブジェクト
+        """
         self.grid = grid
         self.left_boundary_equations = []
         self.interior_equations = []
         self.right_boundary_equations = []
 
     def add_left_boundary_equation(self, equation):
+        """
+        左境界方程式を追加
+        
+        Args:
+            equation: 方程式オブジェクト
+        """
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.left_boundary_equations.append(equation)
 
     def add_interior_equation(self, equation):
+        """
+        内部方程式を追加
+        
+        Args:
+            equation: 方程式オブジェクト
+        """
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.interior_equations.append(equation)
 
     def add_right_boundary_equation(self, equation):
+        """
+        右境界方程式を追加
+        
+        Args:
+            equation: 方程式オブジェクト
+        """
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.right_boundary_equations.append(equation)
 
     def add_equation(self, equation):
+        """
+        全ての領域に方程式を追加
+        
+        Args:
+            equation: 方程式オブジェクト
+        """
+        # 方程式にグリッドを設定
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
         self.left_boundary_equations.append(equation)
         self.interior_equations.append(equation)
         self.right_boundary_equations.append(equation)
 
     def build_matrix_system(self):
-        """スパース行列システムを構築"""
+        """
+        スパース行列システムを構築
+        
+        Returns:
+            Tuple[sp.csr_matrix, cp.ndarray]: システム行列と右辺ベクトル
+        """
         n = self.grid.n_points
         size = 4 * n
         
@@ -46,8 +93,9 @@ class EquationSystem:
                 raise ValueError(f"点 {i} に対する方程式が4つではありません")
 
             for k, eq in enumerate(equations):
-                stencil_coeffs = eq.get_stencil_coefficients(self.grid, i)
-                rhs_value = eq.get_rhs(self.grid, i)
+                # 新しいインターフェースを使用: 各方程式にはすでにgridが設定されている
+                stencil_coeffs = eq.get_stencil_coefficients(i=i)
+                rhs_value = eq.get_rhs(i=i)
 
                 for offset, coeffs in stencil_coeffs.items():
                     j = i + offset
