@@ -213,17 +213,22 @@ class DirectionalEquation2D(Equation2D):
         Returns:
             有効性を示すブール値
         """
-        # 方向に応じた有効性の判定
+        # 1次元方程式のis_valid_atを利用する
+        # 方向を考慮した1Dグリッドのエミュレータを作成
+        class Grid1DEmulator:
+            def __init__(self, n_points):
+                self.n_points = n_points
+        
         if self.direction == 'x':
             # x方向の境界判定
             if self.direction_only:
                 # x方向のみの場合、内部点および左右境界のみで有効（上下境界では無効）
                 if j == 0 or j == grid.ny_points - 1:
                     return False
-                return True
             
-            # 通常の判定：内部点と上下境界で有効
-            return 0 < i < grid.nx_points - 1
+            # 1次元方程式のvalid判定を使用
+            emulated_grid = Grid1DEmulator(grid.nx_points)
+            return self.equation_1d.is_valid_at(emulated_grid, i)
             
         else:  # self.direction == 'y'
             # y方向の境界判定
@@ -231,10 +236,10 @@ class DirectionalEquation2D(Equation2D):
                 # y方向のみの場合、内部点および上下境界のみで有効（左右境界では無効）
                 if i == 0 or i == grid.nx_points - 1:
                     return False
-                return True
             
-            # 通常の判定：内部点と左右境界で有効
-            return 0 < j < grid.ny_points - 1
+            # 1次元方程式のvalid判定を使用
+            emulated_grid = Grid1DEmulator(grid.ny_points)
+            return self.equation_1d.is_valid_at(emulated_grid, j)
 
 
 class CombinedDirectionalEquation2D(Equation2D):
