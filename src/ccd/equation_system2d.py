@@ -21,6 +21,12 @@ class EquationSystem2D:
         self.right_boundary_equations = []   # i = nx-1
         self.bottom_boundary_equations = []  # j = 0
         self.top_boundary_equations = []     # j = ny-1
+        
+        # 角の方程式（より詳細な境界条件管理用）
+        self.left_bottom_equations = []      # i = 0, j = 0
+        self.right_bottom_equations = []     # i = nx-1, j = 0
+        self.left_top_equations = []         # i = 0, j = ny-1
+        self.right_top_equations = []        # i = nx-1, j = ny-1
     
     def add_interior_equation(self, equation):
         """内部点の方程式を追加"""
@@ -29,43 +35,92 @@ class EquationSystem2D:
     def add_left_boundary_equation(self, equation):
         """左境界の方程式を追加 (i=0)"""
         self.left_boundary_equations.append(equation)
+        # 左側の角にも同じ方程式を追加
+        self.left_bottom_equations.append(equation)
+        self.left_top_equations.append(equation)
     
     def add_right_boundary_equation(self, equation):
         """右境界の方程式を追加 (i=nx-1)"""
         self.right_boundary_equations.append(equation)
+        # 右側の角にも同じ方程式を追加
+        self.right_bottom_equations.append(equation)
+        self.right_top_equations.append(equation)
     
     def add_bottom_boundary_equation(self, equation):
         """下境界の方程式を追加 (j=0)"""
         self.bottom_boundary_equations.append(equation)
+        # 下側の角にも同じ方程式を追加
+        self.left_bottom_equations.append(equation)
+        self.right_bottom_equations.append(equation)
     
     def add_top_boundary_equation(self, equation):
         """上境界の方程式を追加 (j=ny-1)"""
         self.top_boundary_equations.append(equation)
+        # 上側の角にも同じ方程式を追加
+        self.left_top_equations.append(equation)
+        self.right_top_equations.append(equation)
+    
+    def add_left_bottom_equation(self, equation):
+        """左下の角の方程式を追加 (i=0, j=0)"""
+        self.left_bottom_equations.append(equation)
+    
+    def add_right_bottom_equation(self, equation):
+        """右下の角の方程式を追加 (i=nx-1, j=0)"""
+        self.right_bottom_equations.append(equation)
+    
+    def add_left_top_equation(self, equation):
+        """左上の角の方程式を追加 (i=0, j=ny-1)"""
+        self.left_top_equations.append(equation)
+    
+    def add_right_top_equation(self, equation):
+        """右上の角の方程式を追加 (i=nx-1, j=ny-1)"""
+        self.right_top_equations.append(equation)
         
     def add_equation(self, equation):
+        """全ての型の方程式リストに追加"""
         self.interior_equations.append(equation)
         self.left_boundary_equations.append(equation)
         self.right_boundary_equations.append(equation)
         self.bottom_boundary_equations.append(equation)
         self.top_boundary_equations.append(equation)
+        self.left_bottom_equations.append(equation)
+        self.right_bottom_equations.append(equation)
+        self.left_top_equations.append(equation)
+        self.right_top_equations.append(equation)
     
     def is_left_boundary(self, i, j):
-        """左境界かどうかを判定"""
-        return i == 0
+        """左境界かどうかを判定（角を除く）"""
+        return i == 0 and 0 < j < self.grid.ny_points - 1
     
     def is_right_boundary(self, i, j):
-        """右境界かどうかを判定"""
+        """右境界かどうかを判定（角を除く）"""
         nx = self.grid.nx_points
-        return i == nx - 1
+        return i == nx - 1 and 0 < j < self.grid.ny_points - 1
     
     def is_bottom_boundary(self, i, j):
-        """下境界かどうかを判定"""
-        return j == 0
+        """下境界かどうかを判定（角を除く）"""
+        return j == 0 and 0 < i < self.grid.nx_points - 1
     
     def is_top_boundary(self, i, j):
-        """上境界かどうかを判定"""
+        """上境界かどうかを判定（角を除く）"""
         ny = self.grid.ny_points
-        return j == ny - 1
+        return j == ny - 1 and 0 < i < self.grid.nx_points - 1
+    
+    def is_left_bottom_corner(self, i, j):
+        """左下の角かどうかを判定"""
+        return i == 0 and j == 0
+    
+    def is_right_bottom_corner(self, i, j):
+        """右下の角かどうかを判定"""
+        return i == self.grid.nx_points - 1 and j == 0
+    
+    def is_left_top_corner(self, i, j):
+        """左上の角かどうかを判定"""
+        return i == 0 and j == self.grid.ny_points - 1
+    
+    def is_right_top_corner(self, i, j):
+        """右上の角かどうかを判定"""
+        return i == self.grid.nx_points - 1 and j == self.grid.ny_points - 1
     
     def is_interior(self, i, j):
         """内部点かどうかを判定"""
@@ -96,21 +151,32 @@ class EquationSystem2D:
                 
                 # 点のタイプに基づいて適用する方程式を決定
                 if self.is_interior(i, j):
-                    # 内部点の場合は内部方程式のみ
+                    # 内部点
                     applicable_equations = self.interior_equations
-                else:
-                    # 境界点の場合、適用される境界条件を収集
-                    if self.is_left_boundary(i, j):
-                        applicable_equations.extend(self.left_boundary_equations)
-                    
-                    if self.is_right_boundary(i, j):
-                        applicable_equations.extend(self.right_boundary_equations)
-                    
-                    if self.is_bottom_boundary(i, j):
-                        applicable_equations.extend(self.bottom_boundary_equations)
-                    
-                    if self.is_top_boundary(i, j):
-                        applicable_equations.extend(self.top_boundary_equations)
+                elif self.is_left_bottom_corner(i, j):
+                    # 左下の角
+                    applicable_equations = self.left_bottom_equations
+                elif self.is_right_bottom_corner(i, j):
+                    # 右下の角
+                    applicable_equations = self.right_bottom_equations
+                elif self.is_left_top_corner(i, j):
+                    # 左上の角
+                    applicable_equations = self.left_top_equations
+                elif self.is_right_top_corner(i, j):
+                    # 右上の角
+                    applicable_equations = self.right_top_equations
+                elif self.is_left_boundary(i, j):
+                    # 左境界（角を除く）
+                    applicable_equations = self.left_boundary_equations
+                elif self.is_right_boundary(i, j):
+                    # 右境界（角を除く）
+                    applicable_equations = self.right_boundary_equations
+                elif self.is_bottom_boundary(i, j):
+                    # 下境界（角を除く）
+                    applicable_equations = self.bottom_boundary_equations
+                elif self.is_top_boundary(i, j):
+                    # 上境界（角を除く）
+                    applicable_equations = self.top_boundary_equations
                 
                 # 有効な方程式のカウンター
                 eq_count = 0

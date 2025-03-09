@@ -8,7 +8,7 @@ from equation.compact_internal import Internal1stDerivativeEquation, Internal2nd
 from equation.compact_left_boundary import LeftBoundary1stDerivativeEquation, LeftBoundary2ndDerivativeEquation, LeftBoundary3rdDerivativeEquation
 from equation.compact_right_boundary import RightBoundary1stDerivativeEquation, RightBoundary2ndDerivativeEquation, RightBoundary3rdDerivativeEquation
 from equation.base2d import Equation2D
-from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
+from equation.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation, DirichletXBoundaryEquation2D, DirichletYBoundaryEquation2D
 from grid2d import Grid2D
 
 class CustomEquation2D(Equation2D):
@@ -82,9 +82,14 @@ class Poisson2DEquationSet(EquationSet2D):
         
         # ポアソン方程式: Δψ = f(x,y)
         def poisson_source(x, y):
-            return -(test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y))
+            return (test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y))
         poisson_eq = PoissonEquation2D(poisson_source)
-        system.add_interior_equation(poisson_eq)
+        system.add_equation(poisson_eq)
+
+        left_values = cp.array([test_func.f(grid.x_min, y) for y in grid.y])
+        right_values = cp.array([test_func.f(grid.x_max, y) for y in grid.y])
+        bottom_values = cp.array([test_func.f(x, grid.y_min) for x in grid.x])
+        top_values = cp.array([test_func.f(x, grid.y_max) for x in grid.x])            
         
         # 内部点の方程式 - 1次元方程式を各方向に拡張
         # X方向
@@ -99,7 +104,8 @@ class Poisson2DEquationSet(EquationSet2D):
         
         # 境界点の方程式 - 1次元と同様の考え方
         # 左境界 (i=0)
-        system.add_left_boundary_equation(converter.to_x(DirichletBoundaryEquation(value=test_func.f(grid.x_min,0))))
+        #system.add_left_boundary_equation(DirichletXBoundaryEquation2D(value=left_values))
+        system.add_left_boundary_equation(converter.to_x(LeftBoundary1stDerivativeEquation()))
         system.add_left_boundary_equation(converter.to_x(LeftBoundary2ndDerivativeEquation()))
         system.add_left_boundary_equation(converter.to_x(
             LeftBoundary1stDerivativeEquation()
@@ -108,7 +114,8 @@ class Poisson2DEquationSet(EquationSet2D):
             ))
                 
         # 右境界 (i=nx-1)
-        system.add_right_boundary_equation(converter.to_x(DirichletBoundaryEquation(value=test_func.f(grid.x_max,0))))
+        system.add_right_boundary_equation(DirichletXBoundaryEquation2D(value=right_values))
+        #system.add_right_boundary_equation(converter.to_x(RightBoundary1stDerivativeEquation()))
         system.add_right_boundary_equation(converter.to_x(RightBoundary2ndDerivativeEquation()))
         system.add_right_boundary_equation(converter.to_x(
             RightBoundary1stDerivativeEquation()
@@ -117,7 +124,7 @@ class Poisson2DEquationSet(EquationSet2D):
             ))
                 
         # 下境界 (j=0)
-        system.add_bottom_boundary_equation(converter.to_y(DirichletBoundaryEquation(value=test_func.f(0,grid.y_min))))
+        system.add_bottom_boundary_equation(DirichletYBoundaryEquation2D(value=bottom_values))
         system.add_bottom_boundary_equation(converter.to_y(LeftBoundary2ndDerivativeEquation()))
         system.add_bottom_boundary_equation(converter.to_y(
             LeftBoundary1stDerivativeEquation()
@@ -126,7 +133,7 @@ class Poisson2DEquationSet(EquationSet2D):
             ))
                 
         # 上境界 (j=ny-1)
-        system.add_top_boundary_equation(converter.to_y(DirichletBoundaryEquation(value=test_func.f(0,grid.y_max))))
+        system.add_top_boundary_equation(DirichletYBoundaryEquation2D(value=top_values))
         system.add_top_boundary_equation(converter.to_y(RightBoundary2ndDerivativeEquation()))
         system.add_top_boundary_equation(converter.to_y(
             RightBoundary1stDerivativeEquation()

@@ -52,4 +52,4 @@ class PoissonEquation2D(Equation2D):
     
     def is_valid_at(self, grid, i, j):
         """Poisson equation is valid at interior points"""
-        return grid.is_interior_point(i, j)
+        return True
