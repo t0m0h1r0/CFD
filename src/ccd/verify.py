@@ -2,7 +2,6 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-import cupy as cp
 
 # 既存のCCDコードをインポート
 from grid1d import Grid
@@ -219,12 +218,10 @@ def analyze_equation_system(system, name=""):
         grid = system.grid
         nx, ny = grid.nx_points, grid.ny_points
         grid_info = f"{nx}x{ny}"
-        n_unknowns = 7
     else:
         grid = system.grid
         n = grid.n_points
         grid_info = f"{n}"
-        n_unknowns = 4
     
     # 基本統計情報
     total_size = A.shape[0]

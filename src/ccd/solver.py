@@ -1,7 +1,5 @@
 import cupy as cp
-import cupyx.scipy.sparse as sp
 import cupyx.scipy.sparse.linalg as splinalg
-from grid1d import Grid
 from grid2d import Grid2D
 
 class CCDSolver:

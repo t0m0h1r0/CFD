@@ -8,8 +8,6 @@ from test_functions1d import TestFunctionFactory
 from test_functions2d import TestFunction2DGenerator
 from visualization1d import CCDVisualizer
 from visualization2d import CCD2DVisualizer
-from equation_sets1d import EquationSet
-from equation_sets2d import EquationSet2D
 # 統合されたequation_systemとsolverは直接importされない（tester経由で利用）
 
 def parse_args():
@@ -322,7 +320,7 @@ def test_all_functions(args):
     # 方程式セット設定
     tester.set_equation_set(args.equation_set)
     
-    print(f"\n==== 全関数のテスト ====")
+    print("\n==== 全関数のテスト ====")
     if args.dim == 1:
         print(f"1D モード ({args.nx_points} 点)")
         print("-" * 80)
