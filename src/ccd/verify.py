@@ -3,14 +3,12 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-# 統合されたCCDコードをインポート
-from grid1d import Grid
-from grid2d import Grid2D
+# 既存のCCDコードをインポート
+from grid import Grid
 from equation_system import EquationSystem
 from test_functions1d import TestFunctionFactory
 from test_functions2d import TestFunction2DGenerator
-from equation_sets1d import EquationSet
-from equation_sets2d import EquationSet2D
+from equation_sets import EquationSet
 
 # ディレクトリ作成（結果保存用）
 os.makedirs("matrix_verification", exist_ok=True)
@@ -49,8 +47,7 @@ def visualize_matrix_structure(A, grid=None, title="行列構造の可視化", s
     
     # グリッド線を追加（グリッドが指定されている場合）
     if grid is not None:
-        is_2d = isinstance(grid, Grid2D)
-        if not is_2d:  # 1D grid
+        if not grid.is_2d:  # 1D grid
             n = grid.n_points
             unknowns = 4  # 1Dの場合は4つの未知数 (ψ, ψ', ψ'', ψ''')
             for i in range(1, n):
@@ -71,15 +68,14 @@ def visualize_matrix_structure(A, grid=None, title="行列構造の可視化", s
     else:
         plt.show()
 
-def visualize_matrix_block(A, i, j=None, is_2d=False, nx=None, save_path=None):
+def visualize_matrix_block(A, i, j=None, grid=None, save_path=None):
     """
     行列の特定ブロックを詳細に可視化
     
     Args:
         A: CSR形式の疎行列
         i, j: グリッドインデックス（1Dの場合はiのみ使用）
-        is_2d: 2D問題かどうか
-        nx: 2D問題のx方向のグリッド点数
+        grid: 使用しているGrid
         save_path: 保存パス（指定しない場合は表示のみ）
     """
     # CuPy配列をNumPy配列に変換
@@ -88,14 +84,20 @@ def visualize_matrix_block(A, i, j=None, is_2d=False, nx=None, save_path=None):
     else:
         A_dense = A.toarray() if hasattr(A, 'toarray') else A
     
+    is_2d = grid.is_2d if grid is not None else j is not None
+    
     # 未知数の数とラベルを設定
     if is_2d:
         n_unknowns = 7
         labels = ["ψ", "ψ_x", "ψ_xx", "ψ_xxx", "ψ_y", "ψ_yy", "ψ_yyy"]
         if j is None:
             raise ValueError("2Dの場合、iとjの両方を指定する必要があります")
-        if nx is None:
-            raise ValueError("2Dの場合、nxを指定する必要があります")
+        
+        if grid is not None:
+            nx = grid.nx_points
+        else:
+            raise ValueError("2Dの場合、gridまたはnxを指定する必要があります")
+        
         idx = (j * nx + i) * n_unknowns
     else:
         n_unknowns = 4
@@ -140,15 +142,14 @@ def visualize_matrix_block(A, i, j=None, is_2d=False, nx=None, save_path=None):
     else:
         plt.show()
 
-def visualize_matrix_neighborhood(A, i, j=None, is_2d=False, nx=None, neighborhood_size=1, save_path=None):
+def visualize_matrix_neighborhood(A, i, j=None, grid=None, neighborhood_size=1, save_path=None):
     """
     行列の特定点の周囲を可視化
     
     Args:
         A: CSR形式の疎行列
         i, j: グリッドインデックス（1Dの場合はiのみ使用）
-        is_2d: 2D問題かどうか
-        nx: 2D問題のx方向のグリッド点数
+        grid: 使用しているGrid
         neighborhood_size: 隣接する格子点の数
         save_path: 保存パス（指定しない場合は表示のみ）
     """
@@ -158,11 +159,19 @@ def visualize_matrix_neighborhood(A, i, j=None, is_2d=False, nx=None, neighborho
     else:
         A_dense = A.toarray() if hasattr(A, 'toarray') else A
     
+    is_2d = grid.is_2d if grid is not None else j is not None
+    
     # 未知数の数を設定
     if is_2d:
         n_unknowns = 7
-        if j is None or nx is None:
-            raise ValueError("2Dの場合、jとnxを指定する必要があります")
+        if j is None:
+            raise ValueError("2Dの場合、jを指定する必要があります")
+        
+        if grid is not None:
+            nx = grid.nx_points
+        else:
+            raise ValueError("2Dの場合、gridまたはnxを指定する必要があります")
+        
         idx = (j * nx + i) * n_unknowns
     else:
         n_unknowns = 4
@@ -211,15 +220,14 @@ def analyze_equation_system(system, name=""):
     # 行列システムを構築
     A, b = system.build_matrix_system()
     
-    # グリッド情報とシステムの次元を取得
-    is_2d = system.is_2d
+    # グリッド情報の取得
+    grid = system.grid
+    is_2d = grid.is_2d
     
     if is_2d:
-        grid = system.grid
         nx, ny = grid.nx_points, grid.ny_points
         grid_info = f"{nx}x{ny}"
     else:
-        grid = system.grid
         n = grid.n_points
         grid_info = f"{n}"
     
@@ -242,33 +250,31 @@ def analyze_equation_system(system, name=""):
     
     # 全体構造の可視化
     title = f"{name} 方程式システム行列" if name else f"{'2次元' if is_2d else '1次元'} 方程式システム行列"
-    visualize_matrix_structure(A, system.grid, title, 
+    visualize_matrix_structure(A, grid, title, 
                                save_path=f"matrix_verification/{prefix}_structure.png")
     
     # 特定点の詳細可視化
     if is_2d:
         # 角と中央の点を可視化
-        nx, ny = grid.nx_points, grid.ny_points
         for i, j in [(0, 0), (nx//2, ny//2), (nx-1, ny-1)]:
             if i < nx and j < ny:
-                visualize_matrix_block(A, i, j, is_2d=True, nx=nx,
+                visualize_matrix_block(A, i, j, grid=grid,
                                       save_path=f"matrix_verification/{prefix}_block_i{i}_j{j}.png")
         
         # 中央付近の周辺関係
         i, j = nx//2, ny//2
-        visualize_matrix_neighborhood(A, i, j, is_2d=True, nx=nx, neighborhood_size=1,
+        visualize_matrix_neighborhood(A, i, j, grid=grid, neighborhood_size=1,
                                      save_path=f"matrix_verification/{prefix}_neighborhood_center.png")
     else:
         # 左端、中央、右端の点を可視化
-        n = grid.n_points
         for i in [0, n//2, n-1]:
             if i < n:
-                visualize_matrix_block(A, i, is_2d=False, 
+                visualize_matrix_block(A, i, grid=grid, 
                                       save_path=f"matrix_verification/{prefix}_block_i{i}.png")
         
         # 中央付近の周辺関係
         i = n//2
-        visualize_matrix_neighborhood(A, i, is_2d=False, neighborhood_size=1,
+        visualize_matrix_neighborhood(A, i, grid=grid, neighborhood_size=1,
                                      save_path=f"matrix_verification/{prefix}_neighborhood_center.png")
     
     return {"size": total_size, "nnz": nnz, "sparsity": sparsity}
@@ -283,17 +289,17 @@ def verify_1d_system():
     
     # グリッドの作成
     n_points = 21
-    grid = Grid(n_points, (-1.0, 1.0))
+    grid = Grid(n_points, x_range=(-1.0, 1.0))
     
     # テスト関数の取得
     test_funcs = TestFunctionFactory.create_standard_functions()
     test_func = test_funcs[0]  # 最初の関数を使用
     
-    # 統合された方程式システムの作成
+    # 方程式システムの作成
     system = EquationSystem(grid)
     
     # 方程式セットの取得と設定
-    equation_set = EquationSet.create("poisson")
+    equation_set = EquationSet.create("poisson", dimension=1)
     equation_set.setup_equations(system, grid, test_func, use_dirichlet=True, use_neumann=True)
     
     # 行列構造の分析と可視化
@@ -305,17 +311,17 @@ def verify_2d_system():
     
     # グリッドの作成
     nx, ny = 11, 11
-    grid = Grid2D(nx, ny, (-1.0, 1.0), (-1.0, 1.0))
+    grid = Grid(nx, ny, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
     
     # テスト関数の取得
     test_funcs = TestFunction2DGenerator.create_standard_functions()
     test_func = test_funcs[0]  # 最初の関数を使用
     
-    # 統合された方程式システムの作成
+    # 方程式システムの作成
     system = EquationSystem(grid)
     
     # 方程式セットの取得と設定
-    equation_set = EquationSet2D.create("poisson")
+    equation_set = EquationSet.create("poisson", dimension=2)
     equation_set.setup_equations(system, grid, test_func, use_dirichlet=True, use_neumann=True)
     
     # 行列構造の分析と可視化
