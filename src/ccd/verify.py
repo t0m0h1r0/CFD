@@ -1,71 +1,71 @@
-# verify.py - CCD行列構造検証ツール
+# verify.py - CCD Matrix Structure Verification Tool
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Dict, Optional, Tuple, List, Any
 
-# CCD関連コンポーネント
+# CCD related components
 from grid import Grid
 from equation_system import EquationSystem
 from test_functions1d import TestFunctionFactory
 from test_functions2d import TestFunction2DGenerator
 from equation_sets import EquationSet
 
-# 結果出力ディレクトリ
+# Output directory for results
 OUTPUT_DIR = "results"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 class MatrixVisualizer:
-    """行列の視覚化を管理するクラス"""
+    """Manages matrix visualization"""
     
     def __init__(self, output_dir: str = OUTPUT_DIR):
         """
-        初期化
+        Initialize
         
         Args:
-            output_dir: 出力ディレクトリのパス
+            output_dir: Path to output directory
         """
         self.output_dir = output_dir
         
     def visualize_structure(self, 
                            A: Any, 
                            grid: Optional[Grid] = None, 
-                           title: str = "行列構造の可視化", 
+                           title: str = "Matrix Structure Visualization", 
                            save_path: Optional[str] = None) -> None:
         """
-        行列の全体構造を可視化
+        Visualize the overall matrix structure
         
         Args:
-            A: 行列（疎行列または密行列）
-            grid: Gridオブジェクト
-            title: 図のタイトル
-            save_path: 保存パス（指定しない場合は表示のみ）
+            A: Matrix (sparse or dense)
+            grid: Grid object
+            title: Figure title
+            save_path: Save path (display only if not specified)
         """
-        # CuPy配列をNumPy配列に変換
+        # Convert CuPy array to NumPy array
         A_dense = self._to_numpy_dense(A)
         
-        # 行列の統計情報
+        # Matrix statistics
         total_size = A_dense.shape[0]
         nnz = self._count_nonzeros(A, A_dense)
         sparsity = 1.0 - (float(nnz) / (total_size * total_size))
         
-        # 図の作成
+        # Create figure
         plt.figure(figsize=(10, 8))
         plt.spy(A_dense, markersize=0.5, color='blue')
-        plt.title(f"{title}\n(サイズ: {total_size}×{total_size}, 非ゼロ要素: {nnz}, 疎性: {sparsity:.4f})")
-        plt.xlabel("列インデックス")
-        plt.ylabel("行インデックス")
+        plt.title(f"{title}\n(Size: {total_size}×{total_size}, Non-zero elements: {nnz}, Sparsity: {sparsity:.4f})")
+        plt.xlabel("Column Index")
+        plt.ylabel("Row Index")
         
-        # グリッド情報を使った補助線
+        # Grid lines based on grid information
         if grid is not None:
             self._add_grid_lines(grid, A_dense.shape[0])
         
         plt.tight_layout()
         
-        # 保存または表示
+        # Save or display
         if save_path:
             plt.savefig(save_path, dpi=300)
-            print(f"行列構造を保存しました: {save_path}")
+            print(f"Matrix structure saved: {save_path}")
         else:
             plt.show()
             
@@ -78,52 +78,52 @@ class MatrixVisualizer:
                        grid: Optional[Grid] = None, 
                        save_path: Optional[str] = None) -> None:
         """
-        行列の特定ブロックを詳細に可視化
+        Visualize a specific block of the matrix in detail
         
         Args:
-            A: 行列（疎行列または密行列）
-            i: 行インデックス
-            j: 列インデックス（2Dの場合）
-            grid: Gridオブジェクト
-            save_path: 保存パス
+            A: Matrix (sparse or dense)
+            i: Row index
+            j: Column index (for 2D)
+            grid: Grid object
+            save_path: Save path
         """
-        # 密行列に変換
+        # Convert to dense matrix
         A_dense = self._to_numpy_dense(A)
         
-        # 次元とブロックサイズを決定
+        # Determine dimension and block size
         is_2d, n_unknowns, labels, idx = self._determine_block_params(i, j, grid)
         
-        # ブロックを抽出
+        # Extract block
         if idx + n_unknowns <= A_dense.shape[0]:
             block = A_dense[idx:idx+n_unknowns, idx:idx+n_unknowns]
         else:
-            raise ValueError(f"インデックス {idx} が行列サイズ {A_dense.shape[0]} を超えています")
+            raise ValueError(f"Index {idx} exceeds matrix size {A_dense.shape[0]}")
         
-        # 図の作成
+        # Create figure
         plt.figure(figsize=(8, 6))
         plt.imshow(np.abs(block) > 1e-10, cmap='Blues', interpolation='none')
         
-        # タイトル設定
+        # Set title
         if is_2d:
-            plt.title(f"格子点 ({i},{j}) の行列ブロック")
+            plt.title(f"Matrix Block for Grid Point ({i},{j})")
         else:
-            plt.title(f"格子点 {i} の行列ブロック")
+            plt.title(f"Matrix Block for Grid Point {i}")
         
-        # 軸ラベル
+        # Axis labels
         plt.xticks(range(n_unknowns), labels, rotation=45)
         plt.yticks(range(n_unknowns), labels)
         
-        # 値の表示
+        # Display values
         self._annotate_block_values(block)
         
-        plt.colorbar(label="値の有無")
+        plt.colorbar(label="Value Presence")
         plt.grid(True, color='gray', linestyle='--', alpha=0.7)
         plt.tight_layout()
         
-        # 保存または表示
+        # Save or display
         if save_path:
             plt.savefig(save_path, dpi=300)
-            print(f"ブロック行列を保存しました: {save_path}")
+            print(f"Block matrix saved: {save_path}")
         else:
             plt.show()
             
@@ -137,23 +137,23 @@ class MatrixVisualizer:
                               neighborhood_size: int = 1, 
                               save_path: Optional[str] = None) -> None:
         """
-        行列の特定点の周囲を可視化
+        Visualize the matrix around a specific point
         
         Args:
-            A: 行列（疎行列または密行列）
-            i: 行インデックス
-            j: 列インデックス（2Dの場合）
-            grid: Gridオブジェクト
-            neighborhood_size: 隣接する格子点の数
-            save_path: 保存パス
+            A: Matrix (sparse or dense)
+            i: Row index
+            j: Column index (for 2D)
+            grid: Grid object
+            neighborhood_size: Number of adjacent grid points
+            save_path: Save path
         """
-        # 密行列に変換
+        # Convert to dense matrix
         A_dense = self._to_numpy_dense(A)
         
-        # 次元とブロックサイズを決定
+        # Determine dimension and block size
         is_2d, n_unknowns, _, idx = self._determine_block_params(i, j, grid)
         
-        # 対象領域を抽出
+        # Extract target area
         start_row = max(0, idx - neighborhood_size * n_unknowns)
         start_col = max(0, idx - neighborhood_size * n_unknowns)
         
@@ -162,46 +162,46 @@ class MatrixVisualizer:
         
         block = A_dense[start_row:end_row, start_col:end_col]
         
-        # 図の作成
+        # Create figure
         plt.figure(figsize=(12, 10))
         plt.imshow(block != 0, cmap='Blues', interpolation='none')
         
-        # タイトル設定
+        # Set title
         if is_2d:
-            plt.title(f"格子点 ({i},{j}) 周辺の行列構造 (サイズ: {block.shape[0]}×{block.shape[1]})")
+            plt.title(f"Matrix Structure Around Grid Point ({i},{j}) (Size: {block.shape[0]}×{block.shape[1]})")
         else:
-            plt.title(f"格子点 {i} 周辺の行列構造 (サイズ: {block.shape[0]}×{block.shape[1]})")
+            plt.title(f"Matrix Structure Around Grid Point {i} (Size: {block.shape[0]}×{block.shape[1]})")
         
-        # グリッド点の境界を表示
+        # Show grid point boundaries
         for pos in np.arange(n_unknowns, block.shape[0], n_unknowns):
             plt.axhline(y=pos-0.5, color='r', linestyle='-', alpha=0.3)
             plt.axvline(x=pos-0.5, color='r', linestyle='-', alpha=0.3)
         
-        plt.colorbar(label="値の有無")
+        plt.colorbar(label="Value Presence")
         plt.tight_layout()
         
-        # 保存または表示
+        # Save or display
         if save_path:
             plt.savefig(save_path, dpi=300)
-            print(f"周辺行列を保存しました: {save_path}")
+            print(f"Neighborhood matrix saved: {save_path}")
         else:
             plt.show()
             
         plt.close()
     
     def _to_numpy_dense(self, A: Any) -> np.ndarray:
-        """行列をNumPy密行列に変換"""
+        """Convert matrix to NumPy dense matrix"""
         if hasattr(A, 'get'):
             return A.get().toarray() if hasattr(A, 'toarray') else A.get()
         else:
             return A.toarray() if hasattr(A, 'toarray') else A
     
     def _count_nonzeros(self, A: Any, A_dense: np.ndarray) -> int:
-        """非ゼロ要素数をカウント"""
+        """Count non-zero elements"""
         return A.nnz if hasattr(A, 'nnz') else np.count_nonzero(A_dense)
     
     def _determine_block_params(self, i: int, j: Optional[int], grid: Optional[Grid]) -> Tuple[bool, int, List[str], int]:
-        """ブロックパラメータを決定"""
+        """Determine block parameters"""
         is_2d = (grid.is_2d if grid is not None else j is not None)
         
         if is_2d:
@@ -209,12 +209,12 @@ class MatrixVisualizer:
             labels = ["ψ", "ψ_x", "ψ_xx", "ψ_xxx", "ψ_y", "ψ_yy", "ψ_yyy"]
             
             if j is None:
-                raise ValueError("2Dの場合、jを指定する必要があります")
+                raise ValueError("For 2D, j must be specified")
             
             if grid is not None:
                 nx = grid.nx_points
             else:
-                raise ValueError("2Dの場合、gridを指定する必要があります")
+                raise ValueError("For 2D, grid must be specified")
             
             idx = (j * nx + i) * n_unknowns
         else:
@@ -225,31 +225,31 @@ class MatrixVisualizer:
         return is_2d, n_unknowns, labels, idx
     
     def _add_grid_lines(self, grid: Grid, matrix_size: int) -> None:
-        """行列構造図にグリッド線を追加"""
+        """Add grid lines to matrix structure figure"""
         if not grid.is_2d:  # 1D grid
             n = grid.n_points
-            unknowns = 4  # 1Dの場合は4つの未知数 (ψ, ψ', ψ'', ψ''')
+            unknowns = 4  # 4 unknowns for 1D (ψ, ψ', ψ'', ψ''')
             for i in range(1, n):
                 plt.axhline(y=i*unknowns-0.5, color='r', linestyle='-', alpha=0.2)
                 plt.axvline(x=i*unknowns-0.5, color='r', linestyle='-', alpha=0.2)
         else:  # 2D grid
-            # 2Dグリッドの場合、行列は格子点の積に比例するサイズになる
+            # For 2D grid, matrix size is proportional to grid points
             if matrix_size != grid.nx_points * grid.ny_points * 7:
-                # 行列サイズが期待値と一致しない場合、推定で線を引く
+                # If matrix size doesn't match expected, estimate lines
                 rows = int(np.sqrt(matrix_size / 7))
                 for i in range(1, rows):
                     plt.axhline(y=i*7-0.5, color='r', linestyle='-', alpha=0.2)
                     plt.axvline(x=i*7-0.5, color='r', linestyle='-', alpha=0.2)
             else:
-                # 正確なグリッド線を描画
+                # Draw accurate grid lines
                 nx, ny = grid.nx_points, grid.ny_points
-                unknowns = 7  # 2Dの場合は7つの未知数
+                unknowns = 7  # 7 unknowns for 2D
                 for i in range(1, nx * ny):
                     plt.axhline(y=i*unknowns-0.5, color='r', linestyle='-', alpha=0.2)
                     plt.axvline(x=i*unknowns-0.5, color='r', linestyle='-', alpha=0.2)
     
     def _annotate_block_values(self, block: np.ndarray) -> None:
-        """ブロック内の値を注釈として表示"""
+        """Display block values as annotations"""
         for i in range(block.shape[0]):
             for j in range(block.shape[1]):
                 value = block[i, j]
@@ -257,7 +257,6 @@ class MatrixVisualizer:
                     plt.text(j, i, f"{value:.2g}", ha='center', va='center', 
                              color='black' if abs(value) < 0.5 else 'white',
                              fontsize=9)
-
 
 class MatrixAnalyzer:
     """行列システムの解析を行うクラス"""
@@ -426,7 +425,7 @@ def verify_2d_system() -> None:
     
     try:
         # グリッドの作成
-        nx, ny = 11, 11
+        nx, ny = 5, 5
         grid = Grid(nx, ny, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
         
         # テスト関数の取得
