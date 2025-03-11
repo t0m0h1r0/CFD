@@ -78,13 +78,17 @@ class CCD2DSolver:
         precond = self._create_preconditioner(A)
         self.last_iterations = None
         
+        # 初期解にonesを使用
+        x0 = cp.ones_like(b)
+        
         try:
             x, info = splinalg.gmres(
                 A, b, 
+                x0=x0,  # 初期解を指定
                 tol=tol, 
                 maxiter=maxiter, 
                 M=precond,
-                restart=restart
+                restart=restart,
             )
             
             # 反復回数が利用可能な場合は保存
@@ -120,8 +124,17 @@ class CCD2DSolver:
         precond = self._create_preconditioner(A)
         self.last_iterations = None
         
+        # 初期解にonesを使用
+        x0 = cp.ones_like(b)
+        
         try:
-            x, info = splinalg.cg(A, b, tol=tol, maxiter=maxiter, M=precond)
+            x, info = splinalg.cg(
+                A, b, 
+                x0=x0,  # 初期解を指定
+                tol=tol, 
+                maxiter=maxiter, 
+                M=precond
+            )
             
             # 反復回数が利用可能な場合は保存
             if hasattr(info, 'iterations'):
@@ -154,8 +167,17 @@ class CCD2DSolver:
         precond = self._create_preconditioner(A)
         self.last_iterations = None
         
+        # 初期解にonesを使用
+        x0 = cp.ones_like(b)
+        
         try:
-            x, info = splinalg.cgs(A, b, tol=tol, maxiter=maxiter, M=precond)
+            x, info = splinalg.cgs(
+                A, b, 
+                x0=x0,  # 初期解を指定
+                tol=tol, 
+                maxiter=maxiter, 
+                M=precond
+            )
             
             # 反復回数が利用可能な場合は保存
             if hasattr(info, 'iterations'):
