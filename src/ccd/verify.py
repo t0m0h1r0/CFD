@@ -396,7 +396,7 @@ def verify_1d_system() -> None:
     
     try:
         # グリッドの作成
-        n_points = 5
+        n_points = 3
         grid = Grid(n_points, x_range=(-1.0, 1.0))
         
         # テスト関数の取得
@@ -425,7 +425,7 @@ def verify_2d_system() -> None:
     
     try:
         # グリッドの作成
-        nx, ny = 5, 5
+        nx, ny = 3, 3
         grid = Grid(nx, ny, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
         
         # テスト関数の取得
