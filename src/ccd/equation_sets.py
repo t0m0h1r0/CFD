@@ -17,7 +17,6 @@ from equation.compact_right_boundary import (RightBoundary1stDerivativeEquation,
                                            RightBoundary2ndDerivativeEquation,
                                            RightBoundary3rdDerivativeEquation)
 from equation.equation_converter import Equation1Dto2DConverter
-from grid import Grid
 
 
 class EquationSet(ABC):

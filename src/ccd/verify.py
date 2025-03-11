@@ -2,7 +2,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Dict, Optional, Tuple, Union, List, Any
+from typing import Dict, Optional, Tuple, List, Any
 
 # CCD関連コンポーネント
 from grid import Grid
