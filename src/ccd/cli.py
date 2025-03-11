@@ -21,6 +21,7 @@ def parse_args():
     common_group.add_argument("--convergence-test", action="store_true", help="格子収束性テストを実行")
     common_group.add_argument("--test-all-functions", action="store_true", help="全てのテスト関数でテストを実行")
     common_group.add_argument("--prefix", type=str, default="", help="出力ファイル名の接頭辞")
+    common_group.add_argument("--output-dir", "-o", type=str, default="results", help="画像出力先ディレクトリ（デフォルト: results）")
     common_group.add_argument("--list-functions", action="store_true", help="利用可能なテスト関数の一覧を表示")
     common_group.add_argument(
         "--x-range",
@@ -264,7 +265,8 @@ def run_convergence_test(args):
             )
         
         # 可視化
-        visualizer = CCDVisualizer()
+        output_dir = args.output_dir
+        visualizer = CCDVisualizer(output_dir=output_dir)
         visualizer.visualize_grid_convergence(
             test_func.name,
             grid_sizes,
@@ -285,7 +287,8 @@ def run_convergence_test(args):
             )
         
         # 可視化
-        visualizer = CCD2DVisualizer()
+        output_dir = args.output_dir
+        visualizer = CCD2DVisualizer(output_dir=output_dir)
         visualizer.visualize_grid_convergence(
             test_func.name,
             grid_sizes,
@@ -304,12 +307,15 @@ def test_all_functions(args):
     # グリッドの作成（統合Gridクラスを使用）
     if args.dim == 1:
         grid = Grid(args.nx_points, x_range=x_range)
-        visualizer = CCDVisualizer() if not args.no_visualization else None
+        # 出力ディレクトリを指定
+        output_dir = args.output_dir
+        visualizer = CCDVisualizer(output_dir=output_dir) if not args.no_visualization else None
         functions = TestFunctionFactory.create_standard_functions()
     else:
         y_range = tuple(args.y_range)
         grid = Grid(args.nx_points, args.ny_points, x_range=x_range, y_range=y_range)
-        visualizer = CCD2DVisualizer() if not args.no_visualization else None
+        output_dir = args.output_dir
+        visualizer = CCD2DVisualizer(output_dir=output_dir) if not args.no_visualization else None
         functions = TestFunction2DGenerator.create_standard_functions()
     
     # テスターの作成
@@ -466,7 +472,8 @@ def run_single_test(args):
     # 可視化
     if not args.no_visualization:
         if args.dim == 1:
-            visualizer = CCDVisualizer()
+            output_dir = args.output_dir
+            visualizer = CCDVisualizer(output_dir=output_dir)
             visualizer.visualize_derivatives(
                 grid,
                 results["function"],
@@ -477,7 +484,8 @@ def run_single_test(args):
                 save=True,
             )
         else:
-            visualizer = CCD2DVisualizer()
+            output_dir = args.output_dir
+            visualizer = CCD2DVisualizer(output_dir=output_dir)
             visualizer.visualize_solution(
                 grid,
                 results["function"],
@@ -495,9 +503,7 @@ def run_cli():
     args = parse_args()
     
     # 出力ディレクトリの作成
-    os.makedirs("results", exist_ok=True)
-    if args.dim == 2:
-        os.makedirs("results_2d", exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
     
     # 関数一覧の表示
     if args.list_functions:

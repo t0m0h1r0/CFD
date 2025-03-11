@@ -6,6 +6,12 @@ class CCDVisualizer:
     """CCDソルバーの結果を可視化するクラス"""
 
     def __init__(self, output_dir="results"):
+        """
+        初期化
+        
+        Args:
+            output_dir: 出力ディレクトリパス（デフォルト: "results"）
+        """
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
         self.min_log_value = 1e-16
@@ -96,7 +102,7 @@ class CCDVisualizer:
 
         plt.tight_layout()
         filename = f"{self.output_dir}/{prefix}_all_functions_comparison.png" if prefix else f"{self.output_dir}/all_functions_comparison.png"
-        plt.savefig(filename)
+        plt.savefig(filename, dpi=dpi)
 
         if show:
             plt.show()
@@ -104,3 +110,57 @@ class CCDVisualizer:
             plt.close(fig)
 
         return filename
+
+    def visualize_grid_convergence(self, function_name, grid_sizes, results, prefix="", save=True, show=False, dpi=150):
+        """グリッド収束性のグラフを生成"""
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        titles = ["$\\psi$", "$\\psi'$", "$\\psi''$", "$\\psi'''$"]
+
+        grid_spacings = []
+        for n in grid_sizes:
+            h = 2.0 / (n - 1)  # Assuming domain [-1, 1]
+            grid_spacings.append(h)
+
+        for i, (ax, title) in enumerate(zip(axes.flat, titles)):
+            errors = [results[n][i] for n in grid_sizes]
+            
+            # エラーが全て0の場合はグラフを描画しない
+            if all(err == 0 for err in errors):
+                ax.text(0.5, 0.5, f"All errors are 0 for {title}", 
+                       horizontalalignment='center', verticalalignment='center',
+                       transform=ax.transAxes)
+                continue
+                
+            # エラーが0の場合は小さな値に置き換え
+            plot_errors = [max(err, self.min_log_value) for err in errors]
+            
+            ax.loglog(grid_spacings, plot_errors, 'o-', label=f"Error ({title})")
+            
+            # 参照傾き線を描画
+            x_range = [min(grid_spacings), max(grid_spacings)]
+            for order, style, color in zip([2, 4, 6], ['--', '-.', ':'], ['r', 'g', 'b']):
+                # 参照線の位置を調整（最後のポイントに合わせる）
+                ref_y0 = plot_errors[-1] * (x_range[-1] / x_range[-1]) ** order
+                y_ref = [ref_y0 * (x / x_range[-1]) ** order for x in x_range]
+                ax.loglog(x_range, y_ref, style, color=color, label=f"O(h^{order})")
+            
+            ax.set_title(f"{title} Error Convergence")
+            ax.set_xlabel("Grid Spacing (h)")
+            ax.set_ylabel("Error")
+            ax.grid(True)
+            ax.legend()
+
+        plt.suptitle(f"Grid Convergence for {function_name}")
+        plt.tight_layout()
+
+        filepath = ""
+        if save:
+            filepath = f"{self.output_dir}/{prefix}_{function_name.lower()}_grid_convergence.png" if prefix else f"{self.output_dir}/{function_name.lower()}_grid_convergence.png"
+            plt.savefig(filepath, dpi=dpi)
+
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+
+        return filepath
