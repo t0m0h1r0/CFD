@@ -1,4 +1,7 @@
 from abc import ABC, abstractmethod
+from typing import Dict, Any, Tuple, Union
+import cupy as cp
+import cupyx.scipy.sparse as sp
 
 class BaseScaling(ABC):
     """行列スケーリング手法の基底クラス
@@ -12,7 +15,7 @@ class BaseScaling(ABC):
     """
     
     @abstractmethod
-    def scale(self, A, b):
+    def scale(self, A: Union[sp.spmatrix, cp.ndarray], b: cp.ndarray) -> Tuple[Union[sp.spmatrix, cp.ndarray], cp.ndarray, Dict[str, Any]]:
         """行列Aと右辺ベクトルbをスケーリングする
         
         Args:
@@ -28,7 +31,7 @@ class BaseScaling(ABC):
         pass
     
     @abstractmethod
-    def unscale(self, x, scale_info):
+    def unscale(self, x: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
         """スケーリング情報を使用して解ベクトルをアンスケールする
         
         Args:
@@ -42,12 +45,12 @@ class BaseScaling(ABC):
     
     @property
     @abstractmethod
-    def name(self):
+    def name(self) -> str:
         """スケーリング手法の名前を返す"""
         pass
     
     @property
     @abstractmethod
-    def description(self):
+    def description(self) -> str:
         """スケーリング手法の説明を返す"""
         pass
