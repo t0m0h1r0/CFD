@@ -1,6 +1,5 @@
 import cupy as cp
-from grid1d import Grid
-from grid2d import Grid2D
+from grid import Grid
 from solver import CCDSolver
 from equation_system import EquationSystem
 from equation_sets1d import EquationSet
@@ -16,7 +15,7 @@ class CCDTester:
         グリッドを指定して初期化
         
         Args:
-            grid: Grid (1D) or Grid2D (2D) object
+            grid: Gridオブジェクト (1Dまたは2D)
         """
         self.grid = grid
         self.system = None
@@ -27,8 +26,8 @@ class CCDTester:
         self.analyze_matrix = False
         self.equation_set = None
         
-        # 1D or 2D mode
-        self.is_2d = isinstance(grid, Grid2D)
+        # gridのis_2d属性を使用
+        self.is_2d = grid.is_2d
 
     def set_solver_options(self, method, options, analyze_matrix=False):
         """
@@ -255,9 +254,9 @@ class CCDTester:
                     y_range = x_range  # デフォルトでx_rangeと同じ
 
                 # 両方向で同じ点数を使用
-                grid = Grid2D(n, n, x_range, y_range)
+                grid = Grid(n, n, x_range, y_range)
             else:
-                grid = Grid(n, x_range)
+                grid = Grid(n, x_range=x_range)
                 
             tester = CCDTester(grid)
             tester.set_solver_options(original_method, original_options, original_analyze)

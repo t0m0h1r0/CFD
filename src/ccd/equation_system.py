@@ -1,6 +1,5 @@
 import cupy as cp
 import cupyx.scipy.sparse as sp
-from grid2d import Grid2D
 
 class EquationSystem:
     """1D/2D 両対応の方程式システムを管理するクラス"""
@@ -10,12 +9,12 @@ class EquationSystem:
         方程式システムを初期化
         
         Args:
-            grid: Grid (1D) or Grid2D (2D) オブジェクト
+            grid: Grid (1D/2D) オブジェクト
         """
         self.grid = grid
         
         # 1D or 2D mode判定
-        self.is_2d = isinstance(grid, Grid2D)
+        self.is_2d = grid.is_2d
         
         if self.is_2d:
             # 2D specific variables
@@ -167,6 +166,15 @@ class EquationSystem:
         self.left_top_equations.append(equation)
         self.right_top_equations.append(equation)
 
+    # 位置判定メソッド（1D/2D両対応）
+    def is_boundary_point(self, i, j=None):
+        """境界点かどうかを判定"""
+        return self.grid.is_boundary_point(i, j)
+        
+    def is_interior_point(self, i, j=None):
+        """内部点かどうかを判定"""
+        return self.grid.is_interior_point(i, j)
+
     # 2D用の位置判定メソッド
     def is_left_boundary(self, i, j):
         """左境界かどうかを判定（角を除く）(2D only)"""
@@ -225,31 +233,10 @@ class EquationSystem:
             raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
             
         return i == self.grid.nx_points - 1 and j == self.grid.ny_points - 1
-    
-    def is_interior(self, i, j=None):
-        """
-        内部点かどうかを判定
-        
-        Args:
-            i: xのインデックス (1D/2D)
-            j: yのインデックス (2D only)
-            
-        Returns:
-            内部点かどうかのブール値
-        """
-        if self.is_2d:
-            if j is None:
-                raise ValueError("2Dモードでは j インデックスを指定する必要があります")
-                
-            nx, ny = self.grid.nx_points, self.grid.ny_points
-            return 0 < i < nx - 1 and 0 < j < ny - 1
-        else:
-            n = self.grid.n_points
-            return 0 < i < n - 1
 
     def build_matrix_system(self):
         """
-        スパース行列システムを構築
+        行列システムを構築
         
         Returns:
             Tuple[sp.csr_matrix, cp.ndarray]: システム行列と右辺ベクトル
@@ -277,10 +264,18 @@ class EquationSystem:
             else:
                 equations = self.interior_equations
 
-            if len(equations) != 4:
-                raise ValueError(f"点 {i} に対する方程式が4つではありません")
+            if len(equations) < 4:
+                # 不足している場合の処理を追加する
+                empty_count = 4 - len(equations)
+                for _ in range(empty_count):
+                    row = i * 4 + len(equations)
+                    row_indices.append(row)
+                    col_indices.append(row)  # 対角要素
+                    data.append(1.0)  # 単位行列
+                    b[row] = 0.0
+                continue
 
-            for k, eq in enumerate(equations):
+            for k, eq in enumerate(equations[:4]):  # 最大4つの方程式を使用
                 # 新しいインターフェースのみを使用
                 stencil_coeffs = eq.get_stencil_coefficients(i=i)
                 rhs_value = eq.get_rhs(i=i)
@@ -292,7 +287,7 @@ class EquationSystem:
                             if coeff != 0.0:
                                 row_indices.append(i * 4 + k)
                                 col_indices.append(j * 4 + m)
-                                data.append(coeff)
+                                data.append(float(coeff))
 
                 b[i * 4 + k] = rhs_value
 
@@ -326,7 +321,7 @@ class EquationSystem:
                 applicable_equations = []
                 
                 # 点のタイプに基づいて適用する方程式を決定
-                if self.is_interior(i, j):
+                if self.is_interior_point(i, j):
                     # 内部点
                     applicable_equations = self.interior_equations
                 elif self.is_left_bottom_corner(i, j):

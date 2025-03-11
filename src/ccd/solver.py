@@ -1,9 +1,8 @@
 import cupy as cp
 import cupyx.scipy.sparse.linalg as splinalg
-from grid2d import Grid2D
 
 class CCDSolver:
-    """1D/2D 両対応のCCDソルバークラス"""
+    """1D/2D両対応のCCDソルバークラス"""
 
     def __init__(self, system, grid):
         """
@@ -11,7 +10,7 @@ class CCDSolver:
         
         Args:
             system: 方程式システム
-            grid: Grid (1D) or Grid2D (2D) オブジェクト
+            grid: Gridオブジェクト (1Dまたは2D)
         """
         self.system = system
         self.grid = grid
@@ -21,8 +20,8 @@ class CCDSolver:
         self.last_iterations = None
         self.sparsity_info = None
         
-        # 1D or 2D mode判定
-        self.is_2d = isinstance(grid, Grid2D)
+        # gridのis_2d属性を使用
+        self.is_2d = grid.is_2d
 
     def set_solver(self, method="direct", options=None, scaling_method=None):
         """
