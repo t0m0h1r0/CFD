@@ -3,11 +3,10 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-# 既存のCCDコードをインポート
+# 統合されたCCDコードをインポート
 from grid1d import Grid
 from grid2d import Grid2D
-from equation_system1d import EquationSystem
-from equation_system2d import EquationSystem2D
+from equation_system import EquationSystem
 from test_functions1d import TestFunctionFactory
 from test_functions2d import TestFunction2DGenerator
 from equation_sets1d import EquationSet
@@ -50,13 +49,14 @@ def visualize_matrix_structure(A, grid=None, title="行列構造の可視化", s
     
     # グリッド線を追加（グリッドが指定されている場合）
     if grid is not None:
-        if hasattr(grid, 'n_points'):  # 1D grid
+        is_2d = isinstance(grid, Grid2D)
+        if not is_2d:  # 1D grid
             n = grid.n_points
             unknowns = 4  # 1Dの場合は4つの未知数 (ψ, ψ', ψ'', ψ''')
             for i in range(1, n):
                 plt.axhline(y=i*unknowns-0.5, color='r', linestyle='-', alpha=0.2)
                 plt.axvline(x=i*unknowns-0.5, color='r', linestyle='-', alpha=0.2)
-        elif hasattr(grid, 'nx_points'):  # 2D grid
+        else:  # 2D grid
             nx, ny = grid.nx_points, grid.ny_points
             unknowns = 7  # 2Dの場合は7つの未知数 (ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy)
             for i in range(1, nx * ny):
@@ -205,14 +205,14 @@ def analyze_equation_system(system, name=""):
     方程式システムを分析し、行列構造を検証する
     
     Args:
-        system: EquationSystem または EquationSystem2D のインスタンス
+        system: EquationSystem のインスタンス
         name: 識別用の名前
     """
     # 行列システムを構築
     A, b = system.build_matrix_system()
     
-    # グリッド情報の取得
-    is_2d = hasattr(system.grid, 'nx_points')
+    # グリッド情報とシステムの次元を取得
+    is_2d = system.is_2d
     
     if is_2d:
         grid = system.grid
@@ -248,6 +248,7 @@ def analyze_equation_system(system, name=""):
     # 特定点の詳細可視化
     if is_2d:
         # 角と中央の点を可視化
+        nx, ny = grid.nx_points, grid.ny_points
         for i, j in [(0, 0), (nx//2, ny//2), (nx-1, ny-1)]:
             if i < nx and j < ny:
                 visualize_matrix_block(A, i, j, is_2d=True, nx=nx,
@@ -259,6 +260,7 @@ def analyze_equation_system(system, name=""):
                                      save_path=f"matrix_verification/{prefix}_neighborhood_center.png")
     else:
         # 左端、中央、右端の点を可視化
+        n = grid.n_points
         for i in [0, n//2, n-1]:
             if i < n:
                 visualize_matrix_block(A, i, is_2d=False, 
@@ -287,7 +289,7 @@ def verify_1d_system():
     test_funcs = TestFunctionFactory.create_standard_functions()
     test_func = test_funcs[0]  # 最初の関数を使用
     
-    # 方程式システムの作成
+    # 統合された方程式システムの作成
     system = EquationSystem(grid)
     
     # 方程式セットの取得と設定
@@ -309,8 +311,8 @@ def verify_2d_system():
     test_funcs = TestFunction2DGenerator.create_standard_functions()
     test_func = test_funcs[0]  # 最初の関数を使用
     
-    # 方程式システムの作成
-    system = EquationSystem2D(grid)
+    # 統合された方程式システムの作成
+    system = EquationSystem(grid)
     
     # 方程式セットの取得と設定
     equation_set = EquationSet2D.create("poisson")
