@@ -6,6 +6,12 @@ class CCD2DVisualizer:
     """CCDソルバーの2D結果を可視化するクラス"""
     
     def __init__(self, output_dir="results_2d"):
+        """
+        初期化
+        
+        Args:
+            output_dir: 出力ディレクトリパス（デフォルト: "results_2d"）
+        """
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
         self.min_log_value = 1e-16

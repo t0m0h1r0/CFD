@@ -1,14 +1,13 @@
 import argparse
 import os
 import time
-from grid1d import Grid
-from grid2d import Grid2D
+from grid import Grid
 from tester import CCDTester
 from test_functions1d import TestFunctionFactory
 from test_functions2d import TestFunction2DGenerator
 from visualization1d import CCDVisualizer
 from visualization2d import CCD2DVisualizer
-# 統合されたequation_systemとsolverは直接importされない（tester経由で利用）
+# 統合されたGrid、system、solverクラスは直接importされない（tester経由で利用）
 
 def parse_args():
     """コマンドライン引数の解析"""
@@ -22,6 +21,7 @@ def parse_args():
     common_group.add_argument("--convergence-test", action="store_true", help="格子収束性テストを実行")
     common_group.add_argument("--test-all-functions", action="store_true", help="全てのテスト関数でテストを実行")
     common_group.add_argument("--prefix", type=str, default="", help="出力ファイル名の接頭辞")
+    common_group.add_argument("--output-dir", "-o", type=str, default="results", help="画像出力先ディレクトリ（デフォルト: results）")
     common_group.add_argument("--list-functions", action="store_true", help="利用可能なテスト関数の一覧を表示")
     common_group.add_argument(
         "--x-range",
@@ -152,10 +152,12 @@ def compare_scaling_methods(args):
     scaling_methods = plugin_manager.get_available_plugins()
     
     # グリッドとテスター作成
+    x_range = tuple(args.x_range)
     if args.dim == 1:
-        grid = Grid(args.nx_points, tuple(args.x_range))
+        grid = Grid(args.nx_points, x_range=x_range)
     else:
-        grid = Grid2D(args.nx_points, args.ny_points, tuple(args.x_range), tuple(args.y_range))
+        y_range = tuple(args.y_range)
+        grid = Grid(args.nx_points, args.ny_points, x_range=x_range, y_range=y_range)
     
     tester = CCDTester(grid)
     
@@ -166,7 +168,7 @@ def compare_scaling_methods(args):
     
     print(f"\n{test_func.name}関数でスケーリング手法を比較しています...")
     if args.dim == 1:
-        print(f"グリッドサイズ: {args.n_points} 点")
+        print(f"グリッドサイズ: {args.nx_points} 点")
     else:
         print(f"グリッドサイズ: {args.nx_points}x{args.ny_points} 点")
     print(f"ソルバー: {args.solver}")
@@ -215,12 +217,14 @@ def run_convergence_test(args):
     # グリッドサイズ
     if args.dim == 1:
         grid_sizes = [11, 21, 41, 81, 161]
-        base_grid = Grid(grid_sizes[0], x_range)
+        # 統合Gridクラスを使用
+        base_grid = Grid(grid_sizes[0], x_range=x_range)
         y_range = None
     else:
         grid_sizes = [11, 21, 31, 41]
         y_range = tuple(args.y_range)
-        base_grid = Grid2D(grid_sizes[0], grid_sizes[0], x_range, y_range)
+        # 統合Gridクラスを使用（2Dモード）
+        base_grid = Grid(grid_sizes[0], grid_sizes[0], x_range=x_range, y_range=y_range)
     
     # テスターの作成
     tester = CCDTester(base_grid)
@@ -261,7 +265,8 @@ def run_convergence_test(args):
             )
         
         # 可視化
-        visualizer = CCDVisualizer()
+        output_dir = args.output_dir
+        visualizer = CCDVisualizer(output_dir=output_dir)
         visualizer.visualize_grid_convergence(
             test_func.name,
             grid_sizes,
@@ -282,7 +287,8 @@ def run_convergence_test(args):
             )
         
         # 可視化
-        visualizer = CCD2DVisualizer()
+        output_dir = args.output_dir
+        visualizer = CCD2DVisualizer(output_dir=output_dir)
         visualizer.visualize_grid_convergence(
             test_func.name,
             grid_sizes,
@@ -298,15 +304,18 @@ def test_all_functions(args):
     # 結果を保存する辞書
     results_summary = {}
     
-    # グリッドの作成
+    # グリッドの作成（統合Gridクラスを使用）
     if args.dim == 1:
-        grid = Grid(args.nx_points, x_range)
-        visualizer = CCDVisualizer() if not args.no_visualization else None
+        grid = Grid(args.nx_points, x_range=x_range)
+        # 出力ディレクトリを指定
+        output_dir = args.output_dir
+        visualizer = CCDVisualizer(output_dir=output_dir) if not args.no_visualization else None
         functions = TestFunctionFactory.create_standard_functions()
     else:
         y_range = tuple(args.y_range)
-        grid = Grid2D(args.nx_points, args.ny_points, x_range, y_range)
-        visualizer = CCD2DVisualizer() if not args.no_visualization else None
+        grid = Grid(args.nx_points, args.ny_points, x_range=x_range, y_range=y_range)
+        output_dir = args.output_dir
+        visualizer = CCD2DVisualizer(output_dir=output_dir) if not args.no_visualization else None
         functions = TestFunction2DGenerator.create_standard_functions()
     
     # テスターの作成
@@ -400,12 +409,12 @@ def run_single_test(args):
     """単一関数のテストを実行"""
     x_range = tuple(args.x_range)
     
-    # グリッドの作成
+    # グリッドの作成（統合Gridクラスを使用）
     if args.dim == 1:
-        grid = Grid(args.nx_points, x_range)
+        grid = Grid(args.nx_points, x_range=x_range)
     else:
         y_range = tuple(args.y_range)
-        grid = Grid2D(args.nx_points, args.ny_points, x_range, y_range)
+        grid = Grid(args.nx_points, args.ny_points, x_range=x_range, y_range=y_range)
     
     # テスターの作成
     tester = CCDTester(grid)
@@ -463,7 +472,8 @@ def run_single_test(args):
     # 可視化
     if not args.no_visualization:
         if args.dim == 1:
-            visualizer = CCDVisualizer()
+            output_dir = args.output_dir
+            visualizer = CCDVisualizer(output_dir=output_dir)
             visualizer.visualize_derivatives(
                 grid,
                 results["function"],
@@ -474,7 +484,8 @@ def run_single_test(args):
                 save=True,
             )
         else:
-            visualizer = CCD2DVisualizer()
+            output_dir = args.output_dir
+            visualizer = CCD2DVisualizer(output_dir=output_dir)
             visualizer.visualize_solution(
                 grid,
                 results["function"],
@@ -492,9 +503,7 @@ def run_cli():
     args = parse_args()
     
     # 出力ディレクトリの作成
-    os.makedirs("results", exist_ok=True)
-    if args.dim == 2:
-        os.makedirs("results_2d", exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
     
     # 関数一覧の表示
     if args.list_functions:
