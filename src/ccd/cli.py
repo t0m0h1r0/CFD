@@ -32,14 +32,13 @@ def parse_args():
         help="x座標の範囲 (最小値 最大値)"
     )
     
-    # 1Dの設定
-    dim1_group = parser.add_argument_group('1D固有オプション')
-    dim1_group.add_argument("--n-points", type=int, default=21, help="格子点の数 (1D)")
+    # 共通グリッドオプション
+    grid_group = parser.add_argument_group('グリッドオプション')
+    grid_group.add_argument("--nx-points", type=int, default=33, help="x方向の格子点の数 (1D/2D)")
     
-    # 2Dの設定
+    # 2D固有のオプション
     dim2_group = parser.add_argument_group('2D固有オプション')
-    dim2_group.add_argument("--nx-points", type=int, default=21, help="x方向の格子点の数 (2D)")
-    dim2_group.add_argument("--ny-points", type=int, default=21, help="y方向の格子点の数 (2D)")
+    dim2_group.add_argument("--ny-points", type=int, default=33, help="y方向の格子点の数 (2D専用)")
     dim2_group.add_argument("--y-range", type=float, nargs=2, default=[-1.0, 1.0], help="y座標の範囲 (最小値 最大値)")
     
     # 方程式セットオプション
@@ -155,7 +154,7 @@ def compare_scaling_methods(args):
     
     # グリッドとテスター作成
     if args.dim == 1:
-        grid = Grid(args.n_points, tuple(args.x_range))
+        grid = Grid(args.nx_points, tuple(args.x_range))
     else:
         grid = Grid2D(args.nx_points, args.ny_points, tuple(args.x_range), tuple(args.y_range))
     
@@ -302,7 +301,7 @@ def test_all_functions(args):
     
     # グリッドの作成
     if args.dim == 1:
-        grid = Grid(args.n_points, x_range)
+        grid = Grid(args.nx_points, x_range)
         visualizer = CCDVisualizer() if not args.no_visualization else None
         functions = TestFunctionFactory.create_standard_functions()
     else:
@@ -324,7 +323,7 @@ def test_all_functions(args):
     
     print(f"\n==== 全関数のテスト ====")
     if args.dim == 1:
-        print(f"1D モード ({args.n_points} 点)")
+        print(f"1D モード ({args.nx_points} 点)")
         print("-" * 80)
         print(f"{'関数名':<15} {'ψ誤差':<15} {"ψ'誤差":<15} {'ψ"誤差':<15} {'ψ\'"誤差':<15}")
         print("-" * 80)
@@ -404,7 +403,7 @@ def run_single_test(args):
     
     # グリッドの作成
     if args.dim == 1:
-        grid = Grid(args.n_points, x_range)
+        grid = Grid(args.nx_points, x_range)
     else:
         y_range = tuple(args.y_range)
         grid = Grid2D(args.nx_points, args.ny_points, x_range, y_range)
