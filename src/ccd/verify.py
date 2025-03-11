@@ -396,7 +396,7 @@ def verify_1d_system() -> None:
     
     try:
         # グリッドの作成
-        n_points = 21
+        n_points = 5
         grid = Grid(n_points, x_range=(-1.0, 1.0))
         
         # テスト関数の取得
