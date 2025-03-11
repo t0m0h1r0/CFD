@@ -1,10 +1,8 @@
 import cupy as cp
 from grid1d import Grid
 from grid2d import Grid2D
-from solver1d import CCDSolver
-from solver2d import CCD2DSolver
-from equation_system1d import EquationSystem
-from equation_system2d import EquationSystem2D
+from solver import CCDSolver
+from equation_system import EquationSystem
 from equation_sets1d import EquationSet
 from equation_sets2d import EquationSet2D
 from test_functions1d import TestFunctionFactory
@@ -71,14 +69,13 @@ class CCDTester:
             use_dirichlet: ディリクレ境界条件を使用するかどうか
             use_neumann: ノイマン境界条件を使用するかどうか
         """
+        # 統合されたEquationSystemクラスを使用
+        self.system = EquationSystem(self.grid)
+        
         if self.is_2d:
-            self.system = EquationSystem2D(self.grid)
-            
             if self.equation_set is None:
                 self.equation_set = EquationSet2D.create("poisson")
         else:
-            self.system = EquationSystem(self.grid)
-            
             if self.equation_set is None:
                 self.equation_set = EquationSet.create("poisson")
         
@@ -91,12 +88,9 @@ class CCDTester:
             use_neumann
         )
 
-        # ソルバー作成または更新
+        # ソルバー作成または更新（統合されたCCDSolverクラスを使用）
         if self.solver is None:
-            if self.is_2d:
-                self.solver = CCD2DSolver(self.system, self.grid)
-            else:
-                self.solver = CCDSolver(self.system, self.grid)
+            self.solver = CCDSolver(self.system, self.grid)
         else:
             self.solver.system = self.system
 

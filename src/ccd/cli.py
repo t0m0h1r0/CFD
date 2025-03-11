@@ -10,6 +10,7 @@ from visualization1d import CCDVisualizer
 from visualization2d import CCD2DVisualizer
 from equation_sets1d import EquationSet
 from equation_sets2d import EquationSet2D
+# 統合されたequation_systemとsolverは直接importされない（tester経由で利用）
 
 def parse_args():
     """コマンドライン引数の解析"""
@@ -34,11 +35,11 @@ def parse_args():
     
     # 共通グリッドオプション
     grid_group = parser.add_argument_group('グリッドオプション')
-    grid_group.add_argument("--nx-points", type=int, default=33, help="x方向の格子点の数 (1D/2D)")
+    grid_group.add_argument("--nx-points", type=int, default=21, help="x方向の格子点の数 (1D/2D)")
     
     # 2D固有のオプション
     dim2_group = parser.add_argument_group('2D固有オプション')
-    dim2_group.add_argument("--ny-points", type=int, default=33, help="y方向の格子点の数 (2D専用)")
+    dim2_group.add_argument("--ny-points", type=int, default=21, help="y方向の格子点の数 (2D専用)")
     dim2_group.add_argument("--y-range", type=float, nargs=2, default=[-1.0, 1.0], help="y座標の範囲 (最小値 最大値)")
     
     # 方程式セットオプション
