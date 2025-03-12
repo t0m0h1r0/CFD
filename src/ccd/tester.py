@@ -4,6 +4,7 @@ from grid import Grid
 from solver import CCDSolver1D, CCDSolver2D
 from equation_system import EquationSystem
 from equation_sets import EquationSet
+from test_functions import TestFunctionFactory, TestFunction  # 更新されたインポート
 
 class BaseCCDTester(ABC):
     """CCDメソッドのテストを行う抽象基底クラス"""
@@ -76,8 +77,8 @@ class BaseCCDTester(ABC):
             self.system, 
             self.grid, 
             test_func, 
-            use_dirichlet, 
-            use_neumann
+            #use_dirichlet, 
+            #use_neumann
         )
 
         # 適切なソルバーを作成または更新
@@ -96,7 +97,7 @@ class BaseCCDTester(ABC):
         """次元に応じた適切なソルバーを作成"""
         pass
             
-    def run_test_with_options(self, test_func, use_dirichlet=None, use_neumann=None):
+    def run_test_with_options(self, test_func, use_dirichlet=True, use_neumann=True):
         """
         テスト実行
         
@@ -108,23 +109,6 @@ class BaseCCDTester(ABC):
         Returns:
             テスト結果の辞書
         """
-        # 方程式セットのタイプに基づいて境界条件を設定
-        if use_dirichlet is None or use_neumann is None:
-            if hasattr(self, 'equation_set') and self.equation_set is not None:
-                equation_set_class_name = self.equation_set.__class__.__name__
-                if "Derivative" in equation_set_class_name:
-                    # 導関数方程式セットでは境界条件を使用しない
-                    use_dirichlet = False if use_dirichlet is None else use_dirichlet
-                    use_neumann = False if use_neumann is None else use_neumann
-                else:
-                    # ポアソン方程式セットなどでは境界条件を使用
-                    use_dirichlet = True if use_dirichlet is None else use_dirichlet
-                    use_neumann = True if use_neumann is None else use_neumann
-            else:
-                # 方程式セットが設定されていない場合はデフォルト値を使用
-                use_dirichlet = True if use_dirichlet is None else use_dirichlet
-                use_neumann = True if use_neumann is None else use_neumann
-        
         # test_funcが文字列の場合、対応するテスト関数を取得
         if isinstance(test_func, str):
             test_func = self.get_test_function(test_func)
@@ -272,9 +256,8 @@ class CCDTester1D(BaseCCDTester):
     
     def get_test_function(self, func_name):
         """1Dテスト関数を取得"""
-        from test_functions1d import TestFunctionFactory
-        
-        test_funcs = TestFunctionFactory.create_standard_functions()
+        # 新しいTestFunctionFactoryを使用
+        test_funcs = TestFunctionFactory.create_standard_1d_functions()
         selected_func = next((f for f in test_funcs if f.name == func_name), None)
         
         if selected_func is None:
@@ -364,11 +347,8 @@ class CCDTester2D(BaseCCDTester):
     
     def get_test_function(self, func_name):
         """2Dテスト関数を取得"""
-        from test_functions2d import TestFunction2DGenerator
-        from test_functions1d import TestFunctionFactory
-        
-        # まず基本的な2D関数を生成
-        standard_funcs = TestFunction2DGenerator.create_standard_functions()
+        # 新しいTestFunctionFactoryを使用
+        standard_funcs = TestFunctionFactory.create_standard_2d_functions()
         
         # 指定された名前の関数を検索
         selected_func = next((f for f in standard_funcs if f.name == func_name), None)
@@ -376,12 +356,12 @@ class CCDTester2D(BaseCCDTester):
             return selected_func
         
         # 見つからない場合は、1D関数から動的に生成を試みる
-        funcs_1d = TestFunctionFactory.create_standard_functions()
+        funcs_1d = TestFunctionFactory.create_standard_1d_functions()
         func_1d = next((f for f in funcs_1d if f.name == func_name), None)
         
         if func_1d is not None:
             # テンソル積拡張を作成
-            return TestFunction2DGenerator.product_extension(func_1d)
+            return TestFunction.from_1d_to_2d(func_1d, method='product')
         
         # それでも見つからない場合は、最初の関数を返す
         print(f"警告: 2D関数 '{func_name}' が見つかりませんでした。デフォルト関数を使用します。")
