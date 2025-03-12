@@ -359,20 +359,3 @@ class CCDSolver2D(BaseCCDSolver):
                 psi_yyy[i, j] = sol[idx + 6]
         
         return psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy
-
-
-def create_ccd_solver(system, grid):
-    """
-    Create appropriate CCD solver based on grid dimension
-    
-    Args:
-        system: Equation system
-        grid: Grid object (1D or 2D)
-    
-    Returns:
-        CCDSolver1D or CCDSolver2D instance
-    """
-    if grid.is_2d:
-        return CCDSolver2D(system, grid)
-    else:
-        return CCDSolver1D(system, grid)

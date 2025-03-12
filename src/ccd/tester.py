@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import cupy as cp
 from grid import Grid
-from solver import create_ccd_solver
+from solver import CCDSolver1D, CCDSolver2D
 from equation_system import EquationSystem
 from equation_sets import EquationSet
 
@@ -81,10 +81,7 @@ class BaseCCDTester(ABC):
         )
 
         # 適切なソルバーを作成または更新
-        if self.solver is None:
-            self.solver = create_ccd_solver(self.system, self.grid)
-        else:
-            self.solver.system = self.system
+        self._create_solver()
 
         # ソルバーオプション設定
         if self.solver_method != "direct" or self.solver_options:
@@ -93,6 +90,11 @@ class BaseCCDTester(ABC):
         # スケーリング手法設定
         if self.scaling_method is not None:
             self.solver.scaling_method = self.scaling_method
+            
+    @abstractmethod
+    def _create_solver(self):
+        """次元に応じた適切なソルバーを作成"""
+        pass
             
     def run_test_with_options(self, test_func, use_dirichlet=True, use_neumann=True):
         """
@@ -147,16 +149,15 @@ class BaseCCDTester(ABC):
         if isinstance(test_func, str):
             test_func = self.get_test_function(test_func)
 
-        # ファクトリメソッドを使って次元ごとの適切なテスタークラスを取得
-        tester_factory = self.create_dimension_specific_tester
-
         # 各グリッドサイズでテスト実行
         for n in grid_sizes:
             # 次元に基づいてグリッドを作成
             grid = self._create_grid_for_convergence_test(n, x_range, y_range)
-                
-            # 新しいテスターを作成し設定を引き継ぐ
-            tester = tester_factory(grid)
+            
+            # 新しいテスターを作成（次元ごとの具体的なクラスを明示的に指定）
+            tester = self._create_tester_for_convergence_test(grid)
+            
+            # 設定を引き継ぐ
             tester.set_solver_options(original_method, original_options, original_analyze)
             tester.equation_set = original_equation_set
             tester.scaling_method = original_scaling_method
@@ -214,9 +215,9 @@ class BaseCCDTester(ABC):
         pass
         
     @abstractmethod
-    def create_dimension_specific_tester(self, grid):
+    def _create_tester_for_convergence_test(self, grid):
         """
-        次元ごとの適切なテスターを作成
+        収束性テスト用のテスターを作成
         
         Args:
             grid: Grid オブジェクト
@@ -240,6 +241,13 @@ class CCDTester1D(BaseCCDTester):
         super().__init__(grid)
         if grid.is_2d:
             raise ValueError("1Dテスターは2Dグリッドでは使用できません")
+    
+    def _create_solver(self):
+        """1D用ソルバーを作成"""
+        if self.solver is None:
+            self.solver = CCDSolver1D(self.system, self.grid)
+        else:
+            self.solver.system = self.system
             
     def get_dimension(self):
         """次元を返す"""
@@ -287,7 +295,7 @@ class CCDTester1D(BaseCCDTester):
         """収束性テスト用の1Dグリッドを作成"""
         return Grid(n, x_range=x_range)
         
-    def create_dimension_specific_tester(self, grid):
+    def _create_tester_for_convergence_test(self, grid):
         """1Dテスターを作成"""
         return CCDTester1D(grid)
 
@@ -305,6 +313,13 @@ class CCDTester2D(BaseCCDTester):
         super().__init__(grid)
         if not grid.is_2d:
             raise ValueError("2Dテスターは1Dグリッドでは使用できません")
+    
+    def _create_solver(self):
+        """2D用ソルバーを作成"""
+        if self.solver is None:
+            self.solver = CCDSolver2D(self.system, self.grid)
+        else:
+            self.solver.system = self.system
             
     def get_dimension(self):
         """次元を返す"""
@@ -386,22 +401,6 @@ class CCDTester2D(BaseCCDTester):
             y_range = x_range  # デフォルトでx_rangeと同じ
         return Grid(n, n, x_range=x_range, y_range=y_range)
         
-    def create_dimension_specific_tester(self, grid):
+    def _create_tester_for_convergence_test(self, grid):
         """2Dテスターを作成"""
         return CCDTester2D(grid)
-
-
-def create_ccd_tester(grid):
-    """
-    グリッド次元に応じて適切なテスターを作成
-    
-    Args:
-        grid: Grid オブジェクト (1Dまたは2D)
-        
-    Returns:
-        BaseCCDTesterのサブクラスインスタンス
-    """
-    if grid.is_2d:
-        return CCDTester2D(grid)
-    else:
-        return CCDTester1D(grid)
