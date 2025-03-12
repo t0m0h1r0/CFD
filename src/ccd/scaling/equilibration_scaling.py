@@ -1,3 +1,4 @@
+from typing import Dict, Any, Tuple, Union, Optional
 import cupy as cp
 import cupyx.scipy.sparse as sp
 from .base import BaseScaling
@@ -16,7 +17,7 @@ class EquilibrationScaling(BaseScaling):
         self.max_iterations = max_iterations
         self.tolerance = tolerance
     
-    def scale(self, A, b):
+    def scale(self, A: Union[sp.spmatrix, cp.ndarray], b: cp.ndarray) -> Tuple[Union[sp.spmatrix, cp.ndarray], cp.ndarray, Dict[str, Any]]:
         """
         反復的平衡化スケーリングを適用
         
@@ -34,18 +35,37 @@ class EquilibrationScaling(BaseScaling):
         row_scale = cp.ones(m)
         col_scale = cp.ones(n)
         
+        # 行列のフォーマットに応じた効率的なノルム計算のための判定
+        is_csr = hasattr(A, 'format') and A.format == 'csr'
+        is_csc = hasattr(A, 'format') and A.format == 'csc'
+        
         # 反復処理
         for _ in range(self.max_iterations):
-            # 行と列のノルムを取得
+            # 行ノルムを計算（効率化）
             row_norms = cp.zeros(m)
-            for i in range(m):
-                row = scaled_A[i, :].toarray().flatten()
-                row_norms[i] = cp.linalg.norm(row, ord=float('inf'))
+            if is_csr:
+                for i in range(m):
+                    start = scaled_A.indptr[i]
+                    end = scaled_A.indptr[i+1]
+                    if end > start:
+                        row_norms[i] = cp.max(cp.abs(scaled_A.data[start:end]))
+            else:
+                for i in range(m):
+                    row = scaled_A[i, :].toarray().flatten()
+                    row_norms[i] = cp.linalg.norm(row, ord=float('inf'))
             
+            # 列ノルムを計算（効率化）
             col_norms = cp.zeros(n)
-            for j in range(n):
-                col = scaled_A[:, j].toarray().flatten()
-                col_norms[j] = cp.linalg.norm(col, ord=float('inf'))
+            if is_csc:
+                for j in range(n):
+                    start = scaled_A.indptr[j]
+                    end = scaled_A.indptr[j+1]
+                    if end > start:
+                        col_norms[j] = cp.max(cp.abs(scaled_A.data[start:end]))
+            else:
+                for j in range(n):
+                    col = scaled_A[:, j].toarray().flatten()
+                    col_norms[j] = cp.linalg.norm(col, ord=float('inf'))
             
             # 収束確認
             if (cp.abs(row_norms - 1.0) < self.tolerance).all() and (cp.abs(col_norms - 1.0) < self.tolerance).all():
@@ -71,7 +91,7 @@ class EquilibrationScaling(BaseScaling):
         
         return scaled_A, scaled_b, scale_info
     
-    def unscale(self, x, scale_info):
+    def unscale(self, x: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
         """
         解ベクトルをアンスケーリング
         
@@ -87,9 +107,9 @@ class EquilibrationScaling(BaseScaling):
         return unscaled_x
     
     @property
-    def name(self):
+    def name(self) -> str:
         return "EquilibrationScaling"
     
     @property
-    def description(self):
+    def description(self) -> str:
         return "行と列のノルムをバランスさせる反復的平衡化スケーリング"

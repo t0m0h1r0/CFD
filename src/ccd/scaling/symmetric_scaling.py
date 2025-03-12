@@ -1,3 +1,4 @@
+from typing import Dict, Any, Tuple, Union
 import cupy as cp
 import cupyx.scipy.sparse as sp
 from .base import BaseScaling
@@ -5,7 +6,7 @@ from .base import BaseScaling
 class SymmetricScaling(BaseScaling):
     """対称スケーリング手法"""
     
-    def scale(self, A, b):
+    def scale(self, A: Union[sp.spmatrix, cp.ndarray], b: cp.ndarray) -> Tuple[Union[sp.spmatrix, cp.ndarray], cp.ndarray, Dict[str, Any]]:
         """
         対角要素を使ってAを対称的にスケーリング (D^-1/2 * A * D^-1/2)
         
@@ -37,7 +38,7 @@ class SymmetricScaling(BaseScaling):
         
         return scaled_A, scaled_b, scale_info
     
-    def unscale(self, x, scale_info):
+    def unscale(self, x: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
         """
         解ベクトルをアンスケーリング
         
@@ -53,9 +54,9 @@ class SymmetricScaling(BaseScaling):
         return unscaled_x
     
     @property
-    def name(self):
+    def name(self) -> str:
         return "SymmetricScaling"
     
     @property
-    def description(self):
+    def description(self) -> str:
         return "対角要素を使用した対称スケーリング (D^-1/2 * A * D^-1/2)"

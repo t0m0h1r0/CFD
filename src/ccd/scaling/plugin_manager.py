@@ -1,18 +1,22 @@
 import os
 import importlib
 import inspect
+import logging
 from pathlib import Path
+from typing import Dict, List, Optional, Type
 from .base import BaseScaling
 
 class ScalingPluginManager:
     """スケーリングプラグインを管理するマネージャークラス"""
     
     def __init__(self):
-        self._plugins = {}
-        self._default_plugin = None
-        self._plugins_loaded = False
+        self._plugins: Dict[str, BaseScaling] = {}
+        self._default_plugin: Optional[BaseScaling] = None
+        self._plugins_loaded: bool = False
+        # ロガー設定
+        self._logger = logging.getLogger(__name__)
         
-    def discover_plugins(self):
+    def discover_plugins(self) -> Dict[str, BaseScaling]:
         """scalingパッケージ内のすべてのスケーリングプラグインを検出する"""
         if self._plugins_loaded:
             return self._plugins
@@ -51,12 +55,12 @@ class ScalingPluginManager:
                             self._default_plugin = instance
                             
             except Exception as e:
-                print(f"プラグイン {module_name} の読み込み中にエラーが発生しました: {e}")
+                self._logger.warning(f"プラグイン {module_name} の読み込み中にエラーが発生しました: {e}")
                 
         self._plugins_loaded = True
         return self._plugins
     
-    def get_plugin(self, name=None):
+    def get_plugin(self, name: Optional[str] = None) -> BaseScaling:
         """
         指定された名前のスケーリングプラグインを取得する
         
@@ -78,10 +82,10 @@ class ScalingPluginManager:
                 return plugin
                 
         # 見つからない場合はデフォルトを返す
-        print(f"警告: スケーリングプラグイン '{name}' が見つかりません。デフォルトを使用します。")
+        self._logger.warning(f"警告: スケーリングプラグイン '{name}' が見つかりません。デフォルトを使用します。")
         return self._default_plugin
     
-    def get_available_plugins(self):
+    def get_available_plugins(self) -> List[str]:
         """
         利用可能なすべてのプラグイン名を取得する
         
