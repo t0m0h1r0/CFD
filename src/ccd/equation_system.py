@@ -518,8 +518,8 @@ class EquationSystem:
                         col_indices.append(col_base + m)
                         data.append(float(coeff))
         
-        # 右辺値を設定
-        b[row] = eq.get_rhs(i=i)
+        # 右辺値を0に設定
+        b[row] = 0.0
 
     def _add_equation_to_matrix_2d(self, eq, i, j, base_idx, row_offset, data, row_indices, col_indices, b):
         """
@@ -554,8 +554,8 @@ class EquationSystem:
                         col_indices.append(col_base + m)
                         data.append(float(coeff))
         
-        # 右辺値を設定
-        b[row] = eq.get_rhs(i=i, j=j)
+        # 右辺値を0に設定
+        b[row] = 0.0
 
     def build_matrix_system(self):
         """
