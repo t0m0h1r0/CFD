@@ -38,6 +38,30 @@ class EquationSystem:
             self.interior_equations = []
             self.right_boundary_equations = []
 
+    def validate_equation_system(self):
+        """方程式システムの妥当性を検証"""
+        checks = []
+        
+        # 1D/2Dに応じて異なるチェック
+        if not self.is_2d:
+            checks = [
+                (self.left_boundary_equations, "左境界方程式"),
+                (self.interior_equations, "内部方程式"),
+                (self.right_boundary_equations, "右境界方程式")
+            ]
+        else:
+            checks = [
+                (self.left_boundary_equations, "左境界方程式"),
+                (self.right_boundary_equations, "右境界方程式"),
+                (self.bottom_boundary_equations, "下境界方程式"),
+                (self.top_boundary_equations, "上境界方程式"),
+                (self.interior_equations, "内部方程式")
+            ]
+        
+        for equations, description in checks:
+            if not equations:
+                raise ValueError(f"{description}が設定されていません。")
+
     def add_left_boundary_equation(self, equation):
         """
         左境界方程式を追加
@@ -234,25 +258,17 @@ class EquationSystem:
             
         return i == self.grid.nx_points - 1 and j == self.grid.ny_points - 1
 
-    def build_matrix_system(self):
-        """
-        行列システムを構築
-        
-        Returns:
-            Tuple[sp.csr_matrix, cp.ndarray]: システム行列と右辺ベクトル
-        """
-        if self.is_2d:
-            return self._build_matrix_system_2d()
-        else:
-            return self._build_matrix_system_1d()
-
     def _build_matrix_system_1d(self):
         """1D行列システムの構築"""
         # 境界条件のタイプを判別するために必要なクラスをインポート
         from equation.poisson import PoissonEquation
+        from equation.original import OriginalEquation
         from equation.boundary import (
             DirichletBoundaryEquation, NeumannBoundaryEquation
         )
+        
+        # システムの妥当性を検証
+        self.validate_equation_system()
         
         n = self.grid.n_points
         size = 4 * n  # 1Dは従来通り4変数
@@ -285,6 +301,8 @@ class EquationSystem:
                 if eq.is_valid_at(i=i):
                     if isinstance(eq, PoissonEquation):
                         governing_eq = eq
+                    elif isinstance(eq, OriginalEquation):
+                        governing_eq = eq
                     elif isinstance(eq, DirichletBoundaryEquation):
                         dirichlet_eq = eq
                     elif isinstance(eq, NeumannBoundaryEquation):
@@ -292,50 +310,40 @@ class EquationSystem:
                     else:
                         aux_equations.append(eq)
             
+            # 方程式が見つからない場合は例外
+            if not governing_eq:
+                raise ValueError(f"点 {i} に支配方程式が見つかりません。方程式システムを確認してください。")
+            
+            # 1: ψ' の方程式
+            if not dirichlet_eq and not aux_equations:
+                raise ValueError(f"点 {i} にψ'の方程式が見つかりません。")
+            
+            # 2: ψ'' の方程式
+            if not neumann_eq and not aux_equations:
+                raise ValueError(f"点 {i} にψ''の方程式が見つかりません。")
+            
+            # 3: ψ''' の方程式
+            if not aux_equations:
+                raise ValueError(f"点 {i} にψ'''の方程式が見つかりません。")
+            
             # 1D用に方程式を特定の順序で配置
             # 0: ψ - 常に支配方程式
-            if governing_eq:
-                self._add_equation_to_matrix_1d(governing_eq, i, base_idx, 0, data, row_indices, col_indices, b)
-            else:
-                # 支配方程式がない場合は単位行列
-                row_indices.append(base_idx)
-                col_indices.append(base_idx)
-                data.append(1.0)
-                b[base_idx] = 0.0
+            self._add_equation_to_matrix_1d(governing_eq, i, base_idx, 0, data, row_indices, col_indices, b)
             
             # 1: ψ' - ディリクレ境界または補助方程式
             if dirichlet_eq:
                 self._add_equation_to_matrix_1d(dirichlet_eq, i, base_idx, 1, data, row_indices, col_indices, b)
-            elif aux_equations:
-                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 1, data, row_indices, col_indices, b)
             else:
-                # 方程式がない場合は単位行列
-                row_indices.append(base_idx + 1)
-                col_indices.append(base_idx + 1)
-                data.append(1.0)
-                b[base_idx + 1] = 0.0
+                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 1, data, row_indices, col_indices, b)
             
             # 2: ψ'' - ノイマン境界または補助方程式
             if neumann_eq:
                 self._add_equation_to_matrix_1d(neumann_eq, i, base_idx, 2, data, row_indices, col_indices, b)
-            elif aux_equations:
-                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 2, data, row_indices, col_indices, b)
             else:
-                # 方程式がない場合は単位行列
-                row_indices.append(base_idx + 2)
-                col_indices.append(base_idx + 2)
-                data.append(1.0)
-                b[base_idx + 2] = 0.0
+                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 2, data, row_indices, col_indices, b)
             
             # 3: ψ''' - 補助方程式
-            if aux_equations:
-                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 3, data, row_indices, col_indices, b)
-            else:
-                # 方程式がない場合は単位行列
-                row_indices.append(base_idx + 3)
-                col_indices.append(base_idx + 3)
-                data.append(1.0)
-                b[base_idx + 3] = 0.0
+            self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 3, data, row_indices, col_indices, b)
 
         A = sp.csr_matrix(
             (cp.array(data), (cp.array(row_indices), cp.array(col_indices))), 
@@ -348,10 +356,14 @@ class EquationSystem:
         """2D行列システムの構築"""
         # 境界条件のタイプを判別するために必要なクラスをインポート
         from equation.poisson import PoissonEquation2D
+        from equation.original import OriginalEquation2D
         from equation.boundary import (
             DirichletXBoundaryEquation2D, DirichletYBoundaryEquation2D,
             NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
         )
+        
+        # システムの妥当性を検証
+        self.validate_equation_system()
         
         nx, ny = self.grid.nx_points, self.grid.ny_points
         
@@ -415,6 +427,8 @@ class EquationSystem:
                     if eq.is_valid_at(i=i, j=j):
                         if isinstance(eq, PoissonEquation2D):
                             governing_eq = eq
+                        elif isinstance(eq, OriginalEquation2D):
+                            governing_eq = eq
                         elif isinstance(eq, DirichletXBoundaryEquation2D):
                             dirichlet_x_eq = eq
                         elif isinstance(eq, NeumannXBoundaryEquation2D):
@@ -426,84 +440,43 @@ class EquationSystem:
                         else:
                             aux_equations.append(eq)
                 
+                # 方程式が見つからない場合は例外
+                if not governing_eq:
+                    raise ValueError(f"点 ({i}, {j}) に支配方程式が見つかりません。方程式システムを確認してください。")
+                
                 # 各位置に方程式を配置
                 # 0: ψ - 常に支配方程式
-                if governing_eq:
-                    self._add_equation_to_matrix_2d(governing_eq, i, j, base_idx, 0, data, row_indices, col_indices, b)
-                else:
-                    # 支配方程式がない場合は単位行列
-                    row_indices.append(base_idx)
-                    col_indices.append(base_idx)
-                    data.append(1.0)
-                    b[base_idx] = 0.0
+                self._add_equation_to_matrix_2d(governing_eq, i, j, base_idx, 0, data, row_indices, col_indices, b)
                 
                 # 1: ψ_x - x方向のディリクレ境界または補助方程式
                 if dirichlet_x_eq:
                     self._add_equation_to_matrix_2d(dirichlet_x_eq, i, j, base_idx, 1, data, row_indices, col_indices, b)
-                elif aux_equations:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 1, data, row_indices, col_indices, b)
                 else:
-                    # 方程式がない場合は単位行列
-                    row_indices.append(base_idx + 1)
-                    col_indices.append(base_idx + 1)
-                    data.append(1.0)
-                    b[base_idx + 1] = 0.0
+                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 1, data, row_indices, col_indices, b)
                 
                 # 2: ψ_xx - x方向のノイマン境界または補助方程式
                 if neumann_x_eq:
                     self._add_equation_to_matrix_2d(neumann_x_eq, i, j, base_idx, 2, data, row_indices, col_indices, b)
-                elif aux_equations:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 2, data, row_indices, col_indices, b)
                 else:
-                    # 方程式がない場合は単位行列
-                    row_indices.append(base_idx + 2)
-                    col_indices.append(base_idx + 2)
-                    data.append(1.0)
-                    b[base_idx + 2] = 0.0
+                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 2, data, row_indices, col_indices, b)
                 
                 # 3: ψ_xxx - 補助方程式
-                if aux_equations:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 3, data, row_indices, col_indices, b)
-                else:
-                    # 方程式がない場合は単位行列
-                    row_indices.append(base_idx + 3)
-                    col_indices.append(base_idx + 3)
-                    data.append(1.0)
-                    b[base_idx + 3] = 0.0
+                self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 3, data, row_indices, col_indices, b)
                 
                 # 4: ψ_y - y方向のディリクレ境界または補助方程式
                 if dirichlet_y_eq:
                     self._add_equation_to_matrix_2d(dirichlet_y_eq, i, j, base_idx, 4, data, row_indices, col_indices, b)
-                elif aux_equations:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 4, data, row_indices, col_indices, b)
                 else:
-                    # 方程式がない場合は単位行列
-                    row_indices.append(base_idx + 4)
-                    col_indices.append(base_idx + 4)
-                    data.append(1.0)
-                    b[base_idx + 4] = 0.0
+                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 4, data, row_indices, col_indices, b)
                 
                 # 5: ψ_yy - y方向のノイマン境界または補助方程式
                 if neumann_y_eq:
                     self._add_equation_to_matrix_2d(neumann_y_eq, i, j, base_idx, 5, data, row_indices, col_indices, b)
-                elif aux_equations:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 5, data, row_indices, col_indices, b)
                 else:
-                    # 方程式がない場合は単位行列
-                    row_indices.append(base_idx + 5)
-                    col_indices.append(base_idx + 5)
-                    data.append(1.0)
-                    b[base_idx + 5] = 0.0
+                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 5, data, row_indices, col_indices, b)
                 
                 # 6: ψ_yyy - 補助方程式
-                if aux_equations:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 6, data, row_indices, col_indices, b)
-                else:
-                    # 方程式がない場合は単位行列
-                    row_indices.append(base_idx + 6)
-                    col_indices.append(base_idx + 6)
-                    data.append(1.0)
-                    b[base_idx + 6] = 0.0
+                self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 6, data, row_indices, col_indices, b)
         
         # 疎行列を作成
         A = sp.csr_matrix(
@@ -583,6 +556,18 @@ class EquationSystem:
         
         # 右辺値を設定
         b[row] = eq.get_rhs(i=i, j=j)
+
+    def build_matrix_system(self):
+        """
+        行列システムを構築
+        
+        Returns:
+            Tuple[sp.csr_matrix, cp.ndarray]: システム行列と右辺ベクトル
+        """
+        if self.is_2d:
+            return self._build_matrix_system_2d()
+        else:
+            return self._build_matrix_system_1d()
 
     def analyze_sparsity(self):
         """行列の疎性を分析"""

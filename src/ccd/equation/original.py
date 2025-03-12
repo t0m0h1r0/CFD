@@ -128,4 +128,4 @@ class OriginalEquation2D(Equation2D):
         if i is None or j is None:
             raise ValueError("グリッド点のインデックスiとjを指定する必要があります。")
             
-        return self.grid.is_interior_point(i, j)
+        return True
