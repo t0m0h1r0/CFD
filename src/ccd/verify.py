@@ -278,7 +278,7 @@ def verify_system(dimension: int, output_dir: str = "results"):
             
             # 方程式セットの取得と設定
             equation_set = EquationSet.create(eq_set_type, dimension=dimension)
-            equation_set.setup_equations(system, grid, test_func, use_dirichlet=False, use_neumann=True)
+            equation_set.setup_equations(system, grid, test_func, use_dirichlet=True, use_neumann=True)
             
             # 行列構造の分析（スケーリングなし）
             matrix_analyzer.analyze_system(
