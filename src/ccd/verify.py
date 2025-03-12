@@ -253,43 +253,49 @@ def verify_system(dimension: int, output_dir: str = "results"):
         dimension: 次元 (1 or 2)
         output_dir: 出力ディレクトリのパス
     """
-    print(f"\n--- {dimension}次元方程式システムの検証 ---")
+    # 両方の方程式セットで検証を行う
+    equation_set_types = ["poisson", "derivative"]
     
-    try:
-        # グリッドの作成
-        if dimension == 1:
-            grid = Grid(3, x_range=(-1.0, 1.0))
-            test_func = TestFunctionFactory.create_standard_functions()[3]  # Sine関数
-        else:
-            grid = Grid(3, 3, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
-            test_func = TestFunction2DGenerator.create_standard_functions()[0]  # Sine2D関数
+    for eq_set_type in equation_set_types:
+        print(f"\n--- {dimension}次元 {eq_set_type.capitalize()} 方程式システムの検証 ---")
         
-        # 可視化ツールの準備
-        matrix_analyzer = MatrixAnalyzer(output_dir)
+        try:
+            # グリッドの作成
+            if dimension == 1:
+                grid = Grid(3, x_range=(-1.0, 1.0))
+                test_funcs = TestFunctionFactory.create_standard_functions()
+                test_func = test_funcs[3]  # Sine関数
+            else:
+                grid = Grid(3, 3, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
+                test_funcs = TestFunction2DGenerator.create_standard_functions()
+                test_func = test_funcs[0]  # Sine2D関数
+            
+            # 可視化ツールの準備
+            matrix_analyzer = MatrixAnalyzer(output_dir)
+            
+            # 方程式システムの作成
+            system = EquationSystem(grid)
+            
+            # 方程式セットの取得と設定
+            equation_set = EquationSet.create(eq_set_type, dimension=dimension)
+            equation_set.setup_equations(system, grid, test_func, use_dirichlet=False, use_neumann=True)
+            
+            # 行列構造の分析（スケーリングなし）
+            matrix_analyzer.analyze_system(
+                system, 
+                f"{eq_set_type.capitalize()}{dimension}D_{test_func.name}",
+            )
+            
+            # 行列構造の分析（対称スケーリング）
+            matrix_analyzer.analyze_system(
+                system, 
+                f"{eq_set_type.capitalize()}{dimension}D_{test_func.name}", 
+                scaling_method="SymmetricScaling"
+            )
         
-        # 方程式システムの作成
-        system = EquationSystem(grid)
-        
-        # 方程式セットの取得と設定
-        equation_set = EquationSet.create("poisson", dimension=dimension)
-        equation_set.setup_equations(system, grid, test_func, use_dirichlet=True, use_neumann=True)
-        
-        # 行列構造の分析（スケーリングなし）
-        matrix_analyzer.analyze_system(
-            system, 
-            f"Poisson{dimension}D_{test_func.name}",
-        )
-        
-        # 行列構造の分析（対称スケーリング）
-        matrix_analyzer.analyze_system(
-            system, 
-            f"Poisson{dimension}D_{test_func.name}", 
-            scaling_method="SymmetricScaling"
-        )
-    
-    except Exception as e:
-        print(f"{dimension}D検証でエラーが発生しました: {e}")
-        raise
+        except Exception as e:
+            print(f"{dimension}D {eq_set_type} 検証でエラーが発生しました: {e}")
+            raise
 
 
 def main(output_dir: str = "results"):
