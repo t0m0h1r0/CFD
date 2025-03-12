@@ -1,8 +1,9 @@
+# tester.py - 新しいソルバークラスに対応するよう修正
 import cupy as cp
 from grid import Grid
-from solver import CCDSolver
+from solver import create_ccd_solver  # 新しいファクトリ関数をインポート
 from equation_system import EquationSystem
-from equation_sets import EquationSet  # 統合されたEquationSetを使用
+from equation_sets import EquationSet
 from test_functions1d import TestFunctionFactory
 from test_functions2d import TestFunction2DGenerator
 
@@ -84,9 +85,10 @@ class CCDTester:
             use_neumann
         )
 
-        # ソルバー作成または更新
+        # 適切なソルバーを作成または更新
         if self.solver is None:
-            self.solver = CCDSolver(self.system, self.grid)
+            # 新しいファクトリ関数を使用
+            self.solver = create_ccd_solver(self.system, self.grid)
         else:
             self.solver.system = self.system
 
