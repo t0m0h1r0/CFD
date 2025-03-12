@@ -268,15 +268,35 @@ class CCDTester1D(BaseCCDTester):
         
     def _process_solution(self, test_func):
         """1D解の処理"""
-        # ソルバーで解を計算
-        psi, psi_prime, psi_second, psi_third = self.solver.solve(analyze_before_solve=False)
-
         # グリッド点での厳密解を計算
         x = self.grid.get_points()
         exact_psi = cp.array([test_func.f(xi) for xi in x])
         exact_psi_prime = cp.array([test_func.df(xi) for xi in x])
         exact_psi_second = cp.array([test_func.d2f(xi) for xi in x])
         exact_psi_third = cp.array([test_func.d3f(xi) for xi in x])
+        
+        # 右辺の値と境界条件の値を準備
+        n = self.grid.n_points
+        x_min, x_max = self.grid.x_min, self.grid.x_max
+        
+        # 支配方程式（ポアソン方程式）の右辺 - d2f(x)を使用
+        f_values = cp.array([test_func.d2f(xi) for xi in x])
+        
+        # 境界条件の値
+        left_dirichlet = test_func.f(x_min)
+        right_dirichlet = test_func.f(x_max)
+        left_neumann = test_func.df(x_min)
+        right_neumann = test_func.df(x_max)
+
+        # ソルバーで解を計算
+        psi, psi_prime, psi_second, psi_third = self.solver.solve(
+            analyze_before_solve=False,
+            f_values=f_values,
+            left_dirichlet=left_dirichlet,
+            right_dirichlet=right_dirichlet,
+            left_neumann=left_neumann,
+            right_neumann=right_neumann
+        )
 
         # 誤差計算
         err_psi = float(cp.max(cp.abs(psi - exact_psi)))
@@ -352,24 +372,24 @@ class CCDTester2D(BaseCCDTester):
         
     def _process_solution(self, test_func):
         """2D解の処理"""
-        # ソルバーで解を計算
-        psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy = self.solver.solve(analyze_before_solve=False)
-        
         # グリッド点を取得
         X, Y = self.grid.get_points()
+        nx, ny = self.grid.nx_points, self.grid.ny_points
+        x_min, x_max = self.grid.x_min, self.grid.x_max
+        y_min, y_max = self.grid.y_min, self.grid.y_max
 
         # 厳密解を計算
-        exact_psi = cp.zeros_like(psi)
-        exact_psi_x = cp.zeros_like(psi_x)
-        exact_psi_y = cp.zeros_like(psi_y)
-        exact_psi_xx = cp.zeros_like(psi_xx)
-        exact_psi_yy = cp.zeros_like(psi_yy)
-        exact_psi_xxx = cp.zeros_like(psi_xxx)
-        exact_psi_yyy = cp.zeros_like(psi_yyy)
+        exact_psi = cp.zeros((nx, ny))
+        exact_psi_x = cp.zeros((nx, ny))
+        exact_psi_y = cp.zeros((nx, ny))
+        exact_psi_xx = cp.zeros((nx, ny))
+        exact_psi_yy = cp.zeros((nx, ny))
+        exact_psi_xxx = cp.zeros((nx, ny))
+        exact_psi_yyy = cp.zeros((nx, ny))
 
         # 各グリッド点で厳密値を計算
-        for i in range(self.grid.nx_points):
-            for j in range(self.grid.ny_points):
+        for i in range(nx):
+            for j in range(ny):
                 x, y = self.grid.get_point(i, j)
                 exact_psi[i, j] = test_func.f(x, y)
                 exact_psi_x[i, j] = test_func.df_dx(x, y)
@@ -378,6 +398,38 @@ class CCDTester2D(BaseCCDTester):
                 exact_psi_yy[i, j] = test_func.d2f_dy2(x, y)
                 exact_psi_xxx[i, j] = test_func.d3f_dx3(x, y)
                 exact_psi_yyy[i, j] = test_func.d3f_dy3(x, y)
+
+        # 支配方程式（ポアソン方程式）の右辺 - ラプラシアン（f_xx + f_yy）を使用
+        f_values = cp.zeros((nx, ny))
+        for i in range(nx):
+            for j in range(ny):
+                x, y = self.grid.get_point(i, j)
+                f_values[i, j] = test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
+
+        # 境界条件の値
+        left_dirichlet = cp.array([test_func.f(x_min, y) for y in self.grid.y])
+        right_dirichlet = cp.array([test_func.f(x_max, y) for y in self.grid.y])
+        bottom_dirichlet = cp.array([test_func.f(x, y_min) for x in self.grid.x])
+        top_dirichlet = cp.array([test_func.f(x, y_max) for x in self.grid.x])
+
+        left_neumann = cp.array([test_func.df_dx(x_min, y) for y in self.grid.y])
+        right_neumann = cp.array([test_func.df_dx(x_max, y) for y in self.grid.y])
+        bottom_neumann = cp.array([test_func.df_dy(x, y_min) for x in self.grid.x])
+        top_neumann = cp.array([test_func.df_dy(x, y_max) for x in self.grid.x])
+
+        # ソルバーで解を計算
+        psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy = self.solver.solve(
+            analyze_before_solve=False,
+            f_values=f_values,
+            left_dirichlet=left_dirichlet,
+            right_dirichlet=right_dirichlet,
+            bottom_dirichlet=bottom_dirichlet,
+            top_dirichlet=top_dirichlet,
+            left_neumann=left_neumann,
+            right_neumann=right_neumann,
+            bottom_neumann=bottom_neumann,
+            top_neumann=top_neumann
+        )
 
         # 誤差を計算
         err_psi = float(cp.max(cp.abs(psi - exact_psi)))
