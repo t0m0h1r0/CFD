@@ -1,9 +1,118 @@
 from abc import ABC, abstractmethod
 import cupy as cp
 import cupyx.scipy.sparse.linalg as splinalg
+import matplotlib.pyplot as plt
+import os
+import time
 
 from equation_system import EquationSystem
 from scaling import plugin_manager
+
+class ConvMonitor:
+    """反復ソルバーの収束状況をモニタリングするクラス"""
+    
+    def __init__(self, enable=False, display_interval=10, output_dir="results"):
+        """
+        モニタリング設定を初期化
+        
+        Args:
+            enable: モニタリングを有効にするかどうか
+            display_interval: 表示間隔（何反復ごとに表示するか）
+            output_dir: 出力ディレクトリ
+        """
+        self.enable = enable
+        self.display_interval = display_interval
+        self.output_dir = output_dir
+        self.residuals = []
+        self.iterations = []
+        self.start_time = None
+        self.elapsed_times = []
+        
+    def start(self):
+        """モニタリングを開始"""
+        if self.enable:
+            self.residuals = []
+            self.iterations = []
+            self.elapsed_times = []
+            self.start_time = time.time()
+            print("\n収束状況モニタリングを開始...")
+    
+    def update(self, iteration, residual):
+        """
+        収束状況を更新
+        
+        Args:
+            iteration: 現在の反復回数
+            residual: 現在の残差
+        """
+        if not self.enable:
+            return
+            
+        self.iterations.append(iteration)
+        self.residuals.append(residual)
+        self.elapsed_times.append(time.time() - self.start_time)
+        
+        # 表示間隔ごとに出力
+        if iteration % self.display_interval == 0:
+            print(f"  反復 {iteration}: 残差 = {residual:.6e}, 経過時間 = {self.elapsed_times[-1]:.4f}秒")
+    
+    def finalize(self, total_iterations, method_name, prefix=""):
+        """
+        モニタリングを終了し、結果を可視化
+        
+        Args:
+            total_iterations: 総反復回数
+            method_name: ソルバー手法名
+            prefix: 出力ファイル名の接頭辞
+        """
+        if not self.enable or not self.residuals:
+            return
+            
+        print(f"収束状況モニタリングを終了: 総反復回数 = {total_iterations}")
+        
+        # 収束履歴を可視化
+        self.visualize_convergence(method_name, prefix)
+    
+    def visualize_convergence(self, method_name, prefix=""):
+        """
+        収束履歴をグラフとして可視化
+        
+        Args:
+            method_name: ソルバー手法名
+            prefix: 出力ファイル名の接頭辞
+        """
+        if not self.enable or not self.residuals:
+            return
+            
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+        # 残差の推移グラフ
+        plt.figure(figsize=(10, 6))
+        plt.semilogy(self.iterations, self.residuals, 'b-o')
+        plt.grid(True, which="both", ls="--")
+        plt.xlabel('反復回数')
+        plt.ylabel('残差 (対数スケール)')
+        plt.title(f'{method_name} ソルバーの収束履歴')
+        
+        # 保存
+        filename = os.path.join(self.output_dir, f"{prefix}_convergence_{method_name.lower()}.png")
+        plt.savefig(filename, dpi=150)
+        plt.close()
+        print(f"収束履歴グラフを保存しました: {filename}")
+        
+        # 経過時間グラフも作成
+        plt.figure(figsize=(10, 6))
+        plt.plot(self.iterations, self.elapsed_times, 'r-o')
+        plt.grid(True)
+        plt.xlabel('反復回数')
+        plt.ylabel('経過時間 (秒)')
+        plt.title(f'{method_name} ソルバーの計算時間履歴')
+        
+        # 保存
+        filename = os.path.join(self.output_dir, f"{prefix}_timing_{method_name.lower()}.png")
+        plt.savefig(filename, dpi=150)
+        plt.close()
+        print(f"計算時間履歴グラフを保存しました: {filename}")
 
 class BaseCCDSolver(ABC):
     """コンパクト差分法ソルバーの抽象基底クラス"""
@@ -23,6 +132,7 @@ class BaseCCDSolver(ABC):
         self.scaling_method = None
         self.last_iterations = None
         self.sparsity_info = None
+        self.conv_monitor = ConvMonitor(enable=False)
         
         # システムを初期化し、行列Aを構築
         self.system = EquationSystem(grid)
@@ -45,6 +155,17 @@ class BaseCCDSolver(ABC):
         self.solver_method = method
         self.solver_options = options or {}
         self.scaling_method = scaling_method
+        
+        # 収束モニタリング設定
+        monitor_enabled = self.solver_options.get("monitor_convergence", False)
+        display_interval = self.solver_options.get("display_interval", 10)
+        output_dir = self.solver_options.get("output_dir", "results")
+        
+        self.conv_monitor = ConvMonitor(
+            enable=monitor_enabled,
+            display_interval=display_interval,
+            output_dir=output_dir
+        )
 
     def _create_preconditioner(self, A):
         """
@@ -70,6 +191,20 @@ class BaseCCDSolver(ABC):
         
         return D_inv
 
+    def _callback_gmres(self, xk):
+        """GMRESソルバーのコールバック関数"""
+        iteration = len(self.conv_monitor.residuals)
+        # xkから残差を計算
+        residual = cp.linalg.norm(self.cb_b - self.cb_A @ xk) / cp.linalg.norm(self.cb_b)
+        self.conv_monitor.update(iteration, float(residual))
+        
+    def _callback_cg_cgs_minres(self, xk):
+        """CG, CGS, MINRESソルバーのコールバック関数"""
+        iteration = len(self.conv_monitor.residuals)
+        # xkから残差を計算
+        residual = cp.linalg.norm(self.cb_b - self.cb_A @ xk) / cp.linalg.norm(self.cb_b)
+        self.conv_monitor.update(iteration, float(residual))
+
     def _solve_linear_system(self, A, b):
         """
         線形方程式系を解くヘルパーメソッド
@@ -85,6 +220,15 @@ class BaseCCDSolver(ABC):
         precond = self._create_preconditioner(A)
         self.last_iterations = None
         
+        # コールバック用に行列とベクトルを保存
+        if self.conv_monitor.enable:
+            self.cb_A = A
+            self.cb_b = b
+            
+        # 収束モニタリングを開始
+        prefix = self.solver_options.get("prefix", "")
+        self.conv_monitor.start()
+        
         # ソルバーメソッドに基づいて解法を選択
         try:
             if self.solver_method == "gmres":
@@ -92,12 +236,15 @@ class BaseCCDSolver(ABC):
                 maxiter = self.solver_options.get("maxiter", 1000)
                 restart = self.solver_options.get("restart", 100)
                 
+                callback = self._callback_gmres if self.conv_monitor.enable else None
+                
                 x, info = splinalg.gmres(
                     A, b, 
                     tol=tol, 
                     maxiter=maxiter, 
                     M=precond,
-                    restart=restart
+                    restart=restart,
+                    callback=callback
                 )
                 
                 # 反復回数を保存
@@ -108,6 +255,14 @@ class BaseCCDSolver(ABC):
                 else:
                     self.last_iterations = maxiter if info != 0 else None
                 
+                # 収束モニタリングを終了
+                if self.conv_monitor.enable:
+                    self.conv_monitor.finalize(
+                        self.last_iterations or len(self.conv_monitor.residuals),
+                        "GMRES",
+                        prefix
+                    )
+                
                 if info == 0:
                     return x
                 
@@ -115,13 +270,29 @@ class BaseCCDSolver(ABC):
                 tol = self.solver_options.get("tol", 1e-10)
                 maxiter = self.solver_options.get("maxiter", 1000)
                 
-                x, info = splinalg.cg(A, b, tol=tol, maxiter=maxiter, M=precond)
+                callback = self._callback_cg_cgs_minres if self.conv_monitor.enable else None
+                
+                x, info = splinalg.cg(
+                    A, b, 
+                    tol=tol, 
+                    maxiter=maxiter, 
+                    M=precond, 
+                    callback=callback
+                )
                 
                 # 反復回数を保存
                 if hasattr(info, 'iterations'):
                     self.last_iterations = info.iterations
                 else:
                     self.last_iterations = maxiter if info != 0 else None
+                    
+                # 収束モニタリングを終了
+                if self.conv_monitor.enable:
+                    self.conv_monitor.finalize(
+                        self.last_iterations or len(self.conv_monitor.residuals),
+                        "CG",
+                        prefix
+                    )
                     
                 if info == 0:
                     return x
@@ -130,13 +301,29 @@ class BaseCCDSolver(ABC):
                 tol = self.solver_options.get("tol", 1e-10)
                 maxiter = self.solver_options.get("maxiter", 1000)
                 
-                x, info = splinalg.cgs(A, b, tol=tol, maxiter=maxiter, M=precond)
+                callback = self._callback_cg_cgs_minres if self.conv_monitor.enable else None
+                
+                x, info = splinalg.cgs(
+                    A, b, 
+                    tol=tol, 
+                    maxiter=maxiter, 
+                    M=precond,
+                    callback=callback
+                )
                 
                 # 反復回数を保存
                 if hasattr(info, 'iterations'):
                     self.last_iterations = info.iterations
                 else:
                     self.last_iterations = maxiter if info != 0 else None
+                    
+                # 収束モニタリングを終了
+                if self.conv_monitor.enable:
+                    self.conv_monitor.finalize(
+                        self.last_iterations or len(self.conv_monitor.residuals),
+                        "CGS",
+                        prefix
+                    )
                     
                 if info == 0:
                     return x
@@ -147,15 +334,28 @@ class BaseCCDSolver(ABC):
                 atol = self.solver_options.get("atol", 0.0)
                 btol = self.solver_options.get("btol", 0.0)
                 
+                # モニタリング用コールバック
+                def lsqr_callback(x, itn, residual):
+                    if self.conv_monitor.enable:
+                        self.conv_monitor.update(itn, float(residual))
+                
+                callback = lsqr_callback if self.conv_monitor.enable else None
+                
                 x, info, itn, _, _, _, _, _ = splinalg.lsqr(
                     A, b, 
                     atol=atol, 
                     btol=btol, 
-                    iter_lim=maxiter
+                    iter_lim=maxiter,
+                    show=False,  # 標準出力への表示は無効化
+                    callback=callback
                 )
                 
                 # 反復回数を保存
                 self.last_iterations = itn
+                
+                # 収束モニタリングを終了
+                if self.conv_monitor.enable:
+                    self.conv_monitor.finalize(itn, "LSQR", prefix)
                 
                 if info > 0 and info < 7:  # 正常終了のケース
                     return x
@@ -166,15 +366,28 @@ class BaseCCDSolver(ABC):
                 atol = self.solver_options.get("atol", 0.0)
                 btol = self.solver_options.get("btol", 0.0)
                 
+                # モニタリング用コールバック
+                def lsmr_callback(x, itn, residual):
+                    if self.conv_monitor.enable:
+                        self.conv_monitor.update(itn, float(residual))
+                
+                callback = lsmr_callback if self.conv_monitor.enable else None
+                
                 x, info, itn, _, _, _, _, _, _, _ = splinalg.lsmr(
                     A, b, 
                     atol=atol, 
                     btol=btol, 
-                    maxiter=maxiter
+                    maxiter=maxiter,
+                    show=False,  # 標準出力への表示は無効化
+                    callback=callback
                 )
                 
                 # 反復回数を保存
                 self.last_iterations = itn
+                
+                # 収束モニタリングを終了
+                if self.conv_monitor.enable:
+                    self.conv_monitor.finalize(itn, "LSMR", prefix)
                 
                 if info > 0 and info < 7:  # 正常終了のケース
                     return x
@@ -183,13 +396,29 @@ class BaseCCDSolver(ABC):
                 tol = self.solver_options.get("tol", 1e-10)
                 maxiter = self.solver_options.get("maxiter", 1000)
                 
-                x, info = splinalg.minres(A, b, tol=tol, maxiter=maxiter, M=precond)
+                callback = self._callback_cg_cgs_minres if self.conv_monitor.enable else None
+                
+                x, info = splinalg.minres(
+                    A, b, 
+                    tol=tol, 
+                    maxiter=maxiter, 
+                    M=precond,
+                    callback=callback
+                )
                 
                 # 反復回数を保存
                 if hasattr(info, 'iterations'):
                     self.last_iterations = info.iterations
                 else:
                     self.last_iterations = maxiter if info != 0 else None
+                    
+                # 収束モニタリングを終了
+                if self.conv_monitor.enable:
+                    self.conv_monitor.finalize(
+                        self.last_iterations or len(self.conv_monitor.residuals),
+                        "MINRES",
+                        prefix
+                    )
                     
                 if info == 0:
                     return x

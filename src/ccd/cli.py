@@ -84,6 +84,18 @@ def parse_args():
         action="store_true",
         help="行列の疎性を分析して表示"
     )
+    # 収束モニタリングオプションを追加
+    solver_group.add_argument(
+        "--monitor-convergence", 
+        action="store_true",
+        help="反復ソルバーの収束過程をモニタリング"
+    )
+    solver_group.add_argument(
+        "--display-interval", 
+        type=int, 
+        default=10,
+        help="収束状況の表示間隔 (デフォルト: 10反復ごと)"
+    )
     
     # スケーリングオプション
     scaling_group = parser.add_argument_group('スケーリングオプション')
@@ -113,6 +125,10 @@ def get_solver_options(args):
         "maxiter": args.solver_maxiter,
         "restart": args.solver_restart,
         "use_preconditioner": not args.no_preconditioner,
+        "monitor_convergence": args.monitor_convergence,
+        "display_interval": args.display_interval,
+        "output_dir": args.output_dir,
+        "prefix": args.prefix
     }
 
 def list_scaling_methods():
