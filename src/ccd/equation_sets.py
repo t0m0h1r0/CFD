@@ -24,6 +24,7 @@ class EquationSet(ABC):
 
     def __init__(self):
         """初期化"""
+        # 境界条件の有効フラグ（サブクラスで変更可能）
         self.enable_dirichlet = True
         self.enable_neumann = True
 
@@ -285,7 +286,7 @@ class DerivativeEquationSet1D(EquationSet):
         system.add_right_boundary_equation(RightBoundary2ndDerivativeEquation(grid))
         system.add_right_boundary_equation(RightBoundary3rdDerivativeEquation(grid))
 
-        # 微分方程式セットでは境界条件は常に有効
+        # 微分方程式セットでは境界条件は常に無効（既に導関数計算に制約式を使用）
         return False, False
 
 
@@ -432,5 +433,5 @@ class DerivativeEquationSet2D(EquationSet):
         system.add_top_boundary_equation(converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid))
         system.add_top_boundary_equation(converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid))
 
-        # 微分方程式セットでは境界条件は常に有効
+        # 微分方程式セットでは境界条件は常に無効（既に導関数計算に制約式を使用）
         return False, False

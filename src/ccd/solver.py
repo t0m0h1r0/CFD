@@ -2,191 +2,6 @@ from abc import ABC, abstractmethod
 import cupy as cp
 import cupyx.scipy.sparse.linalg as splinalg
 
-# ソルバー戦略のインターフェース
-class SolverStrategy(ABC):
-    """ソルバー戦略のインターフェース"""
-
-    @abstractmethod
-    def solve(self, A, b, options=None):
-        """
-        線形方程式系 Ax = b を解く
-        
-        Args:
-            A: システム行列
-            b: 右辺ベクトル
-            options: ソルバーオプション
-            
-        Returns:
-            tuple: (解ベクトル, 情報)
-        """
-        pass
-
-
-# 具体的なソルバー実装
-class DirectSolver(SolverStrategy):
-    """疎行列LU分解を使用する直接解法"""
-    
-    def solve(self, A, b, options=None):
-        """直接法で解く"""
-        x = splinalg.spsolve(A, b)
-        return x, None
-
-
-class GMRESSolver(SolverStrategy):
-    """GMRES反復解法"""
-    
-    def solve(self, A, b, options=None):
-        """GMRES法で解く"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        restart = options.get("restart", 100)
-        precond = options.get("preconditioner")
-        
-        try:
-            x, info = splinalg.gmres(
-                A, b, 
-                tol=tol, 
-                maxiter=maxiter, 
-                M=precond,
-                restart=restart
-            )
-            
-            # 反復情報の抽出
-            iterations = None
-            if hasattr(info, 'iterations'):
-                iterations = info.iterations
-            elif isinstance(info, tuple) and len(info) > 0:
-                iterations = info[0]
-            else:
-                iterations = maxiter if info != 0 else None
-                
-            return x, iterations
-        except Exception as e:
-            print(f"GMRESソルバーでエラーが発生しました: {e}")
-            x = splinalg.spsolve(A, b)
-            return x, None
-
-
-class CGSolver(SolverStrategy):
-    """共役勾配法ソルバー"""
-    
-    def solve(self, A, b, options=None):
-        """CG法で解く"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        precond = options.get("preconditioner")
-        
-        try:
-            x, info = splinalg.cg(A, b, tol=tol, maxiter=maxiter, M=precond)
-            
-            # 反復情報の抽出
-            iterations = None
-            if hasattr(info, 'iterations'):
-                iterations = info.iterations
-            else:
-                iterations = maxiter if info != 0 else None
-                
-            return x, iterations
-        except Exception as e:
-            print(f"CG解法でエラーが発生しました: {e}")
-            x = splinalg.spsolve(A, b)
-            return x, None
-
-
-class CGSSolver(SolverStrategy):
-    """共役勾配二乗法ソルバー"""
-    
-    def solve(self, A, b, options=None):
-        """CGS法で解く"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        precond = options.get("preconditioner")
-        
-        try:
-            x, info = splinalg.cgs(A, b, tol=tol, maxiter=maxiter, M=precond)
-            
-            # 反復情報の抽出
-            iterations = None
-            if hasattr(info, 'iterations'):
-                iterations = info.iterations
-            else:
-                iterations = maxiter if info != 0 else None
-                
-            return x, iterations
-        except Exception as e:
-            print(f"CGS解法でエラーが発生しました: {e}")
-            x = splinalg.spsolve(A, b)
-            return x, None
-
-
-# 前処理子インターフェース
-class Preconditioner(ABC):
-    """前処理子インターフェース"""
-    
-    @abstractmethod
-    def create(self, A):
-        """
-        行列Aに対する前処理子を作成
-        
-        Args:
-            A: システム行列
-            
-        Returns:
-            前処理子オペレータ
-        """
-        pass
-
-
-# 具体的な前処理子実装
-class JacobiPreconditioner(Preconditioner):
-    """ヤコビ（対角）前処理子"""
-    
-    def create(self, A):
-        """ヤコビ前処理子を作成"""
-        diag = A.diagonal()
-        diag = cp.where(cp.abs(diag) < 1e-14, 1.0, diag)
-        
-        D_inv = splinalg.LinearOperator(
-            A.shape, 
-            matvec=lambda x: x / diag
-        )
-        
-        return D_inv
-
-
-# ファクトリークラス
-class SolverFactory:
-    """ソルバー戦略を作成するファクトリー"""
-    
-    @staticmethod
-    def create(method="direct"):
-        """名前からソルバー戦略を作成"""
-        if method == "gmres":
-            return GMRESSolver()
-        elif method == "cg":
-            return CGSolver()
-        elif method == "cgs":
-            return CGSSolver()
-        else:
-            return DirectSolver()
-
-
-class PreconditionerFactory:
-    """前処理子を作成するファクトリー"""
-    
-    @staticmethod
-    def create(type="jacobi"):
-        """タイプから前処理子を作成"""
-        if type == "jacobi":
-            return JacobiPreconditioner()
-        else:
-            return JacobiPreconditioner()  # デフォルト
-
-
-# ベースCCDソルバー
 class BaseCCDSolver(ABC):
     """コンパクト差分法ソルバーの抽象基底クラス"""
 
@@ -236,43 +51,99 @@ class BaseCCDSolver(ABC):
         if not self.solver_options.get("use_preconditioner", True):
             return None
         
-        preconditioner_factory = PreconditionerFactory()
-        preconditioner = preconditioner_factory.create("jacobi")
-        return preconditioner.create(A)
+        # ヤコビ前処理子
+        diag = A.diagonal()
+        diag = cp.where(cp.abs(diag) < 1e-14, 1.0, diag)
+        
+        D_inv = splinalg.LinearOperator(
+            A.shape, 
+            matvec=lambda x: x / diag
+        )
+        
+        return D_inv
 
-    def _solve_with_strategy(self, A, b):
+    def _solve_linear_system(self, A, b):
         """
-        選択されたソルバー戦略を使用してシステムを解く
+        線形方程式系を解くヘルパーメソッド
         
         Args:
             A: システム行列
             b: 右辺ベクトル
             
         Returns:
-            tuple: (解, 反復回数)
+            解ベクトル
         """
-        # ソルバー戦略を作成
-        solver_factory = SolverFactory()
-        solver = solver_factory.create(self.solver_method)
-        
-        # 必要に応じて前処理子を作成
+        # 前処理子を作成
         precond = self._create_preconditioner(A)
+        self.last_iterations = None
         
-        # オプションに前処理子を追加
-        options = dict(self.solver_options)
-        options["preconditioner"] = precond
-        
-        # システムを解く
-        sol, iterations = solver.solve(A, b, options)
-        
-        # 分析用に反復回数を保存
-        self.last_iterations = iterations
-        
-        return sol
+        # ソルバーメソッドに基づいて解法を選択
+        try:
+            if self.solver_method == "gmres":
+                tol = self.solver_options.get("tol", 1e-10)
+                maxiter = self.solver_options.get("maxiter", 1000)
+                restart = self.solver_options.get("restart", 100)
+                
+                x, info = splinalg.gmres(
+                    A, b, 
+                    tol=tol, 
+                    maxiter=maxiter, 
+                    M=precond,
+                    restart=restart
+                )
+                
+                # 反復回数を保存
+                if hasattr(info, 'iterations'):
+                    self.last_iterations = info.iterations
+                elif isinstance(info, tuple) and len(info) > 0:
+                    self.last_iterations = info[0]
+                else:
+                    self.last_iterations = maxiter if info != 0 else None
+                
+                if info == 0:
+                    return x
+                
+            elif self.solver_method == "cg":
+                tol = self.solver_options.get("tol", 1e-10)
+                maxiter = self.solver_options.get("maxiter", 1000)
+                
+                x, info = splinalg.cg(A, b, tol=tol, maxiter=maxiter, M=precond)
+                
+                # 反復回数を保存
+                if hasattr(info, 'iterations'):
+                    self.last_iterations = info.iterations
+                else:
+                    self.last_iterations = maxiter if info != 0 else None
+                    
+                if info == 0:
+                    return x
+                
+            elif self.solver_method == "cgs":
+                tol = self.solver_options.get("tol", 1e-10)
+                maxiter = self.solver_options.get("maxiter", 1000)
+                
+                x, info = splinalg.cgs(A, b, tol=tol, maxiter=maxiter, M=precond)
+                
+                # 反復回数を保存
+                if hasattr(info, 'iterations'):
+                    self.last_iterations = info.iterations
+                else:
+                    self.last_iterations = maxiter if info != 0 else None
+                    
+                if info == 0:
+                    return x
+                
+            # デフォルトは直接解法
+            return splinalg.spsolve(A, b)
+            
+        except Exception as e:
+            print(f"反復解法でエラーが発生しました: {e}")
+            print("直接解法にフォールバックします")
+            return splinalg.spsolve(A, b)
 
     def _apply_scaling(self, A, b):
         """
-        システム行列と右辺ベクトルにスケーリングを適用
+        行列と右辺ベクトルにスケーリングを適用
         
         Args:
             A: システム行列
@@ -281,7 +152,6 @@ class BaseCCDSolver(ABC):
         Returns:
             tuple: (scaled_A, scaled_b, scaling_info, scaler)
         """
-        # スケーリングが要求されている場合に適用
         scaling_info = None
         scaler = None
         
@@ -307,11 +177,10 @@ class BaseCCDSolver(ABC):
         
         print("\n行列構造分析:")
         print(f"  行列サイズ: {sparsity_info['matrix_size']} x {sparsity_info['matrix_size']}")
-        print(f"  非ゼロ要素: {sparsity_info['non_zeros']}")
+        print(f"  非ゼロ要素数: {sparsity_info['non_zeros']}")
         print(f"  疎性率: {sparsity_info['sparsity']:.6f}")
         print(f"  メモリ使用量(密行列): {sparsity_info['memory_dense_MB']:.2f} MB")
         print(f"  メモリ使用量(疎行列): {sparsity_info['memory_sparse_MB']:.2f} MB")
-        print(f"  メモリ削減率: {sparsity_info['memory_dense_MB'] / sparsity_info['memory_sparse_MB']:.1f}倍")
         
         return sparsity_info
 
@@ -329,7 +198,6 @@ class BaseCCDSolver(ABC):
         pass
 
 
-# 1Dソルバー実装
 class CCDSolver1D(BaseCCDSolver):
     """1次元コンパクト差分法ソルバー"""
 
@@ -344,45 +212,6 @@ class CCDSolver1D(BaseCCDSolver):
         super().__init__(system, grid)
         if grid.is_2d:
             raise ValueError("1Dソルバーは2Dグリッドでは使用できません")
-
-    def _update_rhs(self, b, f_values=None, 
-                    left_dirichlet=None, right_dirichlet=None,
-                    left_neumann=None, right_neumann=None,
-                    enable_dirichlet=True, enable_neumann=True):
-        """
-        境界値で右辺を更新
-        
-        Args:
-            b: 右辺ベクトル
-            f_values: ソース項の値
-            left_dirichlet, right_dirichlet: ディリクレ値
-            left_neumann, right_neumann: ノイマン値
-            enable_dirichlet, enable_neumann: 有効フラグ
-            
-        Returns:
-            更新された右辺ベクトル
-        """
-        n = self.grid.n_points
-        
-        # ソース項の値を設定
-        if f_values is not None:
-            for i in range(n):
-                b[i * 4] = f_values[i] if i < len(f_values) else 0.0
-        
-        # 有効フラグに基づいて境界条件値を設定
-        if enable_dirichlet:
-            if left_dirichlet is not None:
-                b[1] = left_dirichlet  # 左境界ディリクレ
-            if right_dirichlet is not None:
-                b[(n-1) * 4 + 1] = right_dirichlet  # 右境界ディリクレ
-        
-        if enable_neumann:
-            if left_neumann is not None:
-                b[2] = left_neumann  # 左境界ノイマン
-            if right_neumann is not None:
-                b[(n-1) * 4 + 2] = right_neumann  # 右境界ノイマン
-                
-        return b
 
     def solve(self, analyze_before_solve=True, f_values=None, 
               left_dirichlet=None, right_dirichlet=None,
@@ -404,34 +233,92 @@ class CCDSolver1D(BaseCCDSolver):
         Returns:
             (psi, psi_prime, psi_second, psi_third) タプル
         """
-        A, b = self.system.build_matrix_system()
+        # 行列システムを構築
+        A = self.system.build_matrix_system()
 
+        # 行列を分析（要求された場合）
         if analyze_before_solve:
             self.analyze_system()
             
-        # 右辺値を更新
+        # 境界条件の設定を表示
+        print(f"境界条件設定: ディリクレ = {'有効' if enable_dirichlet else '無効'}, "
+              f"ノイマン = {'有効' if enable_neumann else '無効'}")
+            
+        # 右辺ベクトルを更新
         b = self._update_rhs(
-            b, f_values, 
+            f_values, 
             left_dirichlet, right_dirichlet,
             left_neumann, right_neumann,
             enable_dirichlet, enable_neumann
         )
             
-        # 要求されている場合はスケーリングを適用
+        # スケーリングを適用
         A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A, b)
 
-        # システムを解く
-        sol = self._solve_with_strategy(A_scaled, b_scaled)
+        # 線形システムを解く
+        sol = self._solve_linear_system(A_scaled, b_scaled)
             
         # スケーリングが適用された場合は解をアンスケール
         if scaling_info is not None and scaler is not None:
             sol = scaler.unscale(sol, scaling_info)
 
-        # 1D解を処理
-        return self._process_solution(sol)
+        # 解ベクトルから各要素を抽出
+        return self._extract_solution(sol)
 
-    def _process_solution(self, sol):
-        """1D解ベクトルを処理"""
+    # CCDSolver1Dの_update_rhsメソッド
+    def _update_rhs(self, f_values=None, 
+                left_dirichlet=None, right_dirichlet=None,
+                left_neumann=None, right_neumann=None,
+                enable_dirichlet=True, enable_neumann=True):
+        """
+        境界値で右辺を更新
+        
+        Args:
+            b: 右辺ベクトル
+            f_values: ソース項の値
+            left_dirichlet, right_dirichlet: ディリクレ値
+            left_neumann, right_neumann: ノイマン値
+            enable_dirichlet, enable_neumann: EquationSetからの有効フラグ
+            
+        Returns:
+            更新された右辺ベクトル
+        """
+        n = self.grid.n_points
+        b = cp.zeros(n*4)
+        
+        # ポアソン方程式/ソース項の値を設定
+        if f_values is not None:
+            for i in range(n):
+                idx = i * 4  # ψ''のインデックス
+                b[idx] = f_values[i] if i < len(f_values) else 0.0
+        
+        # 境界条件を適用
+        if enable_dirichlet:
+            # ディリクレ境界条件が有効な場合
+            if left_dirichlet is not None:
+                b[1] = left_dirichlet  # 左境界ディリクレ (ψ)
+            if right_dirichlet is not None:
+                b[(n-1) * 4 + 1] = right_dirichlet  # 右境界ディリクレ (ψ)
+            
+            print(f"[1Dソルバー] ディリクレ境界条件が有効: 左={left_dirichlet}, 右={right_dirichlet}")
+        else:
+            print("[1Dソルバー] ディリクレ境界条件が無効")
+        
+        if enable_neumann:
+            # ノイマン境界条件が有効な場合
+            if left_neumann is not None:
+                b[2] = left_neumann  # 左境界ノイマン (ψ')
+            if right_neumann is not None:
+                b[(n-1) * 4 + 2] = right_neumann  # 右境界ノイマン (ψ')
+                
+            print(f"[1Dソルバー] ノイマン境界条件が有効: 左={left_neumann}, 右={right_neumann}")
+        else:
+            print("[1Dソルバー] ノイマン境界条件が無効")
+            
+        return b
+
+    def _extract_solution(self, sol):
+        """解ベクトルから各成分を抽出"""
         n = self.grid.n_points
         psi = sol[0::4][:n]
         psi_prime = sol[1::4][:n]
@@ -441,7 +328,6 @@ class CCDSolver1D(BaseCCDSolver):
         return psi, psi_prime, psi_second, psi_third
 
 
-# 2Dソルバー実装
 class CCDSolver2D(BaseCCDSolver):
     """2次元コンパクト差分法ソルバー"""
 
@@ -456,83 +342,6 @@ class CCDSolver2D(BaseCCDSolver):
         super().__init__(system, grid)
         if not grid.is_2d:
             raise ValueError("2Dソルバーは1Dグリッドでは使用できません")
-
-    def _update_rhs(self, b, f_values=None,
-                   left_dirichlet=None, right_dirichlet=None, 
-                   bottom_dirichlet=None, top_dirichlet=None,
-                   left_neumann=None, right_neumann=None,
-                   bottom_neumann=None, top_neumann=None,
-                   enable_dirichlet=True, enable_neumann=True):
-        """
-        2Dシステムの境界値で右辺を更新
-        
-        Args:
-            b: 右辺ベクトル
-            f_values: ソース項の値
-            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet: ディリクレ値
-            left_neumann, right_neumann, bottom_neumann, top_neumann: ノイマン値
-            enable_dirichlet, enable_neumann: 有効フラグ
-            
-        Returns:
-            更新された右辺ベクトル
-        """
-        nx, ny = self.grid.nx_points, self.grid.ny_points
-        n_unknowns = 7  # ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy
-        
-        # ソース項の値を設定
-        if f_values is not None:
-            for j in range(ny):
-                for i in range(nx):
-                    idx = (j * nx + i) * n_unknowns
-                    if isinstance(f_values, (list, cp.ndarray)) and i < len(f_values) and j < len(f_values[i]):
-                        b[idx] = f_values[i][j]
-                    elif isinstance(f_values, (int, float)):
-                        b[idx] = f_values
-        
-        # 有効フラグに基づいて境界条件値を設定
-        if enable_dirichlet:
-            # ディリクレ境界条件
-            self._set_boundary_values(b, left_dirichlet, nx, ny, 0, 1, lambda j: (j * nx + 0) * n_unknowns + 1)
-            self._set_boundary_values(b, right_dirichlet, nx, ny, 0, 1, lambda j: (j * nx + (nx-1)) * n_unknowns + 1)
-            self._set_boundary_values(b, bottom_dirichlet, nx, ny, 1, 0, lambda i: (0 * nx + i) * n_unknowns + 4)
-            self._set_boundary_values(b, top_dirichlet, nx, ny, 1, 0, lambda i: ((ny-1) * nx + i) * n_unknowns + 4)
-        
-        if enable_neumann:
-            # ノイマン境界条件
-            self._set_boundary_values(b, left_neumann, nx, ny, 0, 1, lambda j: (j * nx + 0) * n_unknowns + 2)
-            self._set_boundary_values(b, right_neumann, nx, ny, 0, 1, lambda j: (j * nx + (nx-1)) * n_unknowns + 2)
-            self._set_boundary_values(b, bottom_neumann, nx, ny, 1, 0, lambda i: (0 * nx + i) * n_unknowns + 5)
-            self._set_boundary_values(b, top_neumann, nx, ny, 1, 0, lambda i: ((ny-1) * nx + i) * n_unknowns + 5)
-                
-        return b
-
-    def _set_boundary_values(self, b, values, nx, ny, dim_i, dim_j, idx_func):
-        """
-        特定の境界に沿って境界値を設定
-        
-        Args:
-            b: 右辺ベクトル
-            values: 境界値
-            nx, ny: グリッド次元
-            dim_i, dim_j: 次元インデックス（0または1）
-            idx_func: インデックス計算関数
-            
-        Returns:
-            None (bをその場で変更)
-        """
-        if values is None:
-            return
-            
-        max_i = nx if dim_i == 1 else 1
-        max_j = ny if dim_j == 1 else 1
-        
-        for idx in range(max_i * dim_i + max_j * dim_j):
-            index = idx_func(idx)
-            
-            if isinstance(values, (list, cp.ndarray)) and idx < len(values):
-                b[index] = values[idx]
-            elif isinstance(values, (int, float)):
-                b[index] = values
 
     def solve(self, analyze_before_solve=True, f_values=None,
               left_dirichlet=None, right_dirichlet=None, 
@@ -553,34 +362,167 @@ class CCDSolver2D(BaseCCDSolver):
         Returns:
             (psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy) タプル
         """
-        A, b = self.system.build_matrix_system()
+        # 行列システムを構築
+        A = self.system.build_matrix_system()
 
+        # 行列を分析（要求された場合）
         if analyze_before_solve:
             self.analyze_system()
             
-        # 右辺値を更新
+        # 境界条件の設定を表示
+        print(f"境界条件設定: ディリクレ = {'有効' if enable_dirichlet else '無効'}, "
+              f"ノイマン = {'有効' if enable_neumann else '無効'}")
+            
+        # 右辺ベクトルを更新
         b = self._update_rhs(
-            b, f_values,
+            f_values,
             left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
             left_neumann, right_neumann, bottom_neumann, top_neumann,
             enable_dirichlet, enable_neumann
         )
                 
-        # 要求されている場合はスケーリングを適用
+        # スケーリングを適用
         A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A, b)
 
-        # システムを解く
-        sol = self._solve_with_strategy(A_scaled, b_scaled)
+        # 線形システムを解く
+        sol = self._solve_linear_system(A_scaled, b_scaled)
             
         # スケーリングが適用された場合は解をアンスケール
         if scaling_info is not None and scaler is not None:
             sol = scaler.unscale(sol, scaling_info)
 
-        # 2D解を処理
-        return self._process_solution(sol)
+        # 解ベクトルから各要素を抽出
+        return self._extract_solution(sol)
 
-    def _process_solution(self, sol):
-        """2D解ベクトルを処理"""
+
+    # CCDSolver2Dの_update_rhsメソッド
+    def _update_rhs(self, f_values=None,
+                left_dirichlet=None, right_dirichlet=None, 
+                bottom_dirichlet=None, top_dirichlet=None,
+                left_neumann=None, right_neumann=None,
+                bottom_neumann=None, top_neumann=None,
+                enable_dirichlet=True, enable_neumann=True):
+        """
+        2Dシステムの境界値で右辺を更新
+        
+        Args:
+            b: 右辺ベクトル
+            f_values: ソース項の値
+            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet: ディリクレ値
+            left_neumann, right_neumann, bottom_neumann, top_neumann: ノイマン値
+            enable_dirichlet, enable_neumann: EquationSetからの有効フラグ
+            
+        Returns:
+            更新された右辺ベクトル
+        """
+        nx, ny = self.grid.nx_points, self.grid.ny_points
+        n_unknowns = 7  # ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy
+        b = cp.zeros(nx*ny*n_unknowns)
+        
+        # ポアソン方程式/ソース項の値を設定
+        if f_values is not None:
+            for j in range(ny):
+                for i in range(nx):
+                    idx = (j * nx + i) * n_unknowns  # ψのインデックス
+                    if isinstance(f_values, (list, cp.ndarray)) and i < len(f_values) and j < len(f_values[i]):
+                        b[idx] = f_values[i][j]
+                    elif isinstance(f_values, (int, float)):
+                        b[idx] = f_values
+        
+        # 境界条件の設定状態を表示
+        boundary_status = []
+        if enable_dirichlet:
+            boundary_status.append("ディリクレ(有効)")
+        else:
+            boundary_status.append("ディリクレ(無効)")
+        
+        if enable_neumann:
+            boundary_status.append("ノイマン(有効)")
+        else:
+            boundary_status.append("ノイマン(無効)")
+        
+        print(f"[2Dソルバー] 境界条件: {', '.join(boundary_status)}")
+        
+        # ディリクレ境界条件
+        if enable_dirichlet:
+            # x方向境界（左右）
+            for j in range(ny):
+                # 左境界ディリクレ(i=0)
+                if left_dirichlet is not None:
+                    idx = (j * nx + 0) * n_unknowns + 1  # ψ_x
+                    if isinstance(left_dirichlet, (list, cp.ndarray)) and j < len(left_dirichlet):
+                        b[idx] = left_dirichlet[j]
+                    elif isinstance(left_dirichlet, (int, float)):
+                        b[idx] = left_dirichlet
+                
+                # 右境界ディリクレ(i=nx-1)
+                if right_dirichlet is not None:
+                    idx = (j * nx + (nx-1)) * n_unknowns + 1  # ψ_x
+                    if isinstance(right_dirichlet, (list, cp.ndarray)) and j < len(right_dirichlet):
+                        b[idx] = right_dirichlet[j]
+                    elif isinstance(right_dirichlet, (int, float)):
+                        b[idx] = right_dirichlet
+            
+            # y方向境界（下上）
+            for i in range(nx):
+                # 下境界ディリクレ(j=0)
+                if bottom_dirichlet is not None:
+                    idx = (0 * nx + i) * n_unknowns + 4  # ψ_y
+                    if isinstance(bottom_dirichlet, (list, cp.ndarray)) and i < len(bottom_dirichlet):
+                        b[idx] = bottom_dirichlet[i]
+                    elif isinstance(bottom_dirichlet, (int, float)):
+                        b[idx] = bottom_dirichlet
+                
+                # 上境界ディリクレ(j=ny-1)
+                if top_dirichlet is not None:
+                    idx = ((ny-1) * nx + i) * n_unknowns + 4  # ψ_y
+                    if isinstance(top_dirichlet, (list, cp.ndarray)) and i < len(top_dirichlet):
+                        b[idx] = top_dirichlet[i]
+                    elif isinstance(top_dirichlet, (int, float)):
+                        b[idx] = top_dirichlet
+        
+        # ノイマン境界条件
+        if enable_neumann:
+            # x方向境界（左右）
+            for j in range(ny):
+                # 左境界ノイマン(i=0)
+                if left_neumann is not None:
+                    idx = (j * nx + 0) * n_unknowns + 2  # ψ_xx
+                    if isinstance(left_neumann, (list, cp.ndarray)) and j < len(left_neumann):
+                        b[idx] = left_neumann[j]
+                    elif isinstance(left_neumann, (int, float)):
+                        b[idx] = left_neumann
+                
+                # 右境界ノイマン(i=nx-1)
+                if right_neumann is not None:
+                    idx = (j * nx + (nx-1)) * n_unknowns + 2  # ψ_xx
+                    if isinstance(right_neumann, (list, cp.ndarray)) and j < len(right_neumann):
+                        b[idx] = right_neumann[j]
+                    elif isinstance(right_neumann, (int, float)):
+                        b[idx] = right_neumann
+            
+            # y方向境界（下上）
+            for i in range(nx):
+                # 下境界ノイマン(j=0)
+                if bottom_neumann is not None:
+                    idx = (0 * nx + i) * n_unknowns + 5  # ψ_yy
+                    if isinstance(bottom_neumann, (list, cp.ndarray)) and i < len(bottom_neumann):
+                        b[idx] = bottom_neumann[i]
+                    elif isinstance(bottom_neumann, (int, float)):
+                        b[idx] = bottom_neumann
+                
+                # 上境界ノイマン(j=ny-1)
+                if top_neumann is not None:
+                    idx = ((ny-1) * nx + i) * n_unknowns + 5  # ψ_yy
+                    if isinstance(top_neumann, (list, cp.ndarray)) and i < len(top_neumann):
+                        b[idx] = top_neumann[i]
+                    elif isinstance(top_neumann, (int, float)):
+                        b[idx] = top_neumann
+                    
+        return b
+
+    def _extract_solution(self, sol):
+        """解ベクトルから各成分を抽出"""
         nx, ny = self.grid.nx_points, self.grid.ny_points
         n_unknowns = 7  # ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy
         

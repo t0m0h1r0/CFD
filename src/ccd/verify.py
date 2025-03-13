@@ -285,7 +285,8 @@ class MatrixAnalyzer:
         print(f"  メモリ使用量(密行列): {(total_size * total_size * 8) / (1024 * 1024):.2f} MB")
         print(f"  メモリ使用量(疎行列): {(nnz * 12) / (1024 * 1024):.2f} MB")
     
-    def analyze_system(self, system: EquationSystem, name: str = "", scaling_method: Optional[str] = None, test_func=None) -> Dict:
+    def analyze_system(self, system: EquationSystem, name: str = "", scaling_method: Optional[str] = None, 
+                     test_func=None, enable_dirichlet=True, enable_neumann=True) -> Dict:
         """
         方程式システムを分析し、行列構造を検証
         
@@ -294,6 +295,8 @@ class MatrixAnalyzer:
             name: 識別用の名前
             scaling_method: スケーリング手法の名前
             test_func: テスト関数（オプション）
+            enable_dirichlet: ディリクレ境界条件を有効にするかどうか
+            enable_neumann: ノイマン境界条件を有効にするかどうか
             
         Returns:
             分析結果の辞書
@@ -345,7 +348,7 @@ class MatrixAnalyzer:
                         b.copy(), f_values,
                         left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
                         left_neumann, right_neumann, bottom_neumann, top_neumann,
-                        enable_dirichlet=True, enable_neumann=True
+                        enable_dirichlet=enable_dirichlet, enable_neumann=enable_neumann
                     )
                 else:
                     n = grid.n_points
@@ -365,7 +368,7 @@ class MatrixAnalyzer:
                         b.copy(), f_values,
                         left_dirichlet, right_dirichlet,
                         left_neumann, right_neumann,
-                        enable_dirichlet=True, enable_neumann=True
+                        enable_dirichlet=enable_dirichlet, enable_neumann=enable_neumann
                     )
             else:
                 # テスト関数がない場合はbをそのまま使用
@@ -403,6 +406,14 @@ class MatrixAnalyzer:
             prefix = f"{name.lower()}_{grid_info}"
             if scaling_method:
                 prefix += f"_{scaling_method.lower()}"
+            
+            # 境界条件の設定を追加
+            if not enable_dirichlet and not enable_neumann:
+                prefix += "_noboundary"
+            elif not enable_dirichlet:
+                prefix += "_nodirichlet"
+            elif not enable_neumann:
+                prefix += "_noneumann"
             
             # 全体構造の可視化
             title = f"{name} {'2D' if is_2d else '1D'} Matrix"
@@ -462,13 +473,21 @@ def verify_system(dimension: int, output_dir: str = "results"):
             
             # 方程式セットの取得と設定
             equation_set = EquationSet.create(eq_set_type, dimension=dimension)
-            equation_set.setup_equations(system, grid, test_func)
+            
+            # 方程式をセットアップし、境界条件の有効フラグを取得
+            enable_dirichlet, enable_neumann = equation_set.setup_equations(system, grid, test_func)
+            
+            # 実行状態を表示
+            print(f"ディリクレ境界条件: {'有効' if enable_dirichlet else '無効'}")
+            print(f"ノイマン境界条件: {'有効' if enable_neumann else '無効'}")
             
             # 行列構造の分析（スケーリングなし）
             matrix_analyzer.analyze_system(
                 system, 
                 f"{eq_set_type.capitalize()}{dimension}D_{test_func.name}",
-                test_func=test_func  # テスト関数を渡す
+                test_func=test_func,
+                enable_dirichlet=enable_dirichlet,
+                enable_neumann=enable_neumann
             )
             
             # 行列構造の分析（対称スケーリング）
@@ -476,7 +495,9 @@ def verify_system(dimension: int, output_dir: str = "results"):
                 system, 
                 f"{eq_set_type.capitalize()}{dimension}D_{test_func.name}", 
                 scaling_method="SymmetricScaling",
-                test_func=test_func  # テスト関数を渡す
+                test_func=test_func,
+                enable_dirichlet=enable_dirichlet,
+                enable_neumann=enable_neumann
             )
         
         except Exception as e:

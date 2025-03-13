@@ -276,7 +276,6 @@ class EquationSystem:
         data = []
         row_indices = []
         col_indices = []
-        b = cp.zeros(size)
 
         for i in range(n):
             # 基本インデックス
@@ -328,29 +327,29 @@ class EquationSystem:
             
             # 1D用に方程式を特定の順序で配置
             # 0: ψ - 常に支配方程式
-            self._add_equation_to_matrix_1d(governing_eq, i, base_idx, 0, data, row_indices, col_indices, b)
+            self._add_equation_to_matrix_1d(governing_eq, i, base_idx, 0, data, row_indices, col_indices)
             
             # 1: ψ' - ディリクレ境界または補助方程式
             if dirichlet_eq:
-                self._add_equation_to_matrix_1d(dirichlet_eq, i, base_idx, 1, data, row_indices, col_indices, b)
+                self._add_equation_to_matrix_1d(dirichlet_eq, i, base_idx, 1, data, row_indices, col_indices)
             else:
-                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 1, data, row_indices, col_indices, b)
+                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 1, data, row_indices, col_indices)
             
             # 2: ψ'' - ノイマン境界または補助方程式
             if neumann_eq:
-                self._add_equation_to_matrix_1d(neumann_eq, i, base_idx, 2, data, row_indices, col_indices, b)
+                self._add_equation_to_matrix_1d(neumann_eq, i, base_idx, 2, data, row_indices, col_indices)
             else:
-                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 2, data, row_indices, col_indices, b)
+                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 2, data, row_indices, col_indices)
             
             # 3: ψ''' - 補助方程式
-            self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 3, data, row_indices, col_indices, b)
+            self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 3, data, row_indices, col_indices)
 
         A = sp.csr_matrix(
             (cp.array(data), (cp.array(row_indices), cp.array(col_indices))), 
             shape=(size, size)
         )
 
-        return A, b
+        return A
 
     def _build_matrix_system_2d(self):
         """2D行列システムの構築"""
@@ -374,7 +373,6 @@ class EquationSystem:
         data = []
         row_indices = []
         col_indices = []
-        b = cp.zeros(system_size)
         
         # 全グリッド点に対して
         for j in range(ny):
@@ -446,37 +444,37 @@ class EquationSystem:
                 
                 # 各位置に方程式を配置
                 # 0: ψ - 常に支配方程式
-                self._add_equation_to_matrix_2d(governing_eq, i, j, base_idx, 0, data, row_indices, col_indices, b)
+                self._add_equation_to_matrix_2d(governing_eq, i, j, base_idx, 0, data, row_indices, col_indices)
                 
                 # 1: ψ_x - x方向のディリクレ境界または補助方程式
                 if dirichlet_x_eq:
-                    self._add_equation_to_matrix_2d(dirichlet_x_eq, i, j, base_idx, 1, data, row_indices, col_indices, b)
+                    self._add_equation_to_matrix_2d(dirichlet_x_eq, i, j, base_idx, 1, data, row_indices, col_indices)
                 else:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 1, data, row_indices, col_indices, b)
+                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 1, data, row_indices, col_indices)
                 
                 # 2: ψ_xx - x方向のノイマン境界または補助方程式
                 if neumann_x_eq:
-                    self._add_equation_to_matrix_2d(neumann_x_eq, i, j, base_idx, 2, data, row_indices, col_indices, b)
+                    self._add_equation_to_matrix_2d(neumann_x_eq, i, j, base_idx, 2, data, row_indices, col_indices)
                 else:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 2, data, row_indices, col_indices, b)
+                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 2, data, row_indices, col_indices)
                 
                 # 3: ψ_xxx - 補助方程式
-                self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 3, data, row_indices, col_indices, b)
+                self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 3, data, row_indices, col_indices)
                 
                 # 4: ψ_y - y方向のディリクレ境界または補助方程式
                 if dirichlet_y_eq:
-                    self._add_equation_to_matrix_2d(dirichlet_y_eq, i, j, base_idx, 4, data, row_indices, col_indices, b)
+                    self._add_equation_to_matrix_2d(dirichlet_y_eq, i, j, base_idx, 4, data, row_indices, col_indices)
                 else:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 4, data, row_indices, col_indices, b)
+                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 4, data, row_indices, col_indices)
                 
                 # 5: ψ_yy - y方向のノイマン境界または補助方程式
                 if neumann_y_eq:
-                    self._add_equation_to_matrix_2d(neumann_y_eq, i, j, base_idx, 5, data, row_indices, col_indices, b)
+                    self._add_equation_to_matrix_2d(neumann_y_eq, i, j, base_idx, 5, data, row_indices, col_indices)
                 else:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 5, data, row_indices, col_indices, b)
+                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 5, data, row_indices, col_indices)
                 
                 # 6: ψ_yyy - 補助方程式
-                self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 6, data, row_indices, col_indices, b)
+                self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 6, data, row_indices, col_indices)
         
         # 疎行列を作成
         A = sp.csr_matrix(
@@ -484,9 +482,9 @@ class EquationSystem:
             shape=(system_size, system_size)
         )
         
-        return A, b
+        return A
 
-    def _add_equation_to_matrix_1d(self, eq, i, base_idx, row_offset, data, row_indices, col_indices, b):
+    def _add_equation_to_matrix_1d(self, eq, i, base_idx, row_offset, data, row_indices, col_indices):
         """
         特定の行オフセットに1D方程式を追加
         
@@ -518,10 +516,7 @@ class EquationSystem:
                         col_indices.append(col_base + m)
                         data.append(float(coeff))
         
-        # 右辺値を0に設定
-        b[row] = 0.0
-
-    def _add_equation_to_matrix_2d(self, eq, i, j, base_idx, row_offset, data, row_indices, col_indices, b):
+    def _add_equation_to_matrix_2d(self, eq, i, j, base_idx, row_offset, data, row_indices, col_indices):
         """
         特定の行オフセットに2D方程式を追加
         
@@ -554,9 +549,6 @@ class EquationSystem:
                         col_indices.append(col_base + m)
                         data.append(float(coeff))
         
-        # 右辺値を0に設定
-        b[row] = 0.0
-
     def build_matrix_system(self):
         """
         行列システムを構築
