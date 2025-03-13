@@ -270,7 +270,7 @@ class CCDSolver1D(BaseCCDSolver):
         if f_values is not None:
             for i in range(n):
                 idx = i * 4  # ψのインデックス
-                b[idx] = f_values[i] if i < len(f_values) else 0.0
+                b[idx] = f_values[i]
         
         # 境界条件の設定状態を表示
         print(f"境界条件設定: ディリクレ = {'有効' if self.enable_dirichlet else '無効'}, "
@@ -350,10 +350,7 @@ class CCDSolver2D(BaseCCDSolver):
             for j in range(ny):
                 for i in range(nx):
                     idx = (j * nx + i) * n_unknowns  # ψのインデックス
-                    if isinstance(f_values, (list, cp.ndarray)) and i < len(f_values) and j < len(f_values[i]):
-                        b[idx] = f_values[i][j]
-                    elif isinstance(f_values, (int, float)):
-                        b[idx] = f_values
+                    b[idx] = f_values[i][j]
         
         # 境界条件の設定状態を表示
         boundary_status = []
