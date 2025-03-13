@@ -2,24 +2,32 @@ from abc import ABC, abstractmethod
 import cupy as cp
 import cupyx.scipy.sparse.linalg as splinalg
 
+from equation_system import EquationSystem
+from scaling import plugin_manager
+
 class BaseCCDSolver(ABC):
     """コンパクト差分法ソルバーの抽象基底クラス"""
 
-    def __init__(self, system, grid):
+    def __init__(self, equation_set, grid):
         """
         ソルバーを初期化
         
         Args:
-            system: 方程式システム
+            equation_set: 使用する方程式セット
             grid: グリッドオブジェクト
         """
-        self.system = system
+        self.equation_set = equation_set
         self.grid = grid
         self.solver_method = "direct"
         self.solver_options = {}
         self.scaling_method = None
         self.last_iterations = None
         self.sparsity_info = None
+        
+        # システムを初期化し、行列Aを構築
+        self.system = EquationSystem(grid)
+        self.enable_dirichlet, self.enable_neumann = equation_set.setup_equations(self.system, grid)
+        self.matrix_A = self.system.build_matrix_system()
 
     def set_solver(self, method="direct", options=None, scaling_method=None):
         """
@@ -156,7 +164,6 @@ class BaseCCDSolver(ABC):
         scaler = None
         
         if self.scaling_method is not None:
-            from scaling import plugin_manager
             scaler = plugin_manager.get_plugin(self.scaling_method)
             if scaler:
                 print(f"スケーリング手法を適用: {scaler.name} - {scaler.description}")
@@ -184,76 +191,27 @@ class BaseCCDSolver(ABC):
         
         return sparsity_info
 
-    @abstractmethod
-    def solve(self, analyze_before_solve=True):
+    def solve(self, analyze_before_solve=True, f_values=None, **boundary_values):
         """
         システムを解く
         
         Args:
             analyze_before_solve: 解く前に行列を分析するかどうか
+            f_values: 支配方程式の右辺値
+            **boundary_values: 境界値の辞書（ディメンションに依存）
             
         Returns:
             解コンポーネント
         """
-        pass
-
-
-class CCDSolver1D(BaseCCDSolver):
-    """1次元コンパクト差分法ソルバー"""
-
-    def __init__(self, system, grid):
-        """
-        1Dソルバーを初期化
-        
-        Args:
-            system: 方程式システム
-            grid: 1D グリッドオブジェクト
-        """
-        super().__init__(system, grid)
-        if grid.is_2d:
-            raise ValueError("1Dソルバーは2Dグリッドでは使用できません")
-
-    def solve(self, analyze_before_solve=True, f_values=None, 
-              left_dirichlet=None, right_dirichlet=None,
-              left_neumann=None, right_neumann=None,
-              enable_dirichlet=True, enable_neumann=True):
-        """
-        1Dシステムを解く
-        
-        Args:
-            analyze_before_solve: 解く前に行列を分析するかどうか
-            f_values: 支配方程式の右辺値 (形状: (n,))
-            left_dirichlet: 左境界ディリクレ値
-            right_dirichlet: 右境界ディリクレ値
-            left_neumann: 左境界ノイマン値
-            right_neumann: 右境界ノイマン値
-            enable_dirichlet: ディリクレ境界条件を有効にするかどうか
-            enable_neumann: ノイマン境界条件を有効にするかどうか
-            
-        Returns:
-            (psi, psi_prime, psi_second, psi_third) タプル
-        """
-        # 行列システムを構築
-        A = self.system.build_matrix_system()
-
         # 行列を分析（要求された場合）
         if analyze_before_solve:
             self.analyze_system()
             
-        # 境界条件の設定を表示
-        print(f"境界条件設定: ディリクレ = {'有効' if enable_dirichlet else '無効'}, "
-              f"ノイマン = {'有効' if enable_neumann else '無効'}")
-            
-        # 右辺ベクトルを更新
-        b = self._update_rhs(
-            f_values, 
-            left_dirichlet, right_dirichlet,
-            left_neumann, right_neumann,
-            enable_dirichlet, enable_neumann
-        )
-            
+        # 右辺ベクトルbを構築
+        b = self._build_rhs_vector(f_values, **boundary_values)
+        
         # スケーリングを適用
-        A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A, b)
+        A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(self.matrix_A, b)
 
         # 線形システムを解く
         sol = self._solve_linear_system(A_scaled, b_scaled)
@@ -265,23 +223,45 @@ class CCDSolver1D(BaseCCDSolver):
         # 解ベクトルから各要素を抽出
         return self._extract_solution(sol)
 
-    # CCDSolver1Dの_update_rhsメソッド
-    def _update_rhs(self, f_values=None, 
-                left_dirichlet=None, right_dirichlet=None,
-                left_neumann=None, right_neumann=None,
-                enable_dirichlet=True, enable_neumann=True):
+    @abstractmethod
+    def _build_rhs_vector(self, f_values=None, **boundary_values):
+        """右辺ベクトルを構築（次元による具体実装）"""
+        pass
+    
+    @abstractmethod
+    def _extract_solution(self, sol):
+        """解ベクトルから各成分を抽出（次元による具体実装）"""
+        pass
+
+
+class CCDSolver1D(BaseCCDSolver):
+    """1次元コンパクト差分法ソルバー"""
+
+    def __init__(self, equation_set, grid):
         """
-        境界値で右辺を更新
+        1Dソルバーを初期化
         
         Args:
-            b: 右辺ベクトル
+            equation_set: 方程式セット
+            grid: 1D グリッドオブジェクト
+        """
+        if grid.is_2d:
+            raise ValueError("1Dソルバーは2Dグリッドでは使用できません")
+            
+        super().__init__(equation_set, grid)
+
+    def _build_rhs_vector(self, f_values=None, left_dirichlet=None, right_dirichlet=None,
+                        left_neumann=None, right_neumann=None, **kwargs):
+        """
+        1D右辺ベクトルを構築
+        
+        Args:
             f_values: ソース項の値
-            left_dirichlet, right_dirichlet: ディリクレ値
-            left_neumann, right_neumann: ノイマン値
-            enable_dirichlet, enable_neumann: EquationSetからの有効フラグ
+            left_dirichlet, right_dirichlet: ディリクレ境界値
+            left_neumann, right_neumann: ノイマン境界値
             
         Returns:
-            更新された右辺ベクトル
+            右辺ベクトル
         """
         n = self.grid.n_points
         b = cp.zeros(n*4)
@@ -289,23 +269,26 @@ class CCDSolver1D(BaseCCDSolver):
         # ポアソン方程式/ソース項の値を設定
         if f_values is not None:
             for i in range(n):
-                idx = i * 4  # ψ''のインデックス
+                idx = i * 4  # ψのインデックス
                 b[idx] = f_values[i] if i < len(f_values) else 0.0
         
-        # 境界条件を適用
-        if enable_dirichlet:
-            # ディリクレ境界条件が有効な場合
+        # 境界条件の設定状態を表示
+        print(f"境界条件設定: ディリクレ = {'有効' if self.enable_dirichlet else '無効'}, "
+              f"ノイマン = {'有効' if self.enable_neumann else '無効'}")
+        
+        # ディリクレ境界条件
+        if self.enable_dirichlet:
             if left_dirichlet is not None:
                 b[1] = left_dirichlet  # 左境界ディリクレ (ψ)
             if right_dirichlet is not None:
                 b[(n-1) * 4 + 1] = right_dirichlet  # 右境界ディリクレ (ψ)
-            
+                
             print(f"[1Dソルバー] ディリクレ境界条件が有効: 左={left_dirichlet}, 右={right_dirichlet}")
         else:
             print("[1Dソルバー] ディリクレ境界条件が無効")
         
-        if enable_neumann:
-            # ノイマン境界条件が有効な場合
+        # ノイマン境界条件
+        if self.enable_neumann:
             if left_neumann is not None:
                 b[2] = left_neumann  # 左境界ノイマン (ψ')
             if right_neumann is not None:
@@ -314,7 +297,7 @@ class CCDSolver1D(BaseCCDSolver):
             print(f"[1Dソルバー] ノイマン境界条件が有効: 左={left_neumann}, 右={right_neumann}")
         else:
             print("[1Dソルバー] ノイマン境界条件が無効")
-            
+        
         return b
 
     def _extract_solution(self, sol):
@@ -331,89 +314,32 @@ class CCDSolver1D(BaseCCDSolver):
 class CCDSolver2D(BaseCCDSolver):
     """2次元コンパクト差分法ソルバー"""
 
-    def __init__(self, system, grid):
+    def __init__(self, equation_set, grid):
         """
         2Dソルバーを初期化
         
         Args:
-            system: 方程式システム
+            equation_set: 方程式セット
             grid: 2D グリッドオブジェクト
         """
-        super().__init__(system, grid)
         if not grid.is_2d:
             raise ValueError("2Dソルバーは1Dグリッドでは使用できません")
+            
+        super().__init__(equation_set, grid)
 
-    def solve(self, analyze_before_solve=True, f_values=None,
-              left_dirichlet=None, right_dirichlet=None, 
-              bottom_dirichlet=None, top_dirichlet=None,
-              left_neumann=None, right_neumann=None,
-              bottom_neumann=None, top_neumann=None,
-              enable_dirichlet=True, enable_neumann=True):
+    def _build_rhs_vector(self, f_values=None, left_dirichlet=None, right_dirichlet=None, 
+                      bottom_dirichlet=None, top_dirichlet=None, left_neumann=None, 
+                      right_neumann=None, bottom_neumann=None, top_neumann=None, **kwargs):
         """
-        2Dシステムを解く
+        2D右辺ベクトルを構築
         
         Args:
-            analyze_before_solve: 解く前に行列を分析するかどうか
-            f_values: 支配方程式の右辺値 (形状: (nx, ny))
+            f_values: ソース項の値 (nx×ny配列)
             left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet: 境界値
             left_neumann, right_neumann, bottom_neumann, top_neumann: 境界導関数
-            enable_dirichlet, enable_neumann: 境界条件を有効にするかどうか
             
         Returns:
-            (psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy) タプル
-        """
-        # 行列システムを構築
-        A = self.system.build_matrix_system()
-
-        # 行列を分析（要求された場合）
-        if analyze_before_solve:
-            self.analyze_system()
-            
-        # 境界条件の設定を表示
-        print(f"境界条件設定: ディリクレ = {'有効' if enable_dirichlet else '無効'}, "
-              f"ノイマン = {'有効' if enable_neumann else '無効'}")
-            
-        # 右辺ベクトルを更新
-        b = self._update_rhs(
-            f_values,
-            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
-            left_neumann, right_neumann, bottom_neumann, top_neumann,
-            enable_dirichlet, enable_neumann
-        )
-                
-        # スケーリングを適用
-        A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A, b)
-
-        # 線形システムを解く
-        sol = self._solve_linear_system(A_scaled, b_scaled)
-            
-        # スケーリングが適用された場合は解をアンスケール
-        if scaling_info is not None and scaler is not None:
-            sol = scaler.unscale(sol, scaling_info)
-
-        # 解ベクトルから各要素を抽出
-        return self._extract_solution(sol)
-
-
-    # CCDSolver2Dの_update_rhsメソッド
-    def _update_rhs(self, f_values=None,
-                left_dirichlet=None, right_dirichlet=None, 
-                bottom_dirichlet=None, top_dirichlet=None,
-                left_neumann=None, right_neumann=None,
-                bottom_neumann=None, top_neumann=None,
-                enable_dirichlet=True, enable_neumann=True):
-        """
-        2Dシステムの境界値で右辺を更新
-        
-        Args:
-            b: 右辺ベクトル
-            f_values: ソース項の値
-            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet: ディリクレ値
-            left_neumann, right_neumann, bottom_neumann, top_neumann: ノイマン値
-            enable_dirichlet, enable_neumann: EquationSetからの有効フラグ
-            
-        Returns:
-            更新された右辺ベクトル
+            右辺ベクトル
         """
         nx, ny = self.grid.nx_points, self.grid.ny_points
         n_unknowns = 7  # ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy
@@ -431,12 +357,12 @@ class CCDSolver2D(BaseCCDSolver):
         
         # 境界条件の設定状態を表示
         boundary_status = []
-        if enable_dirichlet:
+        if self.enable_dirichlet:
             boundary_status.append("ディリクレ(有効)")
         else:
             boundary_status.append("ディリクレ(無効)")
         
-        if enable_neumann:
+        if self.enable_neumann:
             boundary_status.append("ノイマン(有効)")
         else:
             boundary_status.append("ノイマン(無効)")
@@ -444,7 +370,7 @@ class CCDSolver2D(BaseCCDSolver):
         print(f"[2Dソルバー] 境界条件: {', '.join(boundary_status)}")
         
         # ディリクレ境界条件
-        if enable_dirichlet:
+        if self.enable_dirichlet:
             # x方向境界（左右）
             for j in range(ny):
                 # 左境界ディリクレ(i=0)
@@ -482,7 +408,7 @@ class CCDSolver2D(BaseCCDSolver):
                         b[idx] = top_dirichlet
         
         # ノイマン境界条件
-        if enable_neumann:
+        if self.enable_neumann:
             # x方向境界（左右）
             for j in range(ny):
                 # 左境界ノイマン(i=0)

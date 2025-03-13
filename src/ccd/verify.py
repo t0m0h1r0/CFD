@@ -285,42 +285,38 @@ class MatrixAnalyzer:
         print(f"  メモリ使用量(密行列): {(total_size * total_size * 8) / (1024 * 1024):.2f} MB")
         print(f"  メモリ使用量(疎行列): {(nnz * 12) / (1024 * 1024):.2f} MB")
     
-    def analyze_system(self, system: EquationSystem, name: str = "", scaling_method: Optional[str] = None, 
-                     test_func=None, enable_dirichlet=True, enable_neumann=True) -> Dict:
+    def analyze_system(self, equation_set, grid, name: str = "", scaling_method: Optional[str] = None, 
+                     test_func=None) -> Dict:
         """
         方程式システムを分析し、行列構造を検証
         
         Args:
-            system: EquationSystem のインスタンス
+            equation_set: EquationSet のインスタンス
+            grid: Grid オブジェクト
             name: 識別用の名前
             scaling_method: スケーリング手法の名前
             test_func: テスト関数（オプション）
-            enable_dirichlet: ディリクレ境界条件を有効にするかどうか
-            enable_neumann: ノイマン境界条件を有効にするかどうか
             
         Returns:
             分析結果の辞書
         """
         try:
-            # 行列システムを構築
-            A, b = system.build_matrix_system()
-            
-            # グリッド情報の取得
-            grid = system.grid
-            is_2d = grid.is_2d
-            
-            # 適切なソルバーのインスタンスを作成
-            if is_2d:
-                solver = CCDSolver2D(system, grid)
+            # ソルバーを作成（新しいインターフェース）
+            if grid.is_2d:
+                solver = CCDSolver2D(equation_set, grid)
             else:
-                solver = CCDSolver1D(system, grid)
+                solver = CCDSolver1D(equation_set, grid)
             
             # スケーリング手法を設定
             solver.scaling_method = scaling_method
             
-            # テスト関数から境界値を生成
+            # システム行列を取得
+            A = solver.matrix_A
+            
+            # テスト関数から境界値と右辺ベクトルを生成
             if test_func is not None:
-                if is_2d:
+                # 右辺ベクトルを構築（次元に応じた方法で）
+                if grid.is_2d:
                     nx, ny = grid.nx_points, grid.ny_points
                     x_min, x_max = grid.x_min, grid.x_max
                     y_min, y_max = grid.y_min, grid.y_max
@@ -343,12 +339,17 @@ class MatrixAnalyzer:
                     bottom_neumann = cp.array([test_func.df_dy(x, y_min) for x in grid.x])
                     top_neumann = cp.array([test_func.df_dy(x, y_max) for x in grid.x])
                     
-                    # _update_rhsメソッドを呼び出してbを更新
-                    b_updated = solver._update_rhs(
-                        b.copy(), f_values,
-                        left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
-                        left_neumann, right_neumann, bottom_neumann, top_neumann,
-                        enable_dirichlet=enable_dirichlet, enable_neumann=enable_neumann
+                    # 右辺ベクトルを構築
+                    b = solver._build_rhs_vector(
+                        f_values=f_values,
+                        left_dirichlet=left_dirichlet, 
+                        right_dirichlet=right_dirichlet, 
+                        bottom_dirichlet=bottom_dirichlet, 
+                        top_dirichlet=top_dirichlet,
+                        left_neumann=left_neumann, 
+                        right_neumann=right_neumann, 
+                        bottom_neumann=bottom_neumann, 
+                        top_neumann=top_neumann
                     )
                 else:
                     n = grid.n_points
@@ -363,24 +364,31 @@ class MatrixAnalyzer:
                     left_neumann = test_func.df(x_min)
                     right_neumann = test_func.df(x_max)
                     
-                    # _update_rhsメソッドを呼び出してbを更新
-                    b_updated = solver._update_rhs(
-                        b.copy(), f_values,
-                        left_dirichlet, right_dirichlet,
-                        left_neumann, right_neumann,
-                        enable_dirichlet=enable_dirichlet, enable_neumann=enable_neumann
+                    # 右辺ベクトルを構築
+                    b = solver._build_rhs_vector(
+                        f_values=f_values,
+                        left_dirichlet=left_dirichlet,
+                        right_dirichlet=right_dirichlet,
+                        left_neumann=left_neumann,
+                        right_neumann=right_neumann
                     )
             else:
-                # テスト関数がない場合はbをそのまま使用
-                b_updated = b.copy()
+                # テスト関数がない場合はゼロベクトルを使用
+                if grid.is_2d:
+                    nx, ny = grid.nx_points, grid.ny_points
+                    n_unknowns = 7  # ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy
+                    b = cp.zeros(nx * ny * n_unknowns)
+                else:
+                    n = grid.n_points
+                    b = cp.zeros(n * 4)
             
-            # スケーリングを適用
+            # スケーリングを適用（必要に応じて）
             if scaling_method:
-                A_scaled, b_scaled, _, _ = solver._apply_scaling(A, b_updated)
+                A_scaled, b_scaled, _, _ = solver._apply_scaling(A, b)
             else:
-                A_scaled, b_scaled = A, b_updated
+                A_scaled, b_scaled = A, b
             
-            if is_2d:
+            if grid.is_2d:
                 nx, ny = grid.nx_points, grid.ny_points
                 grid_info = f"{nx}x{ny}"
             else:
@@ -407,21 +415,13 @@ class MatrixAnalyzer:
             if scaling_method:
                 prefix += f"_{scaling_method.lower()}"
             
-            # 境界条件の設定を追加
-            if not enable_dirichlet and not enable_neumann:
-                prefix += "_noboundary"
-            elif not enable_dirichlet:
-                prefix += "_nodirichlet"
-            elif not enable_neumann:
-                prefix += "_noneumann"
-            
             # 全体構造の可視化
-            title = f"{name} {'2D' if is_2d else '1D'} Matrix"
+            title = f"{name} {'2D' if grid.is_2d else '1D'} Matrix"
             self.visualizer.visualize_matrix_structure(A_scaled, grid, title, prefix)
             self.visualizer.visualize_matrix_values(A_scaled, grid, title, prefix)
             
             # システム (Ax = b) の可視化
-            system_title = f"{name} {'2D' if is_2d else '1D'} System"
+            system_title = f"{name} {'2D' if grid.is_2d else '1D'} System"
             self.visualizer.visualize_system_structure(A_scaled, b_scaled, grid, system_title, prefix)
             self.visualizer.visualize_system_values(A_scaled, b_scaled, grid, system_title, prefix)
             
@@ -455,49 +455,37 @@ def verify_system(dimension: int, output_dir: str = "results"):
         try:
             # グリッドの作成
             if dimension == 1:
-                grid = Grid(3, x_range=(-1.0, 1.0))
-                # 新しいテスト関数クラスを使用
+                grid = Grid(5, x_range=(-1.0, 1.0))
+                # テスト関数を取得
                 test_funcs = TestFunctionFactory.create_standard_1d_functions()
                 test_func = test_funcs[3]  # Sine関数
             else:
-                grid = Grid(3, 3, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
-                # 新しいテスト関数クラスを使用
+                grid = Grid(5, 5, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
+                # テスト関数を取得
                 test_funcs = TestFunctionFactory.create_standard_2d_functions()
                 test_func = test_funcs[0]  # Sine2D関数
+            
+            # 方程式セットを作成
+            equation_set = EquationSet.create(eq_set_type, dimension=dimension)
             
             # 可視化ツールの準備
             matrix_analyzer = MatrixAnalyzer(output_dir)
             
-            # 方程式システムの作成
-            system = EquationSystem(grid)
-            
-            # 方程式セットの取得と設定
-            equation_set = EquationSet.create(eq_set_type, dimension=dimension)
-            
-            # 方程式をセットアップし、境界条件の有効フラグを取得
-            enable_dirichlet, enable_neumann = equation_set.setup_equations(system, grid, test_func)
-            
-            # 実行状態を表示
-            print(f"ディリクレ境界条件: {'有効' if enable_dirichlet else '無効'}")
-            print(f"ノイマン境界条件: {'有効' if enable_neumann else '無効'}")
-            
             # 行列構造の分析（スケーリングなし）
             matrix_analyzer.analyze_system(
-                system, 
+                equation_set, 
+                grid, 
                 f"{eq_set_type.capitalize()}{dimension}D_{test_func.name}",
-                test_func=test_func,
-                enable_dirichlet=enable_dirichlet,
-                enable_neumann=enable_neumann
+                test_func=test_func
             )
             
             # 行列構造の分析（対称スケーリング）
             matrix_analyzer.analyze_system(
-                system, 
+                equation_set, 
+                grid, 
                 f"{eq_set_type.capitalize()}{dimension}D_{test_func.name}", 
                 scaling_method="SymmetricScaling",
-                test_func=test_func,
-                enable_dirichlet=enable_dirichlet,
-                enable_neumann=enable_neumann
+                test_func=test_func
             )
         
         except Exception as e:
