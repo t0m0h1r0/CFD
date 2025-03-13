@@ -2,8 +2,8 @@ import argparse
 import os
 import time
 from grid import Grid
-from tester import CCDTester1D, CCDTester2D  # 直接次元別クラスをインポート
-from test_functions import TestFunctionFactory  # 新しいテスト関数モジュールのインポート
+from tester import CCDTester1D, CCDTester2D
+from test_functions import TestFunctionFactory
 from visualization1d import CCDVisualizer
 from visualization2d import CCD2DVisualizer
 
@@ -12,114 +12,50 @@ def parse_args():
     parser = argparse.ArgumentParser(description="CCD法の統合CLI (1D/2D)")
     
     # 共通基本オプション
-    common_group = parser.add_argument_group('共通オプション')
-    common_group.add_argument("--dim", type=int, choices=[1, 2], default=1, help="問題の次元 (1 or 2)")
-    common_group.add_argument("--test-func", type=str, default="Sine", help="テスト関数名")
-    common_group.add_argument("--no-visualization", action="store_true", help="可視化を無効化")
-    common_group.add_argument("--convergence-test", action="store_true", help="格子収束性テストを実行")
-    common_group.add_argument("--test-all-functions", action="store_true", help="全てのテスト関数でテストを実行")
-    common_group.add_argument("--prefix", type=str, default="", help="出力ファイル名の接頭辞")
-    common_group.add_argument("--output-dir", "-o", type=str, default="results", help="画像出力先ディレクトリ（デフォルト: results）")
-    common_group.add_argument("--list-functions", action="store_true", help="利用可能なテスト関数の一覧を表示")
-    common_group.add_argument(
-        "--x-range",
-        type=float,
-        nargs=2,
-        default=[-1.0, 1.0],
-        help="x座標の範囲 (最小値 最大値)"
-    )
+    common = parser.add_argument_group('共通オプション')
+    common.add_argument("--dim", type=int, choices=[1, 2], default=1, help="問題の次元")
+    common.add_argument("--test-func", type=str, default="Sine", help="テスト関数名")
+    common.add_argument("--no-visualization", action="store_true", help="可視化を無効化")
+    common.add_argument("--convergence-test", action="store_true", help="格子収束性テスト実行")
+    common.add_argument("--test-all-functions", action="store_true", help="全関数でテスト実行")
+    common.add_argument("--prefix", type=str, default="", help="出力ファイル名の接頭辞")
+    common.add_argument("--output-dir", "-o", type=str, default="results", help="出力ディレクトリ")
+    common.add_argument("--list-functions", action="store_true", help="関数一覧表示")
+    common.add_argument("--x-range", type=float, nargs=2, default=[-1.0, 1.0], help="x座標範囲")
     
-    # 共通グリッドオプション
-    grid_group = parser.add_argument_group('グリッドオプション')
-    grid_group.add_argument("--nx-points", type=int, default=21, help="x方向の格子点の数 (1D/2D)")
+    # グリッドオプション
+    grid = parser.add_argument_group('グリッドオプション')
+    grid.add_argument("--nx-points", type=int, default=21, help="x方向格子点数")
+    grid.add_argument("--ny-points", type=int, default=21, help="y方向格子点数 (2D専用)")
+    grid.add_argument("--y-range", type=float, nargs=2, default=[-1.0, 1.0], help="y座標範囲 (2D専用)")
     
-    # 2D固有のオプション
-    dim2_group = parser.add_argument_group('2D固有オプション')
-    dim2_group.add_argument("--ny-points", type=int, default=21, help="y方向の格子点の数 (2D専用)")
-    dim2_group.add_argument("--y-range", type=float, nargs=2, default=[-1.0, 1.0], help="y座標の範囲 (最小値 最大値)")
-    
-    # 方程式セットオプション
-    equation_set_group = parser.add_argument_group('方程式セットオプション')
-    equation_set_group.add_argument(
-        "--equation-set",
-        type=str,
-        default="poisson",
-        help="使用する方程式セット (デフォルト: poisson)"
-    )
+    # 方程式セット
+    eqs = parser.add_argument_group('方程式セットオプション')
+    eqs.add_argument("--equation-set", type=str, default="poisson", help="方程式セット名")
     
     # ソルバーオプション
-    solver_group = parser.add_argument_group('ソルバーオプション')
-    solver_group.add_argument(
-        "--solver", 
-        type=str, 
-        choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'lsmr', 'minres'], 
-        default='direct',
-        help="使用するソルバー (デフォルト: direct)"
-    )
-    solver_group.add_argument(
-        "--solver-tol", 
-        type=float, 
-        default=1e-10,
-        help="反復ソルバーの収束許容誤差 (デフォルト: 1e-10)"
-    )
-    solver_group.add_argument(
-        "--solver-maxiter", 
-        type=int, 
-        default=1000,
-        help="反復ソルバーの最大反復回数 (デフォルト: 1000)"
-    )
-    solver_group.add_argument(
-        "--solver-restart", 
-        type=int, 
-        default=100,
-        help="GMRESのリスタート値 (デフォルト: 100)"
-    )
-    solver_group.add_argument(
-        "--no-preconditioner", 
-        action="store_true",
-        help="前処理を使用しない"
-    )
-    solver_group.add_argument(
-        "--analyze-matrix", 
-        action="store_true",
-        help="行列の疎性を分析して表示"
-    )
-    # 収束モニタリングオプションを追加
-    solver_group.add_argument(
-        "--monitor-convergence", 
-        action="store_true",
-        help="反復ソルバーの収束過程をモニタリング"
-    )
-    solver_group.add_argument(
-        "--display-interval", 
-        type=int, 
-        default=10,
-        help="収束状況の表示間隔 (デフォルト: 10反復ごと)"
-    )
+    solver = parser.add_argument_group('ソルバーオプション')
+    solver.add_argument("--solver", type=str, 
+                     choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'lsmr', 'minres'],
+                     default='direct', help="ソルバー方式")
+    solver.add_argument("--solver-tol", type=float, default=1e-10, help="収束許容誤差")
+    solver.add_argument("--solver-maxiter", type=int, default=1000, help="最大反復回数")
+    solver.add_argument("--solver-restart", type=int, default=100, help="GMRESリスタート値")
+    solver.add_argument("--no-preconditioner", action="store_true", help="前処理を無効化")
+    solver.add_argument("--analyze-matrix", action="store_true", help="行列の疎性を分析")
+    solver.add_argument("--monitor-convergence", action="store_true", help="収束過程をモニタリング")
+    solver.add_argument("--display-interval", type=int, default=10, help="収束表示間隔")
     
-    # スケーリングオプション
-    scaling_group = parser.add_argument_group('スケーリングオプション')
-    scaling_group.add_argument(
-        "--scaling", 
-        type=str,
-        default=None,
-        help="使用するスケーリング手法 (デフォルト: なし)"
-    )
-    scaling_group.add_argument(
-        "--list-scaling", 
-        action="store_true",
-        help="利用可能なスケーリング手法の一覧を表示"
-    )
-    scaling_group.add_argument(
-        "--compare-scaling", 
-        action="store_true",
-        help="異なるスケーリング手法の性能を比較"
-    )
+    # スケーリング
+    scaling = parser.add_argument_group('スケーリングオプション')
+    scaling.add_argument("--scaling", type=str, default=None, help="スケーリング手法名")
+    scaling.add_argument("--list-scaling", action="store_true", help="スケーリング手法一覧表示")
+    scaling.add_argument("--compare-scaling", action="store_true", help="スケーリング手法比較")
     
     return parser.parse_args()
 
 def get_solver_options(args):
-    """コマンドライン引数からソルバーオプションを取得"""
+    """ソルバーオプションの取得"""
     return {
         "tol": args.solver_tol,
         "maxiter": args.solver_maxiter,
@@ -132,9 +68,8 @@ def get_solver_options(args):
     }
 
 def list_scaling_methods():
-    """利用可能なスケーリング手法の一覧を表示"""
+    """利用可能なスケーリング手法一覧表示"""
     from scaling import plugin_manager
-    
     plugins = plugin_manager.get_available_plugins()
     
     print("\n利用可能なスケーリング手法:")
@@ -144,13 +79,11 @@ def list_scaling_methods():
     print()
 
 def list_available_functions(dim=1):
-    """利用可能なテスト関数の一覧を表示"""
+    """利用可能なテスト関数一覧表示"""
     if dim == 1:
-        # 新しいテスト関数クラスを使用
         functions = TestFunctionFactory.create_standard_1d_functions()
         print("\n利用可能な1Dテスト関数:")
     else:
-        # 新しいテスト関数クラスを使用
         functions = TestFunctionFactory.create_standard_2d_functions()
         print("\n利用可能な2Dテスト関数:")
     
@@ -158,370 +91,237 @@ def list_available_functions(dim=1):
         print(f"{i:2d}. {func.name}")
     
     if dim == 2:
-        print("\n注: 1次元の関数名を指定すると、自動的にテンソル積拡張された2次元関数が使用されます。")
+        print("\n注: 1次元関数名を指定すると、自動的にテンソル積拡張された2次元関数が使用されます。")
+
+def create_tester(args):
+    """引数からテスターを作成"""
+    x_range = tuple(args.x_range)
+    
+    if args.dim == 1:
+        grid = Grid(args.nx_points, x_range=x_range)
+        return CCDTester1D(grid)
+    else:
+        y_range = tuple(args.y_range)
+        grid = Grid(args.nx_points, args.ny_points, x_range=x_range, y_range=y_range)
+        return CCDTester2D(grid)
+
+def setup_tester(args, tester):
+    """テスターを設定"""
+    solver_options = get_solver_options(args)
+    tester.set_solver_options(args.solver, solver_options, args.analyze_matrix)
+    tester.scaling_method = args.scaling
+    tester.set_equation_set(args.equation_set)
+    return tester
 
 def compare_scaling_methods(args):
     """異なるスケーリング手法の性能を比較"""
     from scaling import plugin_manager
-    
-    # 利用可能なすべてのスケーリング手法を取得
     scaling_methods = plugin_manager.get_available_plugins()
     
-    # グリッドを作成
-    x_range = tuple(args.x_range)
-    if args.dim == 1:
-        grid = Grid(args.nx_points, x_range=x_range)
-        # 1Dテスターを使用
-        tester = CCDTester1D(grid)
-    else:
-        y_range = tuple(args.y_range)
-        grid = Grid(args.nx_points, args.ny_points, x_range=x_range, y_range=y_range)
-        # 2Dテスターを使用
-        tester = CCDTester2D(grid)
-    
-    # テスト関数取得
+    tester = create_tester(args)
     test_func = tester.get_test_function(args.test_func)
+    solver_options = get_solver_options(args)
     
-    results = {}
-    
-    print(f"\n{test_func.name}関数でスケーリング手法を比較しています...")
+    print(f"\n{test_func.name}関数でスケーリング手法を比較...")
     if args.dim == 1:
         print(f"グリッドサイズ: {args.nx_points} 点")
     else:
         print(f"グリッドサイズ: {args.nx_points}x{args.ny_points} 点")
     print(f"ソルバー: {args.solver}")
     
-    print("\n" + "-" * 90)
-    print(f"{'スケーリング手法':<25} {'実行時間 (s)':<15} {'反復回数':<15} {'誤差':<15}")
-    print("-" * 90)
-    
-    solver_options = get_solver_options(args)
+    print("\n" + "-" * 80)
+    print(f"{'スケーリング手法':<20} {'実行時間 (s)':<12} {'反復回数':<10} {'誤差':<12}")
+    print("-" * 80)
     
     for method in scaling_methods:
-        # このスケーリング手法でテスターを設定
         tester.set_solver_options(args.solver, solver_options, False)
         tester.scaling_method = method
+        tester.set_equation_set(args.equation_set)
         
-        # 解の時間を計測
         start_time = time.time()
         result = tester.run_test_with_options(test_func)
         end_time = time.time()
         
-        # 反復回数を取得（反復ソルバーの場合）
-        iter_count = "N/A"
-        if hasattr(tester.solver, 'last_iterations') and tester.solver.last_iterations is not None:
-            iter_count = str(tester.solver.last_iterations)
-        
-        # 最大誤差を計算
+        iter_count = getattr(tester.solver, 'last_iterations', None)
+        iter_str = str(iter_count) if iter_count is not None else "N/A"
         max_error = max(result['errors'])
         
-        # 結果を表示
-        print(f"{method:<25} {end_time - start_time:<15.4f} {iter_count:<15} {max_error:<15.6e}")
-        
-        # 後の分析のために保存
-        results[method] = {
-            'time': end_time - start_time,
-            'iterations': tester.solver.last_iterations if hasattr(tester.solver, 'last_iterations') else None,
-            'errors': result['errors']
-        }
+        print(f"{method:<20} {end_time - start_time:<12.4f} {iter_str:<10} {max_error:<12.6e}")
     
-    print("-" * 90)
-    return results
+    print("-" * 80)
 
 def run_convergence_test(args):
     """格子収束性テストを実行"""
-    x_range = tuple(args.x_range)
+    tester = create_tester(args)
+    tester = setup_tester(args, tester)
     
     # グリッドサイズ
     if args.dim == 1:
         grid_sizes = [11, 21, 41, 81, 161]
-        # グリッドを作成（1D）
-        base_grid = Grid(grid_sizes[0], x_range=x_range)
         y_range = None
-        # 1Dテスターを使用
-        tester = CCDTester1D(base_grid)
     else:
         grid_sizes = [11, 21, 31, 41]
         y_range = tuple(args.y_range)
-        # グリッドを作成（2D）
-        base_grid = Grid(grid_sizes[0], grid_sizes[0], x_range=x_range, y_range=y_range)
-        # 2Dテスターを使用
-        tester = CCDTester2D(base_grid)
     
-    # ソルバー設定
-    solver_options = get_solver_options(args)
-    tester.set_solver_options(args.solver, solver_options, args.analyze_matrix)
-    tester.scaling_method = args.scaling
-    
-    # 方程式セット設定
-    tester.set_equation_set(args.equation_set)
-    
-    # テスト関数取得
+    # テスト関数の取得
     test_func = tester.get_test_function(args.test_func)
     
-    # 収束性テストを実行
-    print(f"{test_func.name}関数での格子収束性テストを実行しています...")
-    print(f"ソルバー: {args.solver}")
-    print(f"方程式セット: {args.equation_set}")
+    print(f"{test_func.name}関数の格子収束性テスト実行中...")
+    print(f"ソルバー: {args.solver}, 方程式セット: {args.equation_set}")
     print(f"スケーリング: {args.scaling if args.scaling else 'なし'}")
     
-    results = tester.run_grid_convergence_test(
-        test_func, grid_sizes, x_range, y_range
-    )
+    results = tester.run_grid_convergence_test(test_func, grid_sizes, tuple(args.x_range), y_range)
     
-    # 結果を表示
+    # 結果表示
     if args.dim == 1:
-        print("\n格子収束性テストの結果:")
-        print(
-            f"{'格子サイズ':<10} {'h':<10} {'ψ誤差':<15} {"ψ'誤差":<15} {'ψ"誤差':<15} {'ψ\'"誤差':<15}"
-        )
-        print("-" * 80)
+        print("\n格子収束性テスト結果:")
+        print(f"{'サイズ':<8} {'h':<8} {'ψ誤差':<12} {'ψ\'誤差':<12} {'ψ\"誤差':<12} {'ψ\'\"誤差':<12}")
+        print("-" * 70)
         
         for n in grid_sizes:
-            h = (x_range[1] - x_range[0]) / (n - 1)
-            print(
-                f"{n:<10} {h:<10.6f} {results[n][0]:<15.6e} {results[n][1]:<15.6e} {results[n][2]:<15.6e} {results[n][3]:<15.6e}"
-            )
+            h = (args.x_range[1] - args.x_range[0]) / (n - 1)
+            print(f"{n:<8} {h:<8.6f} {results[n][0]:<12.6e} {results[n][1]:<12.6e} "
+                  f"{results[n][2]:<12.6e} {results[n][3]:<12.6e}")
         
         # 可視化
-        output_dir = args.output_dir
-        visualizer = CCDVisualizer(output_dir=output_dir)
-        visualizer.visualize_grid_convergence(
-            test_func.name,
-            grid_sizes,
-            results,
-            prefix=args.prefix,
-            save=True,
-        )
+        visualizer = CCDVisualizer(output_dir=args.output_dir)
+        visualizer.visualize_grid_convergence(test_func.name, grid_sizes, results, 
+                                             prefix=args.prefix, save=True)
     else:
-        print("\n格子収束性テストの結果:")
-        print(f"{'格子サイズ':<10} {'h':<10} {'ψ誤差':<15} {'ψx誤差':<15} {'ψy誤差':<15} {'ψxx誤差':<15} {'ψyy誤差':<15} {'ψxxx誤差':<15} {'ψyyy誤差':<15}")
-        print("-" * 125)
+        print("\n格子収束性テスト結果:")
+        headers = ["サイズ", "h", "ψ誤差", "ψx誤差", "ψy誤差", "ψxx誤差", "ψyy誤差", "ψxxx誤差", "ψyyy誤差"]
+        print("  ".join(f"{h:<10}" for h in headers))
+        print("-" * 100)
         
         for n in grid_sizes:
-            h = (x_range[1] - x_range[0]) / (n - 1)
-            print(
-                f"{n:<10} {h:<10.6f} {results[n][0]:<15.6e} {results[n][1]:<15.6e} {results[n][2]:<15.6e} "
-                f"{results[n][3]:<15.6e} {results[n][4]:<15.6e} {results[n][5]:<15.6e} {results[n][6]:<15.6e}"
-            )
+            h = (args.x_range[1] - args.x_range[0]) / (n - 1)
+            errors = [f"{err:.6e}" for err in results[n]]
+            print(f"{n:<10}  {h:<10.6f}  " + "  ".join(f"{err:<10}" for err in errors))
         
         # 可視化
-        output_dir = args.output_dir
-        visualizer = CCD2DVisualizer(output_dir=output_dir)
-        visualizer.visualize_grid_convergence(
-            test_func.name,
-            grid_sizes,
-            results,
-            prefix=args.prefix,
-            save=True,
-        )
+        visualizer = CCD2DVisualizer(output_dir=args.output_dir)
+        visualizer.visualize_grid_convergence(test_func.name, grid_sizes, results, 
+                                             prefix=args.prefix, save=True)
 
 def test_all_functions(args):
-    """全てのテスト関数に対してテストを実行"""
-    x_range = tuple(args.x_range)
+    """全テスト関数でのテスト実行"""
+    tester = create_tester(args)
+    tester = setup_tester(args, tester)
     
-    # 結果を保存する辞書
-    results_summary = {}
-    
-    # グリッドの作成
+    # テスト関数一覧取得
     if args.dim == 1:
-        grid = Grid(args.nx_points, x_range=x_range)
-        # 出力ディレクトリを指定
-        output_dir = args.output_dir
-        visualizer = CCDVisualizer(output_dir=output_dir) if not args.no_visualization else None
-        
-        # 新しいテスト関数クラスを使用
         functions = TestFunctionFactory.create_standard_1d_functions()
-        
-        # 1Dテスターを使用
-        tester = CCDTester1D(grid)
+        visualizer = CCDVisualizer(output_dir=args.output_dir) if not args.no_visualization else None
     else:
-        y_range = tuple(args.y_range)
-        grid = Grid(args.nx_points, args.ny_points, x_range=x_range, y_range=y_range)
-        output_dir = args.output_dir
-        visualizer = CCD2DVisualizer(output_dir=output_dir) if not args.no_visualization else None
-        
-        # 新しいテスト関数クラスを使用
         functions = TestFunctionFactory.create_standard_2d_functions()
-        
-        # 2Dテスターを使用
-        tester = CCDTester2D(grid)
-    
-    # ソルバー設定
-    solver_options = get_solver_options(args)
-    tester.set_solver_options(args.solver, solver_options, args.analyze_matrix)
-    tester.scaling_method = args.scaling
-    
-    # 方程式セット設定
-    tester.set_equation_set(args.equation_set)
+        visualizer = CCD2DVisualizer(output_dir=args.output_dir) if not args.no_visualization else None
     
     print("\n==== 全関数のテスト ====")
     if args.dim == 1:
         print(f"1D モード ({args.nx_points} 点)")
-        print("-" * 80)
-        print(f"{'関数名':<15} {'ψ誤差':<15} {"ψ'誤差":<15} {'ψ"誤差':<15} {'ψ\'"誤差':<15}")
-        print("-" * 80)
+        print("-" * 70)
+        print(f"{'関数':<12} {'ψ誤差':<12} {'ψ\'誤差':<12} {'ψ\"誤差':<12} {'ψ\'\"誤差':<12}")
+        print("-" * 70)
     else:
         print(f"2D モード ({args.nx_points}x{args.ny_points} 点)")
-        print("-" * 125)
-        print(f"{'関数名':<15} {'ψ誤差':<15} {'ψx誤差':<15} {'ψy誤差':<15} {'ψxx誤差':<15} {'ψyy誤差':<15} {'ψxxx誤差':<15} {'ψyyy誤差':<15}")
-        print("-" * 125)
+        print("-" * 100)
+        headers = ["関数", "ψ誤差", "ψx誤差", "ψy誤差", "ψxx誤差", "ψyy誤差", "ψxxx誤差", "ψyyy誤差"]
+        print("  ".join(f"{h:<10}" for h in headers))
+        print("-" * 100)
     
-    print(f"ソルバー: {args.solver}")
-    print(f"方程式セット: {args.equation_set}")
+    print(f"ソルバー: {args.solver}, 方程式セット: {args.equation_set}")
     print(f"スケーリング: {args.scaling if args.scaling else 'なし'}")
     
-    # 各関数に対してテストを実行
+    results_summary = {}
+    
+    # 各関数でテスト実行
     for func in functions:
-        # テストの実行
         results = tester.run_test_with_options(func)
-        
-        # 結果の表示
         errors = results["errors"]
         
         if args.dim == 1:
-            print(
-                f"{func.name:<15} {errors[0]:<15.6e} {errors[1]:<15.6e} {errors[2]:<15.6e} {errors[3]:<15.6e}"
-            )
+            print(f"{func.name:<12} {errors[0]:<12.6e} {errors[1]:<12.6e} {errors[2]:<12.6e} {errors[3]:<12.6e}")
         else:
-            print(
-                f"{func.name:<15} {errors[0]:<15.6e} {errors[1]:<15.6e} {errors[2]:<15.6e} "
-                f"{errors[3]:<15.6e} {errors[4]:<15.6e} {errors[5]:<15.6e} {errors[6]:<15.6e}"
-            )
+            error_strs = [f"{err:.6e}" for err in errors]
+            print(f"{func.name:<10}  " + "  ".join(f"{err:<10}" for err in error_strs))
         
-        # 結果を保存
         results_summary[func.name] = errors
         
         # 可視化
         if not args.no_visualization:
+            prefix = f"{args.prefix}_{func.name.lower()}" if args.prefix else func.name.lower()
             if args.dim == 1:
-                visualizer.visualize_derivatives(
-                    grid,
-                    results["function"],
-                    results["numerical"],
-                    results["exact"],
-                    results["errors"],
-                    prefix=f"{args.prefix}_{func.name.lower()}" if args.prefix else func.name.lower(),
-                    save=True,
-                )
+                visualizer.visualize_derivatives(grid=tester.grid, function=results["function"],
+                                               numerical=results["numerical"], exact=results["exact"],
+                                               errors=results["errors"], prefix=prefix, save=True)
             else:
-                visualizer.visualize_solution(
-                    grid,
-                    results["function"],
-                    results["numerical"],
-                    results["exact"],
-                    results["errors"],
-                    prefix=f"{args.prefix}_{func.name.lower()}" if args.prefix else func.name.lower(),
-                    save=True,
-                )
+                visualizer.visualize_solution(grid=tester.grid, function_name=results["function"],
+                                            numerical=results["numerical"], exact=results["exact"],
+                                            errors=results["errors"], prefix=prefix, save=True)
     
-    # すべての関数の誤差を比較するグラフを生成
+    # 誤差比較グラフ
     if not args.no_visualization:
         if args.dim == 1:
-            visualizer.compare_all_functions_errors(
-                results_summary,
-                prefix=args.prefix,
-            )
+            visualizer.compare_all_functions_errors(results_summary, prefix=args.prefix)
         else:
-            visualizer.compare_all_functions_errors(
-                results_summary,
-                grid_size=args.nx_points,
-                prefix=args.prefix,
-            )
+            visualizer.compare_all_functions_errors(results_summary, grid_size=args.nx_points, prefix=args.prefix)
     
     return results_summary
 
 def run_single_test(args):
-    """単一関数のテストを実行"""
-    x_range = tuple(args.x_range)
-    
-    # グリッドの作成
-    if args.dim == 1:
-        grid = Grid(args.nx_points, x_range=x_range)
-        # 1Dテスターを使用
-        tester = CCDTester1D(grid)
-    else:
-        y_range = tuple(args.y_range)
-        grid = Grid(args.nx_points, args.ny_points, x_range=x_range, y_range=y_range)
-        # 2Dテスターを使用
-        tester = CCDTester2D(grid)
-    
-    # ソルバー設定
-    solver_options = get_solver_options(args)
-    tester.set_solver_options(args.solver, solver_options, args.analyze_matrix)
-    tester.scaling_method = args.scaling
-    
-    # 方程式セット設定
-    tester.set_equation_set(args.equation_set)
+    """単一関数のテスト実行"""
+    tester = create_tester(args)
+    tester = setup_tester(args, tester)
     
     # テスト関数取得
     test_func = tester.get_test_function(args.test_func)
     
-    # テストの実行
-    print(f"\n{test_func.name}関数でテストを実行しています...")
+    print(f"\n{test_func.name}関数でテスト実行中...")
     print(f"次元: {args.dim}D")
-    print(f"ソルバー: {args.solver}")
-    print(f"方程式セット: {args.equation_set}")
+    print(f"ソルバー: {args.solver}, 方程式セット: {args.equation_set}")
     print(f"スケーリング: {args.scaling if args.scaling else 'なし'}")
     
-    # 解の時間を計測
+    # テスト実行
     start_time = time.time()
     results = tester.run_test_with_options(test_func)
     end_time = time.time()
     
-    # 反復回数を取得（反復ソルバーの場合）
-    iter_count = "N/A"
-    if hasattr(tester.solver, 'last_iterations') and tester.solver.last_iterations is not None:
-        iter_count = str(tester.solver.last_iterations)
+    # 反復回数
+    iter_count = getattr(tester.solver, 'last_iterations', None)
+    iter_str = str(iter_count) if iter_count is not None else "N/A"
     
-    # 結果の表示
+    # 結果出力
     print("\n誤差分析:")
-    
     if args.dim == 1:
-        print(f"  ψ誤差:   {results['errors'][0]:.6e}")
-        print(f"  ψ'誤差:  {results['errors'][1]:.6e}")
-        print(f"  ψ''誤差: {results['errors'][2]:.6e}")
-        print(f"  ψ'''誤差:{results['errors'][3]:.6e}")
+        print(f"  ψ誤差:    {results['errors'][0]:.6e}")
+        print(f"  ψ'誤差:   {results['errors'][1]:.6e}")
+        print(f"  ψ''誤差:  {results['errors'][2]:.6e}")
+        print(f"  ψ'''誤差: {results['errors'][3]:.6e}")
     else:
-        print(f"  ψ誤差:   {results['errors'][0]:.6e}")
-        print(f"  ψx誤差:  {results['errors'][1]:.6e}")
-        print(f"  ψy誤差:  {results['errors'][2]:.6e}")
-        print(f"  ψxx誤差: {results['errors'][3]:.6e}")
-        print(f"  ψyy誤差: {results['errors'][4]:.6e}")
-        print(f"  ψxxx誤差:{results['errors'][5]:.6e}")
-        print(f"  ψyyy誤差:{results['errors'][6]:.6e}")
+        print(f"  ψ誤差:    {results['errors'][0]:.6e}")
+        print(f"  ψx誤差:   {results['errors'][1]:.6e}")
+        print(f"  ψy誤差:   {results['errors'][2]:.6e}")
+        print(f"  ψxx誤差:  {results['errors'][3]:.6e}")
+        print(f"  ψyy誤差:  {results['errors'][4]:.6e}")
+        print(f"  ψxxx誤差: {results['errors'][5]:.6e}")
+        print(f"  ψyyy誤差: {results['errors'][6]:.6e}")
     
     print(f"  実行時間: {end_time - start_time:.4f} 秒")
-    
-    if iter_count != "N/A":
-        print(f"  反復回数: {iter_count}")
+    if iter_count is not None:
+        print(f"  反復回数: {iter_str}")
     
     # 可視化
     if not args.no_visualization:
         if args.dim == 1:
-            output_dir = args.output_dir
-            visualizer = CCDVisualizer(output_dir=output_dir)
-            visualizer.visualize_derivatives(
-                grid,
-                results["function"],
-                results["numerical"],
-                results["exact"],
-                results["errors"],
-                prefix=args.prefix,
-                save=True,
-            )
+            visualizer = CCDVisualizer(output_dir=args.output_dir)
+            visualizer.visualize_derivatives(tester.grid, results["function"],
+                                          results["numerical"], results["exact"],
+                                          results["errors"], prefix=args.prefix, save=True)
         else:
-            output_dir = args.output_dir
-            visualizer = CCD2DVisualizer(output_dir=output_dir)
-            visualizer.visualize_solution(
-                grid,
-                results["function"],
-                results["numerical"],
-                results["exact"],
-                results["errors"],
-                prefix=args.prefix,
-                save=True,
-            )
+            visualizer = CCD2DVisualizer(output_dir=args.output_dir)
+            visualizer.visualize_solution(tester.grid, function_name=results["function"],
+                                        numerical=results["numerical"], exact=results["exact"],
+                                        errors=results["errors"], prefix=args.prefix, save=True)
     
     return results
 
@@ -532,17 +332,16 @@ def run_cli():
     # 出力ディレクトリの作成
     os.makedirs(args.output_dir, exist_ok=True)
     
-    # 関数一覧の表示
+    # 各種リスト表示
     if args.list_functions:
         list_available_functions(args.dim)
         return
     
-    # スケーリング手法一覧の表示
     if args.list_scaling:
         list_scaling_methods()
         return
     
-    # スケーリング手法の比較
+    # スケーリング手法比較
     if args.compare_scaling:
         compare_scaling_methods(args)
         return
