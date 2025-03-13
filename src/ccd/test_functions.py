@@ -1,7 +1,5 @@
 import sympy as sp
-import cupy as cp
-import numpy as np
-from typing import Callable, List, Dict, Union, Optional, Tuple
+from typing import List
 
 class TestFunction:
     """1Dと2D両方のテスト関数を統合した自動微分機能付きクラス"""
