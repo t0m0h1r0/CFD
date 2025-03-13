@@ -1,4 +1,4 @@
-from typing import Dict, Any, Tuple, Union, Optional
+from typing import Dict, Any, Tuple, Union
 import cupy as cp
 import cupyx.scipy.sparse as sp
 from .base import BaseScaling

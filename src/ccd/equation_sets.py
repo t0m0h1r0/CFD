@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-import cupy as cp
 
 # 共通の方程式
 from equation.poisson import PoissonEquation, PoissonEquation2D
