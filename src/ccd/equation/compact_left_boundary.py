@@ -34,18 +34,6 @@ class LeftBoundary1stDerivativeEquation(Equation):
         }
         return coeffs
 
-    def get_rhs(self, i=None):
-        """
-        右辺値を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        return 0.0
-
     def is_valid_at(self, i=None):
         """
         方程式が有効かどうかを判定
@@ -95,18 +83,6 @@ class LeftBoundary2ndDerivativeEquation(Equation):
         }
         return coeffs
 
-    def get_rhs(self, i=None):
-        """
-        右辺値を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        return 0.0
-
     def is_valid_at(self, i=None):
         """
         方程式が有効かどうかを判定
@@ -155,18 +131,6 @@ class LeftBoundary3rdDerivativeEquation(Equation):
             2: cp.array([-18, 0, 0, 0]) * cp.array([h**-3, h**-2, h**-1, h**0])
         }
         return coeffs
-
-    def get_rhs(self, i=None):
-        """
-        右辺値を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        return 0.0
 
     def is_valid_at(self, i=None):
         """

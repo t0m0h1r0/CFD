@@ -39,20 +39,7 @@ class Equation2D(ABC):
             Each coefficient array has 7 elements for [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy]
         """
         pass
-    
-    @abstractmethod
-    def get_rhs(self, i=None, j=None):
-        """
-        Get right-hand side value at grid point (i,j)
         
-        Args:
-            i, j: Grid indices
-            
-        Returns:
-            Right-hand side value at (i,j)
-        """
-        pass
-    
     @abstractmethod
     def is_valid_at(self, i=None, j=None):
         """
@@ -166,33 +153,7 @@ class CombinedEquation2D(Equation2D):
                 combined_coeffs[offset] = coeff1 - coeff2
         
         return combined_coeffs
-    
-    def get_rhs(self, i=None, j=None):
-        """
-        Combine right-hand sides from both equations
         
-        Args:
-            i, j: Grid indices
-            
-        Returns:
-            Combined right-hand side
-        """
-        if self.grid is None:
-            raise ValueError("Grid is not set. Use set_grid() before calling this method.")
-        
-        if i is None or j is None:
-            raise ValueError("Grid indices i and j must be specified.")
-        
-        # Get RHS from both equations
-        rhs1 = self.eq1.get_rhs(i, j)
-        rhs2 = self.eq2.get_rhs(i, j)
-        
-        # Combine according to operation
-        if self.operation == "+":
-            return rhs1 + rhs2
-        else:
-            return rhs1 - rhs2
-    
     def is_valid_at(self, i=None, j=None):
         """
         Valid where both equations are valid
@@ -274,26 +235,7 @@ class ScaledEquation2D(Equation2D):
         # Get coefficients from sub-equation and scale them
         coeffs = self.equation.get_stencil_coefficients(i, j)
         return {offset: self.scalar * coeff for offset, coeff in coeffs.items()}
-    
-    def get_rhs(self, i=None, j=None):
-        """
-        Scale right-hand side from sub-equation
         
-        Args:
-            i, j: Grid indices
-            
-        Returns:
-            Scaled right-hand side
-        """
-        if self.grid is None:
-            raise ValueError("Grid is not set. Use set_grid() before calling this method.")
-        
-        if i is None or j is None:
-            raise ValueError("Grid indices i and j must be specified.")
-        
-        # Get RHS from sub-equation and scale it
-        return self.scalar * self.equation.get_rhs(i, j)
-    
     def is_valid_at(self, i=None, j=None):
         """
         Valid where the original equation is valid

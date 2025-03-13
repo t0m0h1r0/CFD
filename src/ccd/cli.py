@@ -3,8 +3,7 @@ import os
 import time
 from grid import Grid
 from tester import CCDTester1D, CCDTester2D  # 直接次元別クラスをインポート
-from test_functions1d import TestFunctionFactory
-from test_functions2d import TestFunction2DGenerator
+from test_functions import TestFunctionFactory  # 新しいテスト関数モジュールのインポート
 from visualization1d import CCDVisualizer
 from visualization2d import CCD2DVisualizer
 
@@ -131,10 +130,12 @@ def list_scaling_methods():
 def list_available_functions(dim=1):
     """利用可能なテスト関数の一覧を表示"""
     if dim == 1:
-        functions = TestFunctionFactory.create_standard_functions()
+        # 新しいテスト関数クラスを使用
+        functions = TestFunctionFactory.create_standard_1d_functions()
         print("\n利用可能な1Dテスト関数:")
     else:
-        functions = TestFunction2DGenerator.create_standard_functions()
+        # 新しいテスト関数クラスを使用
+        functions = TestFunctionFactory.create_standard_2d_functions()
         print("\n利用可能な2Dテスト関数:")
     
     for i, func in enumerate(functions, 1):
@@ -312,7 +313,10 @@ def test_all_functions(args):
         # 出力ディレクトリを指定
         output_dir = args.output_dir
         visualizer = CCDVisualizer(output_dir=output_dir) if not args.no_visualization else None
-        functions = TestFunctionFactory.create_standard_functions()
+        
+        # 新しいテスト関数クラスを使用
+        functions = TestFunctionFactory.create_standard_1d_functions()
+        
         # 1Dテスターを使用
         tester = CCDTester1D(grid)
     else:
@@ -320,7 +324,10 @@ def test_all_functions(args):
         grid = Grid(args.nx_points, args.ny_points, x_range=x_range, y_range=y_range)
         output_dir = args.output_dir
         visualizer = CCD2DVisualizer(output_dir=output_dir) if not args.no_visualization else None
-        functions = TestFunction2DGenerator.create_standard_functions()
+        
+        # 新しいテスト関数クラスを使用
+        functions = TestFunctionFactory.create_standard_2d_functions()
+        
         # 2Dテスターを使用
         tester = CCDTester2D(grid)
     

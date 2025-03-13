@@ -9,8 +9,7 @@ from typing import Dict, Optional, Tuple, List, Any
 # CCD関連コンポーネント
 from grid import Grid
 from equation_system import EquationSystem
-from test_functions1d import TestFunctionFactory
-from test_functions2d import TestFunction2DGenerator
+from test_functions import TestFunctionFactory  # 新しいテスト関数モジュールを使用
 from equation_sets import EquationSet
 from solver import CCDSolver1D, CCDSolver2D
 from scaling import plugin_manager
@@ -263,11 +262,13 @@ def verify_system(dimension: int, output_dir: str = "results"):
             # グリッドの作成
             if dimension == 1:
                 grid = Grid(3, x_range=(-1.0, 1.0))
-                test_funcs = TestFunctionFactory.create_standard_functions()
+                # 新しいテスト関数クラスを使用
+                test_funcs = TestFunctionFactory.create_standard_1d_functions()
                 test_func = test_funcs[3]  # Sine関数
             else:
                 grid = Grid(3, 3, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
-                test_funcs = TestFunction2DGenerator.create_standard_functions()
+                # 新しいテスト関数クラスを使用
+                test_funcs = TestFunctionFactory.create_standard_2d_functions()
                 test_func = test_funcs[0]  # Sine2D関数
             
             # 可視化ツールの準備
