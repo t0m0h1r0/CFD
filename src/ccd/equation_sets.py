@@ -226,8 +226,6 @@ class PoissonEquationSet1D(EquationSet):
         if grid.is_2d:
             raise ValueError("1D方程式セットが2Dグリッドで使用されました")
             
-        x_min = grid.x_min
-        x_max = grid.x_max
 
         # ポアソン方程式本体 (psi''(x) = f(x)) - グリッドも渡す
         poisson_eq = PoissonEquation(grid=grid)

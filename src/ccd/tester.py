@@ -258,7 +258,6 @@ class CCDTester1D(BaseCCDTester):
         exact_psi_third = cp.array([test_func.d3f(xi) for xi in x])
         
         # 右辺の値と境界条件の値を準備
-        n = self.grid.n_points
         x_min, x_max = self.grid.x_min, self.grid.x_max
         
         # 方程式セットのタイプに応じて適切な関数値を使用
