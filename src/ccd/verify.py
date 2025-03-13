@@ -4,15 +4,13 @@ import cupy as cp
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
-from typing import Dict, Optional, Tuple, List, Any
+from typing import Dict, Optional
 
 # CCD関連コンポーネント
 from grid import Grid
-from equation_system import EquationSystem
 from test_functions import TestFunctionFactory
 from equation_sets import EquationSet
 from solver import CCDSolver1D, CCDSolver2D
-from scaling import plugin_manager
 
 class MatrixVisualizer:
     """行列構造可視化クラス"""
