@@ -61,7 +61,7 @@ def create_tester(args):
     }
     tester.set_solver_options(args.solver, solver_options, args.analyze)
     tester.scaling_method = args.scaling
-    tester.set_equation_set(args.eqn)
+    tester.set_equation_set(args.equation)
     
     return tester
 
