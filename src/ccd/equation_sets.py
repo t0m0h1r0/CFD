@@ -24,19 +24,21 @@ class EquationSet(ABC):
 
     def __init__(self):
         """初期化"""
-        pass
+        self.enable_dirichlet = True
+        self.enable_neumann = True
 
     @abstractmethod
-    def setup_equations(self, system, grid, test_func, use_dirichlet=True, use_neumann=True):
+    def setup_equations(self, system, grid, test_func=None):
         """
         方程式システムに方程式を設定する
         
         Args:
             system: 方程式システム
             grid: Grid オブジェクト (1D/2D)
-            test_func: テスト関数
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
+            test_func: テスト関数（オプション）
+            
+        Returns:
+            Tuple[bool, bool]: ディリクレ境界条件とノイマン境界条件の有効フラグ
         """
         pass
 
@@ -106,6 +108,21 @@ class EquationSet(ABC):
             else:
                 return available_sets["poisson"]() if not isinstance(available_sets["poisson"], dict) else available_sets["poisson"][f"{dimension}d"]()
 
+    def set_boundary_options(self, use_dirichlet=True, use_neumann=True):
+        """
+        境界条件のオプションを設定する
+        
+        Args:
+            use_dirichlet: ディリクレ境界条件を使用するかどうか
+            use_neumann: ノイマン境界条件を使用するかどうか
+            
+        Returns:
+            self: メソッドチェーン用
+        """
+        self.enable_dirichlet = use_dirichlet
+        self.enable_neumann = use_neumann
+        return self
+
 
 class DimensionalEquationSetWrapper(EquationSet):
     """
@@ -126,28 +143,58 @@ class DimensionalEquationSetWrapper(EquationSet):
         self._1d_instance = None
         self._2d_instance = None
     
-    def setup_equations(self, system, grid, test_func, use_dirichlet=True, use_neumann=True):
+    def setup_equations(self, system, grid, test_func=None):
         """
         方程式システムに方程式を設定する
         
         Args:
             system: 方程式システム
             grid: Grid オブジェクト (1D/2D)
-            test_func: テスト関数
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
+            test_func: テスト関数（オプション）
+            
+        Returns:
+            Tuple[bool, bool]: ディリクレ境界条件とノイマン境界条件の有効フラグ
         """
         # Gridの次元に基づいて適切なインスタンスを使用
         if grid.is_2d:
             if self._2d_instance is None:
                 self._2d_instance = self.dimension_sets["2d"]()
+                
+            # 境界条件の設定を継承
+            self._2d_instance.set_boundary_options(self.enable_dirichlet, self.enable_neumann)
             
-            self._2d_instance.setup_equations(system, grid, test_func, use_dirichlet, use_neumann)
+            # 方程式をセットアップして境界条件フラグを返す
+            return self._2d_instance.setup_equations(system, grid, test_func)
         else:
             if self._1d_instance is None:
                 self._1d_instance = self.dimension_sets["1d"]()
             
-            self._1d_instance.setup_equations(system, grid, test_func, use_dirichlet, use_neumann)
+            # 境界条件の設定を継承
+            self._1d_instance.set_boundary_options(self.enable_dirichlet, self.enable_neumann)
+            
+            # 方程式をセットアップして境界条件フラグを返す
+            return self._1d_instance.setup_equations(system, grid, test_func)
+    
+    def set_boundary_options(self, use_dirichlet=True, use_neumann=True):
+        """
+        境界条件のオプションを設定する
+        
+        Args:
+            use_dirichlet: ディリクレ境界条件を使用するかどうか
+            use_neumann: ノイマン境界条件を使用するかどうか
+            
+        Returns:
+            self: メソッドチェーン用
+        """
+        super().set_boundary_options(use_dirichlet, use_neumann)
+        
+        # 既存のインスタンスがあれば、そちらにも設定を反映
+        if self._1d_instance is not None:
+            self._1d_instance.set_boundary_options(use_dirichlet, use_neumann)
+        if self._2d_instance is not None:
+            self._2d_instance.set_boundary_options(use_dirichlet, use_neumann)
+            
+        return self
 
 
 # ===== 1D 方程式セット =====
@@ -155,16 +202,17 @@ class DimensionalEquationSetWrapper(EquationSet):
 class PoissonEquationSet1D(EquationSet):
     """1次元ポアソン方程式のための方程式セット"""
 
-    def setup_equations(self, system, grid, test_func, use_dirichlet=True, use_neumann=True):
+    def setup_equations(self, system, grid, test_func=None):
         """
         ポアソン方程式システムを設定
         
         Args:
             system: 方程式システム
             grid: Grid オブジェクト
-            test_func: テスト関数
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
+            test_func: テスト関数（オプション）
+            
+        Returns:
+            Tuple[bool, bool]: ディリクレ境界条件とノイマン境界条件の有効フラグ
         """
         if grid.is_2d:
             raise ValueError("1D方程式セットが2Dグリッドで使用されました")
@@ -173,7 +221,7 @@ class PoissonEquationSet1D(EquationSet):
         x_max = grid.x_max
 
         # ポアソン方程式本体 (psi''(x) = f(x)) - グリッドも渡す
-        poisson_eq = PoissonEquation(test_func.d2f, grid)
+        poisson_eq = PoissonEquation(grid=grid)
         system.add_equation(poisson_eq)
 
         # 内部点の補助方程式 - グリッドも渡す
@@ -181,80 +229,64 @@ class PoissonEquationSet1D(EquationSet):
         system.add_interior_equation(Internal2ndDerivativeEquation(grid))
         system.add_interior_equation(Internal3rdDerivativeEquation(grid))
 
-        # 境界条件設定
-        if use_dirichlet:
-            # ディリクレ境界条件 (値固定) - グリッドも渡す
-            system.add_left_boundary_equation(DirichletBoundaryEquation(test_func.f(x_min), grid))
-            system.add_right_boundary_equation(DirichletBoundaryEquation(test_func.f(x_max), grid))
-        else:
-            # 代わりに1階導関数補助方程式 - グリッドも渡す
-            system.add_left_boundary_equation(LeftBoundary1stDerivativeEquation(grid))
-            system.add_right_boundary_equation(RightBoundary1stDerivativeEquation(grid))
-           
-        if use_neumann:
-            # ノイマン境界条件 (導関数固定) - グリッドも渡す
-            system.add_left_boundary_equation(NeumannBoundaryEquation(test_func.df(x_min), grid))
-            system.add_right_boundary_equation(NeumannBoundaryEquation(test_func.df(x_max), grid))
-        else:
-            # 代わりに2階導関数補助方程式 - グリッドも渡す
-            system.add_left_boundary_equation(LeftBoundary2ndDerivativeEquation(grid))
-            system.add_right_boundary_equation(RightBoundary2ndDerivativeEquation(grid))
+        # 境界条件設定 - 常に両方のタイプの方程式を追加
+        # ディリクレ境界条件 (値固定) - グリッドも渡す
+        dirichlet_left = DirichletBoundaryEquation(grid=grid)
+        dirichlet_right = DirichletBoundaryEquation(grid=grid)
+        system.add_left_boundary_equation(dirichlet_left)
+        system.add_right_boundary_equation(dirichlet_right)
+
+        # ノイマン境界条件 (導関数固定) - グリッドも渡す
+        neumann_left = NeumannBoundaryEquation(grid=grid)
+        neumann_right = NeumannBoundaryEquation(grid=grid)
+        system.add_left_boundary_equation(neumann_left)
+        system.add_right_boundary_equation(neumann_right)
                         
         # 3階導関数補助方程式 - グリッドも渡す
         system.add_left_boundary_equation(LeftBoundary3rdDerivativeEquation(grid))
         system.add_right_boundary_equation(RightBoundary3rdDerivativeEquation(grid))
 
+        return self.enable_dirichlet, self.enable_neumann
+
 
 class DerivativeEquationSet1D(EquationSet):
     """1次元高階微分のための方程式セット"""
 
-    def setup_equations(self, system, grid, test_func, use_dirichlet=False, use_neumann=False):
+    def setup_equations(self, system, grid, test_func=None):
         """
         導関数計算用の方程式システムを設定
         
         Args:
             system: 方程式システム
             grid: Grid オブジェクト
-            test_func: テスト関数
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
+            test_func: テスト関数（オプション）
+            
+        Returns:
+            Tuple[bool, bool]: ディリクレ境界条件とノイマン境界条件の有効フラグ
         """
         if grid.is_2d:
             raise ValueError("1D方程式セットが2Dグリッドで使用されました")
             
-        x_min = grid.x_min
-        x_max = grid.x_max
-            
         # 元の関数を使用する方程式 - グリッドも渡す
-        system.add_equation(OriginalEquation(f_func=test_func.f, grid=grid))
+        system.add_equation(OriginalEquation(grid=grid))
 
         # 内部点の補助方程式 - グリッドも渡す
         system.add_interior_equation(Internal1stDerivativeEquation(grid))
         system.add_interior_equation(Internal2ndDerivativeEquation(grid))
         system.add_interior_equation(Internal3rdDerivativeEquation(grid))
 
-        # 境界条件設定
-        if use_dirichlet:
-            # ディリクレ境界条件 (値固定) - グリッドも渡す
-            system.add_left_boundary_equation(DirichletBoundaryEquation(test_func.f(x_min), grid))
-            system.add_right_boundary_equation(DirichletBoundaryEquation(test_func.f(x_max), grid))
-        else:
-            # 代わりに1階導関数補助方程式 - グリッドも渡す
-            system.add_left_boundary_equation(LeftBoundary1stDerivativeEquation(grid))
-            system.add_right_boundary_equation(RightBoundary1stDerivativeEquation(grid))
-           
-        if use_neumann:
-            # ノイマン境界条件 (導関数固定) - グリッドも渡す
-            system.add_left_boundary_equation(NeumannBoundaryEquation(test_func.df(x_min), grid))
-            system.add_right_boundary_equation(NeumannBoundaryEquation(test_func.df(x_max), grid))
-        else:
-            # 代わりに2階導関数補助方程式 - グリッドも渡す
-            system.add_left_boundary_equation(LeftBoundary2ndDerivativeEquation(grid))
-            system.add_right_boundary_equation(RightBoundary2ndDerivativeEquation(grid))
-                    
-        # 3階導関数補助方程式 - グリッドも渡す
+        # 左境界点の補助方程式 - グリッドも渡す
+        system.add_left_boundary_equation(LeftBoundary1stDerivativeEquation(grid))
+        system.add_left_boundary_equation(LeftBoundary2ndDerivativeEquation(grid))
         system.add_left_boundary_equation(LeftBoundary3rdDerivativeEquation(grid))
+
+        # 右境界点の補助方程式 - グリッドも渡す
+        system.add_right_boundary_equation(RightBoundary1stDerivativeEquation(grid))
+        system.add_right_boundary_equation(RightBoundary2ndDerivativeEquation(grid))
         system.add_right_boundary_equation(RightBoundary3rdDerivativeEquation(grid))
+
+        # 微分方程式セットでは境界条件は常に有効
+        return False, False
 
 
 # ===== 2D 方程式セット =====
@@ -262,16 +294,17 @@ class DerivativeEquationSet1D(EquationSet):
 class PoissonEquationSet2D(EquationSet):
     """2次元ポアソン方程式のための方程式セット"""
 
-    def setup_equations(self, system, grid, test_func, use_dirichlet=True, use_neumann=True):
+    def setup_equations(self, system, grid, test_func=None):
         """
         2次元ポアソン方程式システムを設定
         
         Args:
             system: 方程式システム
             grid: Grid オブジェクト (2D)
-            test_func: テスト関数
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
+            test_func: テスト関数（オプション）
+            
+        Returns:
+            Tuple[bool, bool]: ディリクレ境界条件とノイマン境界条件の有効フラグ
         """
         if not grid.is_2d:
             raise ValueError("2D方程式セットが1Dグリッドで使用されました")
@@ -280,23 +313,9 @@ class PoissonEquationSet2D(EquationSet):
         converter = Equation1Dto2DConverter
         
         # ポアソン方程式: Δψ = f(x,y) - グリッドを渡す
-        def poisson_source(x, y):
-            return (test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y))
-        poisson_eq = PoissonEquation2D(poisson_source, grid)
+        poisson_eq = PoissonEquation2D(grid=grid)
         system.add_equation(poisson_eq)
 
-        # 境界値の計算（x, y方向）
-        left_values = cp.array([test_func.f(grid.x_min, y) for y in grid.y])
-        right_values = cp.array([test_func.f(grid.x_max, y) for y in grid.y])
-        bottom_values = cp.array([test_func.f(x, grid.y_min) for x in grid.x])
-        top_values = cp.array([test_func.f(x, grid.y_max) for x in grid.x])            
-
-        # 境界の導関数値の計算（x, y方向）
-        d_left_values = cp.array([test_func.df_dx(grid.x_min, y) for y in grid.y])
-        d_right_values = cp.array([test_func.df_dx(grid.x_max, y) for y in grid.y])
-        d_bottom_values = cp.array([test_func.df_dy(x, grid.y_min) for x in grid.x])
-        d_top_values = cp.array([test_func.df_dy(x, grid.y_max) for x in grid.x])            
-        
         # 内部点の方程式 - 1次元方程式を各方向に拡張（gridも渡す）
         # X方向
         system.add_interior_x_equation(converter.to_x(Internal1stDerivativeEquation(), grid=grid))
@@ -308,95 +327,68 @@ class PoissonEquationSet2D(EquationSet):
         system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation(), grid=grid))
         system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation(), grid=grid))
         
+        # 境界点の方程式 - ディリクレ境界条件
         # 左境界 (i=0)
-        if use_dirichlet:
-            system.add_left_boundary_equation(DirichletXBoundaryEquation2D(value=left_values, grid=grid))
-        else:
-            # 代わりに左境界の1階導関数補助方程式
-            left_first_derivative = LeftBoundary1stDerivativeEquation()
-            system.add_left_boundary_equation(converter.to_x(left_first_derivative, grid=grid))
-        
-        if use_neumann:
-            system.add_left_boundary_equation(NeumannXBoundaryEquation2D(value=d_left_values, grid=grid))
-        else:
-            # 代わりに左境界の2階導関数補助方程式
-            left_second_derivative = LeftBoundary2ndDerivativeEquation()
-            system.add_left_boundary_equation(converter.to_x(left_second_derivative, grid=grid))
-        
-        # 左境界の3階導関数補助方程式
-        left_third_derivative = LeftBoundary3rdDerivativeEquation()
-        system.add_left_boundary_equation(converter.to_x(left_third_derivative, grid=grid))
-                
+        dirichlet_left = DirichletXBoundaryEquation2D(grid=grid)
+        system.add_left_boundary_equation(dirichlet_left)
         # 右境界 (i=nx-1)
-        if use_dirichlet:
-            system.add_right_boundary_equation(DirichletXBoundaryEquation2D(value=right_values, grid=grid))
-        else:
-            # 代わりに右境界の1階導関数補助方程式
-            right_first_derivative = RightBoundary1stDerivativeEquation()
-            system.add_right_boundary_equation(converter.to_x(right_first_derivative, grid=grid))
-        
-        if use_neumann:
-            system.add_right_boundary_equation(NeumannXBoundaryEquation2D(value=d_right_values, grid=grid))
-        else:
-            # 代わりに右境界の2階導関数補助方程式
-            right_second_derivative = RightBoundary2ndDerivativeEquation()
-            system.add_right_boundary_equation(converter.to_x(right_second_derivative, grid=grid))
-        
-        # 右境界の3階導関数補助方程式
-        right_third_derivative = RightBoundary3rdDerivativeEquation()
-        system.add_right_boundary_equation(converter.to_x(right_third_derivative, grid=grid))
-                
+        dirichlet_right = DirichletXBoundaryEquation2D(grid=grid)
+        system.add_right_boundary_equation(dirichlet_right)
         # 下境界 (j=0)
-        if use_dirichlet:
-            system.add_bottom_boundary_equation(DirichletYBoundaryEquation2D(value=bottom_values, grid=grid))
-        else:
-            # 代わりに下境界の1階導関数補助方程式
-            bottom_first_derivative = LeftBoundary1stDerivativeEquation()
-            system.add_bottom_boundary_equation(converter.to_y(bottom_first_derivative, grid=grid))
-        
-        if use_neumann:
-            system.add_bottom_boundary_equation(NeumannYBoundaryEquation2D(value=d_bottom_values, grid=grid))
-        else:
-            # 代わりに下境界の2階導関数補助方程式
-            bottom_second_derivative = LeftBoundary2ndDerivativeEquation()
-            system.add_bottom_boundary_equation(converter.to_y(bottom_second_derivative, grid=grid))
-        
-        # 下境界の3階導関数補助方程式
-        bottom_third_derivative = LeftBoundary3rdDerivativeEquation()
-        system.add_bottom_boundary_equation(converter.to_y(bottom_third_derivative, grid=grid))
-                
+        dirichlet_bottom = DirichletYBoundaryEquation2D(grid=grid)
+        system.add_bottom_boundary_equation(dirichlet_bottom)
         # 上境界 (j=ny-1)
-        if use_dirichlet:
-            system.add_top_boundary_equation(DirichletYBoundaryEquation2D(value=top_values, grid=grid))
-        else:
-            # 代わりに上境界の1階導関数補助方程式
-            top_first_derivative = RightBoundary1stDerivativeEquation()
-            system.add_top_boundary_equation(converter.to_y(top_first_derivative, grid=grid))
+        dirichlet_top = DirichletYBoundaryEquation2D(grid=grid)
+        system.add_top_boundary_equation(dirichlet_top)
         
-        if use_neumann:
-            system.add_top_boundary_equation(NeumannYBoundaryEquation2D(value=d_top_values, grid=grid))
-        else:
-            # 代わりに上境界の2階導関数補助方程式
-            top_second_derivative = RightBoundary2ndDerivativeEquation()
-            system.add_top_boundary_equation(converter.to_y(top_second_derivative, grid=grid))
+        # 境界点の方程式 - ノイマン境界条件
+        # 左境界 (i=0)
+        neumann_left = NeumannXBoundaryEquation2D(grid=grid)
+        system.add_left_boundary_equation(neumann_left)
+        # 右境界 (i=nx-1)
+        neumann_right = NeumannXBoundaryEquation2D(grid=grid)
+        system.add_right_boundary_equation(neumann_right)
+        # 下境界 (j=0)
+        neumann_bottom = NeumannYBoundaryEquation2D(grid=grid)
+        system.add_bottom_boundary_equation(neumann_bottom)
+        # 上境界 (j=ny-1)
+        neumann_top = NeumannYBoundaryEquation2D(grid=grid)
+        system.add_top_boundary_equation(neumann_top)
         
-        # 上境界の3階導関数補助方程式
-        top_third_derivative = RightBoundary3rdDerivativeEquation()
-        system.add_top_boundary_equation(converter.to_y(top_third_derivative, grid=grid))
+        # 左右境界の補助方程式
+        # 左境界の補助方程式
+        left_combined = converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid)
+        system.add_left_boundary_equation(left_combined)
+                
+        # 右境界の補助方程式
+        right_combined = converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid)
+        system.add_right_boundary_equation(right_combined)
+                
+        # 上下境界の補助方程式
+        # 下境界の補助方程式
+        bottom_combined = converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid)
+        system.add_bottom_boundary_equation(bottom_combined)
+                
+        # 上境界の補助方程式
+        top_combined = converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid)
+        system.add_top_boundary_equation(top_combined)
+        
+        return self.enable_dirichlet, self.enable_neumann
         
 class DerivativeEquationSet2D(EquationSet):
     """2次元高階微分のための方程式セット"""
 
-    def setup_equations(self, system, grid, test_func, use_dirichlet=False, use_neumann=False):
+    def setup_equations(self, system, grid, test_func=None):
         """
         2次元高階微分方程式システムを設定
         
         Args:
             system: 方程式システム
             grid: Grid オブジェクト (2D)
-            test_func: テスト関数
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
+            test_func: テスト関数（オプション）
+            
+        Returns:
+            Tuple[bool, bool]: ディリクレ境界条件とノイマン境界条件の有効フラグ
         """
         if not grid.is_2d:
             raise ValueError("2D方程式セットが1Dグリッドで使用されました")
@@ -406,10 +398,7 @@ class DerivativeEquationSet2D(EquationSet):
         
         # 内部点における偏導関数方程式 - gridを渡す
         # 関数値
-        system.add_equation(OriginalEquation2D(
-            lambda x, y: test_func.f(x, y),
-            grid=grid
-        ))
+        system.add_equation(OriginalEquation2D(grid=grid))
         
         # 内部点の方程式 - 1次元方程式を各方向に拡張（gridも渡す）
         # X方向
@@ -422,78 +411,26 @@ class DerivativeEquationSet2D(EquationSet):
         system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation(), grid=grid))
         system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation(), grid=grid))
         
-        # 境界値の計算（x, y方向）
-        left_values = cp.array([test_func.f(grid.x_min, y) for y in grid.y])
-        right_values = cp.array([test_func.f(grid.x_max, y) for y in grid.y])
-        bottom_values = cp.array([test_func.f(x, grid.y_min) for x in grid.x])
-        top_values = cp.array([test_func.f(x, grid.y_max) for x in grid.x])            
-
-        # 境界の導関数値の計算（x, y方向）
-        d_left_values = cp.array([test_func.df_dx(grid.x_min, y) for y in grid.y])
-        d_right_values = cp.array([test_func.df_dx(grid.x_max, y) for y in grid.y])
-        d_bottom_values = cp.array([test_func.df_dy(x, grid.y_min) for x in grid.x])
-        d_top_values = cp.array([test_func.df_dy(x, grid.y_max) for x in grid.x])
-        
+        # 境界点の方程式 - 1次元方程式を各方向に拡張（gridも渡す）
         # 左境界 (i=0)
-        if use_dirichlet:
-            system.add_left_boundary_equation(DirichletXBoundaryEquation2D(value=left_values, grid=grid))
-        else:
-            # 代わりに左境界の1階導関数補助方程式
-            system.add_left_boundary_equation(converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid))
-        
-        if use_neumann:
-            system.add_left_boundary_equation(NeumannXBoundaryEquation2D(value=d_left_values, grid=grid))
-        else:
-            # 代わりに左境界の2階導関数補助方程式
-            system.add_left_boundary_equation(converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid))
-        
-        # 左境界の3階導関数補助方程式
+        system.add_left_boundary_equation(converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid))
+        system.add_left_boundary_equation(converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid))
         system.add_left_boundary_equation(converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid))
         
         # 右境界 (i=nx-1)
-        if use_dirichlet:
-            system.add_right_boundary_equation(DirichletXBoundaryEquation2D(value=right_values, grid=grid))
-        else:
-            # 代わりに右境界の1階導関数補助方程式
-            system.add_right_boundary_equation(converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid))
-        
-        if use_neumann:
-            system.add_right_boundary_equation(NeumannXBoundaryEquation2D(value=d_right_values, grid=grid))
-        else:
-            # 代わりに右境界の2階導関数補助方程式
-            system.add_right_boundary_equation(converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid))
-        
-        # 右境界の3階導関数補助方程式
+        system.add_right_boundary_equation(converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid))
+        system.add_right_boundary_equation(converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid))
         system.add_right_boundary_equation(converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid))
         
         # 下境界 (j=0)
-        if use_dirichlet:
-            system.add_bottom_boundary_equation(DirichletYBoundaryEquation2D(value=bottom_values, grid=grid))
-        else:
-            # 代わりに下境界の1階導関数補助方程式
-            system.add_bottom_boundary_equation(converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid))
-        
-        if use_neumann:
-            system.add_bottom_boundary_equation(NeumannYBoundaryEquation2D(value=d_bottom_values, grid=grid))
-        else:
-            # 代わりに下境界の2階導関数補助方程式
-            system.add_bottom_boundary_equation(converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid))
-        
-        # 下境界の3階導関数補助方程式
+        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid))
+        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid))
         system.add_bottom_boundary_equation(converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid))
                 
         # 上境界 (j=ny-1)
-        if use_dirichlet:
-            system.add_top_boundary_equation(DirichletYBoundaryEquation2D(value=top_values, grid=grid))
-        else:
-            # 代わりに上境界の1階導関数補助方程式
-            system.add_top_boundary_equation(converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid))
-        
-        if use_neumann:
-            system.add_top_boundary_equation(NeumannYBoundaryEquation2D(value=d_top_values, grid=grid))
-        else:
-            # 代わりに上境界の2階導関数補助方程式
-            system.add_top_boundary_equation(converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid))
-        
-        # 上境界の3階導関数補助方程式
+        system.add_top_boundary_equation(converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid))
+        system.add_top_boundary_equation(converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid))
         system.add_top_boundary_equation(converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid))
+
+        # 微分方程式セットでは境界条件は常に有効
+        return False, False

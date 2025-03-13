@@ -5,7 +5,7 @@ from .base2d import Equation2D
 class DirichletBoundaryEquation(Equation):
     """ディリクレ境界条件: psi(x) = value"""
 
-    def __init__(self, value: float, grid=None):
+    def __init__(self, grid=None):
         """
         ディリクレ境界条件を初期化
         
@@ -14,7 +14,6 @@ class DirichletBoundaryEquation(Equation):
             grid: 計算格子オブジェクト
         """
         super().__init__(grid)
-        self.value = value
 
     def get_stencil_coefficients(self, i=None):
         """
@@ -27,18 +26,6 @@ class DirichletBoundaryEquation(Equation):
             ステンシル係数の辞書
         """
         return {0: cp.array([1, 0, 0, 0])}
-
-    def get_rhs(self, i=None):
-        """
-        右辺値を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        return self.value
 
     def is_valid_at(self, i=None):
         """
@@ -63,7 +50,7 @@ class DirichletBoundaryEquation(Equation):
 class NeumannBoundaryEquation(Equation):
     """ノイマン境界条件: psi'(x) = value"""
 
-    def __init__(self, value: float, grid=None):
+    def __init__(self, grid=None):
         """
         ノイマン境界条件を初期化
         
@@ -72,7 +59,6 @@ class NeumannBoundaryEquation(Equation):
             grid: 計算格子オブジェクト
         """
         super().__init__(grid)
-        self.value = value
 
     def get_stencil_coefficients(self, i=None):
         """
@@ -85,18 +71,6 @@ class NeumannBoundaryEquation(Equation):
             ステンシル係数の辞書
         """
         return {0: cp.array([0, 1, 0, 0])}
-
-    def get_rhs(self, i=None):
-        """
-        右辺値を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        return self.value
 
     def is_valid_at(self, i=None):
         """
@@ -122,7 +96,7 @@ class DirichletXBoundaryEquation2D(Equation2D):
     """
     X方向（左右境界）のディリクレ境界条件: ψ(x,y) = value
     """
-    def __init__(self, value: cp.array, grid=None):
+    def __init__(self, grid=None):
         """
         初期化
         
@@ -131,7 +105,6 @@ class DirichletXBoundaryEquation2D(Equation2D):
             grid: 計算格子オブジェクト
         """
         super().__init__(grid)
-        self.value = value
     
     def get_stencil_coefficients(self, i=None, j=None):
         """
@@ -146,25 +119,7 @@ class DirichletXBoundaryEquation2D(Equation2D):
         """
         coeffs = {(0, 0): cp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])}
         return coeffs
-    
-    def get_rhs(self, i=None, j=None):
-        """
-        境界値を取得
         
-        Args:
-            i: x方向のグリッド点インデックス
-            j: y方向のグリッド点インデックス
-            
-        Returns:
-            境界値
-        """
-        if j is None:
-            raise ValueError("y方向のグリッド点インデックスjを指定する必要があります。")
-            
-        if j < len(self.value):
-            return self.value[j]
-        return 0.0
-    
     def is_valid_at(self, i=None, j=None):
         """
         この境界条件が有効かどうかをチェック
@@ -189,7 +144,7 @@ class DirichletYBoundaryEquation2D(Equation2D):
     """
     Y方向（下上境界）のディリクレ境界条件: ψ(x,y) = value
     """
-    def __init__(self, value: cp.array, grid=None):
+    def __init__(self, grid=None):
         """
         初期化
         
@@ -198,7 +153,6 @@ class DirichletYBoundaryEquation2D(Equation2D):
             grid: 計算格子オブジェクト
         """
         super().__init__(grid)
-        self.value = value
     
     def get_stencil_coefficients(self, i=None, j=None):
         """
@@ -213,25 +167,7 @@ class DirichletYBoundaryEquation2D(Equation2D):
         """
         coeffs = {(0, 0): cp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])}
         return coeffs
-    
-    def get_rhs(self, i=None, j=None):
-        """
-        境界値を取得
         
-        Args:
-            i: x方向のグリッド点インデックス
-            j: y方向のグリッド点インデックス
-            
-        Returns:
-            境界値
-        """
-        if i is None:
-            raise ValueError("x方向のグリッド点インデックスiを指定する必要があります。")
-            
-        if i < len(self.value):
-            return self.value[i]
-        return 0.0
-    
     def is_valid_at(self, i=None, j=None):
         """
         この境界条件が有効かどうかをチェック
@@ -255,7 +191,7 @@ class NeumannXBoundaryEquation2D(Equation2D):
     """
     X方向（左右境界）のノイマン境界条件: ∂ψ/∂x(x,y) = value
     """
-    def __init__(self, value: cp.array, grid=None):
+    def __init__(self, grid=None):
         """
         初期化
         
@@ -264,7 +200,6 @@ class NeumannXBoundaryEquation2D(Equation2D):
             grid: 計算格子オブジェクト
         """
         super().__init__(grid)
-        self.value = value
     
     def get_stencil_coefficients(self, i=None, j=None):
         """
@@ -279,25 +214,7 @@ class NeumannXBoundaryEquation2D(Equation2D):
         """
         coeffs = {(0, 0): cp.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])}
         return coeffs
-    
-    def get_rhs(self, i=None, j=None):
-        """
-        境界値を取得
         
-        Args:
-            i: x方向のグリッド点インデックス
-            j: y方向のグリッド点インデックス
-            
-        Returns:
-            境界値
-        """
-        if j is None:
-            raise ValueError("y方向のグリッド点インデックスjを指定する必要があります。")
-            
-        if j < len(self.value):
-            return self.value[j]
-        return 0.0
-    
     def is_valid_at(self, i=None, j=None):
         """
         この境界条件が有効かどうかをチェック
@@ -322,7 +239,7 @@ class NeumannYBoundaryEquation2D(Equation2D):
     """
     Y方向（下上境界）のノイマン境界条件: ∂ψ/∂y(x,y) = value
     """
-    def __init__(self, value: cp.array, grid=None):
+    def __init__(self, grid=None):
         """
         初期化
         
@@ -331,7 +248,6 @@ class NeumannYBoundaryEquation2D(Equation2D):
             grid: 計算格子オブジェクト
         """
         super().__init__(grid)
-        self.value = value
     
     def get_stencil_coefficients(self, i=None, j=None):
         """
@@ -346,25 +262,7 @@ class NeumannYBoundaryEquation2D(Equation2D):
         """
         coeffs = {(0, 0): cp.array([0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])}
         return coeffs
-    
-    def get_rhs(self, i=None, j=None):
-        """
-        境界値を取得
         
-        Args:
-            i: x方向のグリッド点インデックス
-            j: y方向のグリッド点インデックス
-            
-        Returns:
-            境界値
-        """
-        if i is None:
-            raise ValueError("x方向のグリッド点インデックスiを指定する必要があります。")
-            
-        if i < len(self.value):
-            return self.value[i]
-        return 0.0
-    
     def is_valid_at(self, i=None, j=None):
         """
         この境界条件が有効かどうかをチェック

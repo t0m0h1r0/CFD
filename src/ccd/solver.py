@@ -224,7 +224,8 @@ class CCDSolver1D(BaseCCDSolver):
 
     def solve(self, analyze_before_solve=True, f_values=None, 
               left_dirichlet=None, right_dirichlet=None,
-              left_neumann=None, right_neumann=None):
+              left_neumann=None, right_neumann=None,
+              enable_dirichlet=True, enable_neumann=True):
         """
         Solve the 1D system
         
@@ -235,6 +236,8 @@ class CCDSolver1D(BaseCCDSolver):
             right_dirichlet: Right boundary Dirichlet value
             left_neumann: Left boundary Neumann value
             right_neumann: Right boundary Neumann value
+            enable_dirichlet: Whether to enable Dirichlet boundary conditions
+            enable_neumann: Whether to enable Neumann boundary conditions
             
         Returns:
             (psi, psi_prime, psi_second, psi_third) tuple
@@ -252,15 +255,18 @@ class CCDSolver1D(BaseCCDSolver):
             for i in range(n):
                 b[i * 4] = f_values[i] if i < len(f_values) else 0.0
         
-        # Set boundary condition values
-        if left_dirichlet is not None:
-            b[1] = left_dirichlet  # Left boundary Dirichlet
-        if right_dirichlet is not None:
-            b[(n-1) * 4 + 1] = right_dirichlet  # Right boundary Dirichlet
-        if left_neumann is not None:
-            b[2] = left_neumann  # Left boundary Neumann
-        if right_neumann is not None:
-            b[(n-1) * 4 + 2] = right_neumann  # Right boundary Neumann
+        # Set boundary condition values based on enabled flags
+        if enable_dirichlet:
+            if left_dirichlet is not None:
+                b[1] = left_dirichlet  # Left boundary Dirichlet
+            if right_dirichlet is not None:
+                b[(n-1) * 4 + 1] = right_dirichlet  # Right boundary Dirichlet
+        
+        if enable_neumann:
+            if left_neumann is not None:
+                b[2] = left_neumann  # Left boundary Neumann
+            if right_neumann is not None:
+                b[(n-1) * 4 + 2] = right_neumann  # Right boundary Neumann
             
         # Apply scaling if requested
         scaling_info = None
@@ -319,7 +325,8 @@ class CCDSolver2D(BaseCCDSolver):
               left_dirichlet=None, right_dirichlet=None, 
               bottom_dirichlet=None, top_dirichlet=None,
               left_neumann=None, right_neumann=None,
-              bottom_neumann=None, top_neumann=None):
+              bottom_neumann=None, top_neumann=None,
+              enable_dirichlet=True, enable_neumann=True):
         """
         Solve the 2D system
         
@@ -334,6 +341,8 @@ class CCDSolver2D(BaseCCDSolver):
             right_neumann: Right boundary Neumann values (shape: (ny,) or scalar)
             bottom_neumann: Bottom boundary Neumann values (shape: (nx,) or scalar)
             top_neumann: Top boundary Neumann values (shape: (nx,) or scalar)
+            enable_dirichlet: Whether to enable Dirichlet boundary conditions
+            enable_neumann: Whether to enable Neumann boundary conditions
             
         Returns:
             (psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy) tuple
@@ -357,79 +366,82 @@ class CCDSolver2D(BaseCCDSolver):
                     elif isinstance(f_values, (int, float)):
                         b[idx] = f_values
         
-        # Set boundary condition values - Dirichlet
-        # Left boundary (i=0)
-        if left_dirichlet is not None:
-            for j in range(ny):
-                idx = (j * nx + 0) * n_unknowns + 1  # ψ_x
-                if isinstance(left_dirichlet, (list, cp.ndarray)) and len(left_dirichlet) > j:
-                    b[idx] = left_dirichlet[j]
-                elif isinstance(left_dirichlet, (int, float)):
-                    b[idx] = left_dirichlet
+        # Set boundary condition values based on enabled flags
+        if enable_dirichlet:
+            # Dirichlet boundary conditions
+            # Left boundary (i=0)
+            if left_dirichlet is not None:
+                for j in range(ny):
+                    idx = (j * nx + 0) * n_unknowns + 1  # ψ_x
+                    if isinstance(left_dirichlet, (list, cp.ndarray)) and len(left_dirichlet) > j:
+                        b[idx] = left_dirichlet[j]
+                    elif isinstance(left_dirichlet, (int, float)):
+                        b[idx] = left_dirichlet
+            
+            # Right boundary (i=nx-1)
+            if right_dirichlet is not None:
+                for j in range(ny):
+                    idx = (j * nx + (nx-1)) * n_unknowns + 1  # ψ_x
+                    if isinstance(right_dirichlet, (list, cp.ndarray)) and len(right_dirichlet) > j:
+                        b[idx] = right_dirichlet[j]
+                    elif isinstance(right_dirichlet, (int, float)):
+                        b[idx] = right_dirichlet
+            
+            # Bottom boundary (j=0)
+            if bottom_dirichlet is not None:
+                for i in range(nx):
+                    idx = (0 * nx + i) * n_unknowns + 4  # ψ_y
+                    if isinstance(bottom_dirichlet, (list, cp.ndarray)) and len(bottom_dirichlet) > i:
+                        b[idx] = bottom_dirichlet[i]
+                    elif isinstance(bottom_dirichlet, (int, float)):
+                        b[idx] = bottom_dirichlet
+            
+            # Top boundary (j=ny-1)
+            if top_dirichlet is not None:
+                for i in range(nx):
+                    idx = ((ny-1) * nx + i) * n_unknowns + 4  # ψ_y
+                    if isinstance(top_dirichlet, (list, cp.ndarray)) and len(top_dirichlet) > i:
+                        b[idx] = top_dirichlet[i]
+                    elif isinstance(top_dirichlet, (int, float)):
+                        b[idx] = top_dirichlet
         
-        # Right boundary (i=nx-1)
-        if right_dirichlet is not None:
-            for j in range(ny):
-                idx = (j * nx + (nx-1)) * n_unknowns + 1  # ψ_x
-                if isinstance(right_dirichlet, (list, cp.ndarray)) and len(right_dirichlet) > j:
-                    b[idx] = right_dirichlet[j]
-                elif isinstance(right_dirichlet, (int, float)):
-                    b[idx] = right_dirichlet
-        
-        # Bottom boundary (j=0)
-        if bottom_dirichlet is not None:
-            for i in range(nx):
-                idx = (0 * nx + i) * n_unknowns + 4  # ψ_y
-                if isinstance(bottom_dirichlet, (list, cp.ndarray)) and len(bottom_dirichlet) > i:
-                    b[idx] = bottom_dirichlet[i]
-                elif isinstance(bottom_dirichlet, (int, float)):
-                    b[idx] = bottom_dirichlet
-        
-        # Top boundary (j=ny-1)
-        if top_dirichlet is not None:
-            for i in range(nx):
-                idx = ((ny-1) * nx + i) * n_unknowns + 4  # ψ_y
-                if isinstance(top_dirichlet, (list, cp.ndarray)) and len(top_dirichlet) > i:
-                    b[idx] = top_dirichlet[i]
-                elif isinstance(top_dirichlet, (int, float)):
-                    b[idx] = top_dirichlet
-        
-        # Set boundary condition values - Neumann
-        # Left boundary (i=0)
-        if left_neumann is not None:
-            for j in range(ny):
-                idx = (j * nx + 0) * n_unknowns + 2  # ψ_xx
-                if isinstance(left_neumann, (list, cp.ndarray)) and len(left_neumann) > j:
-                    b[idx] = left_neumann[j]
-                elif isinstance(left_neumann, (int, float)):
-                    b[idx] = left_neumann
-        
-        # Right boundary (i=nx-1)
-        if right_neumann is not None:
-            for j in range(ny):
-                idx = (j * nx + (nx-1)) * n_unknowns + 2  # ψ_xx
-                if isinstance(right_neumann, (list, cp.ndarray)) and len(right_neumann) > j:
-                    b[idx] = right_neumann[j]
-                elif isinstance(right_neumann, (int, float)):
-                    b[idx] = right_neumann
-        
-        # Bottom boundary (j=0)
-        if bottom_neumann is not None:
-            for i in range(nx):
-                idx = (0 * nx + i) * n_unknowns + 5  # ψ_yy
-                if isinstance(bottom_neumann, (list, cp.ndarray)) and len(bottom_neumann) > i:
-                    b[idx] = bottom_neumann[i]
-                elif isinstance(bottom_neumann, (int, float)):
-                    b[idx] = bottom_neumann
-        
-        # Top boundary (j=ny-1)
-        if top_neumann is not None:
-            for i in range(nx):
-                idx = ((ny-1) * nx + i) * n_unknowns + 5  # ψ_yy
-                if isinstance(top_neumann, (list, cp.ndarray)) and len(top_neumann) > i:
-                    b[idx] = top_neumann[i]
-                elif isinstance(top_neumann, (int, float)):
-                    b[idx] = top_neumann
+        if enable_neumann:
+            # Neumann boundary conditions
+            # Left boundary (i=0)
+            if left_neumann is not None:
+                for j in range(ny):
+                    idx = (j * nx + 0) * n_unknowns + 2  # ψ_xx
+                    if isinstance(left_neumann, (list, cp.ndarray)) and len(left_neumann) > j:
+                        b[idx] = left_neumann[j]
+                    elif isinstance(left_neumann, (int, float)):
+                        b[idx] = left_neumann
+            
+            # Right boundary (i=nx-1)
+            if right_neumann is not None:
+                for j in range(ny):
+                    idx = (j * nx + (nx-1)) * n_unknowns + 2  # ψ_xx
+                    if isinstance(right_neumann, (list, cp.ndarray)) and len(right_neumann) > j:
+                        b[idx] = right_neumann[j]
+                    elif isinstance(right_neumann, (int, float)):
+                        b[idx] = right_neumann
+            
+            # Bottom boundary (j=0)
+            if bottom_neumann is not None:
+                for i in range(nx):
+                    idx = (0 * nx + i) * n_unknowns + 5  # ψ_yy
+                    if isinstance(bottom_neumann, (list, cp.ndarray)) and len(bottom_neumann) > i:
+                        b[idx] = bottom_neumann[i]
+                    elif isinstance(bottom_neumann, (int, float)):
+                        b[idx] = bottom_neumann
+            
+            # Top boundary (j=ny-1)
+            if top_neumann is not None:
+                for i in range(nx):
+                    idx = ((ny-1) * nx + i) * n_unknowns + 5  # ψ_yy
+                    if isinstance(top_neumann, (list, cp.ndarray)) and len(top_neumann) > i:
+                        b[idx] = top_neumann[i]
+                    elif isinstance(top_neumann, (int, float)):
+                        b[idx] = top_neumann
                 
         # Apply scaling if requested
         scaling_info = None

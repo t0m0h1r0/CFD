@@ -4,7 +4,7 @@ from .base1d import Equation
 class EssentialEquation(Equation):
     """特定の未知数に対する基本方程式"""
 
-    def __init__(self, k, f_func, grid=None):
+    def __init__(self, k, grid=None):
         """
         基本方程式を初期化
         
@@ -17,7 +17,6 @@ class EssentialEquation(Equation):
         if k not in [0, 1, 2, 3]:
             k = 0
         self.k = k
-        self.f_func = f_func
 
     def get_stencil_coefficients(self, i=None):
         """
@@ -32,25 +31,6 @@ class EssentialEquation(Equation):
         coeffs = cp.zeros(4)
         coeffs[self.k] = 1.0
         return {0: coeffs}
-
-    def get_rhs(self, i=None):
-        """
-        右辺値を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        if self.grid is None:
-            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
-            
-        if i is None:
-            raise ValueError("グリッド点のインデックスiを指定する必要があります。")
-            
-        x = self.grid.get_point(i)
-        return self.f_func(x)
 
     def is_valid_at(self, i=None):
         """

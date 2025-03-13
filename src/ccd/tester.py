@@ -4,7 +4,6 @@ from grid import Grid
 from solver import CCDSolver1D, CCDSolver2D
 from equation_system import EquationSystem
 from equation_sets import EquationSet
-from test_functions import TestFunctionFactory, TestFunction  # 更新されたインポート
 
 class BaseCCDTester(ABC):
     """CCDメソッドのテストを行う抽象基底クラス"""
@@ -24,6 +23,8 @@ class BaseCCDTester(ABC):
         self.scaling_method = None
         self.analyze_matrix = False
         self.equation_set = None
+        self.enable_dirichlet = True
+        self.enable_neumann = True
 
     def set_solver_options(self, method, options, analyze_matrix=False):
         """
@@ -55,14 +56,12 @@ class BaseCCDTester(ABC):
         dimension = self.get_dimension()
         self.equation_set = EquationSet.create(equation_set_name, dimension=dimension)
 
-    def setup_equation_system(self, test_func, use_dirichlet=True, use_neumann=True):
+    def setup_equation_system(self, test_func):
         """
         方程式システムをセットアップ
         
         Args:
             test_func: テスト関数
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
         """
         # 方程式システムの作成
         self.system = EquationSystem(self.grid)
@@ -73,12 +72,10 @@ class BaseCCDTester(ABC):
             self.equation_set = EquationSet.create("poisson", dimension=dimension)
         
         # 方程式システム設定
-        self.equation_set.setup_equations(
+        self.enable_dirichlet, self.enable_neumann = self.equation_set.setup_equations(
             self.system, 
             self.grid, 
-            test_func, 
-            #use_dirichlet, 
-            #use_neumann
+            test_func
         )
 
         # 適切なソルバーを作成または更新
@@ -97,14 +94,12 @@ class BaseCCDTester(ABC):
         """次元に応じた適切なソルバーを作成"""
         pass
             
-    def run_test_with_options(self, test_func, use_dirichlet=True, use_neumann=True):
+    def run_test_with_options(self, test_func):
         """
         テスト実行
         
         Args:
             test_func: テスト関数または関数名
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
             
         Returns:
             テスト結果の辞書
@@ -113,7 +108,7 @@ class BaseCCDTester(ABC):
         if isinstance(test_func, str):
             test_func = self.get_test_function(test_func)
         
-        self.setup_equation_system(test_func, use_dirichlet, use_neumann)
+        self.setup_equation_system(test_func)
 
         if self.analyze_matrix:
             self.solver.analyze_system()
@@ -121,7 +116,7 @@ class BaseCCDTester(ABC):
         # ソリューション計算と結果処理
         return self._process_solution(test_func)
 
-    def run_grid_convergence_test(self, test_func, grid_sizes, x_range, y_range=None, use_dirichlet=True, use_neumann=True):
+    def run_grid_convergence_test(self, test_func, grid_sizes, x_range, y_range=None):
         """
         格子収束性テスト
         
@@ -130,8 +125,6 @@ class BaseCCDTester(ABC):
             grid_sizes: テストするグリッドサイズのリスト
             x_range: x方向の範囲
             y_range: y方向の範囲（2Dのみ）
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
             
         Returns:
             各グリッドサイズの結果を持つ辞書
@@ -164,7 +157,7 @@ class BaseCCDTester(ABC):
             tester.scaling_method = original_scaling_method
             
             # テスト実行と結果保存
-            result = tester.run_test_with_options(test_func, use_dirichlet, use_neumann)
+            result = tester.run_test_with_options(test_func)
             results[n] = result["errors"]
 
         return results
@@ -256,7 +249,8 @@ class CCDTester1D(BaseCCDTester):
     
     def get_test_function(self, func_name):
         """1Dテスト関数を取得"""
-        # 新しいTestFunctionFactoryを使用
+        from test_functions import TestFunctionFactory
+        
         test_funcs = TestFunctionFactory.create_standard_1d_functions()
         selected_func = next((f for f in test_funcs if f.name == func_name), None)
         
@@ -267,7 +261,15 @@ class CCDTester1D(BaseCCDTester):
         return selected_func
         
     def _process_solution(self, test_func):
-        """1D解の処理"""
+        """
+        数値解と誤差を計算して結果を返す (1D version)
+        
+        Args:
+            test_func: テスト関数
+            
+        Returns:
+            テスト結果の辞書
+        """
         # グリッド点での厳密解を計算
         x = self.grid.get_points()
         exact_psi = cp.array([test_func.f(xi) for xi in x])
@@ -295,7 +297,9 @@ class CCDTester1D(BaseCCDTester):
             left_dirichlet=left_dirichlet,
             right_dirichlet=right_dirichlet,
             left_neumann=left_neumann,
-            right_neumann=right_neumann
+            right_neumann=right_neumann,
+            enable_dirichlet=self.enable_dirichlet,
+            enable_neumann=self.enable_neumann
         )
 
         # 誤差計算
@@ -347,7 +351,9 @@ class CCDTester2D(BaseCCDTester):
     
     def get_test_function(self, func_name):
         """2Dテスト関数を取得"""
-        # 新しいTestFunctionFactoryを使用
+        from test_functions import TestFunctionFactory, TestFunction
+        
+        # まず基本的な2D関数を生成
         standard_funcs = TestFunctionFactory.create_standard_2d_functions()
         
         # 指定された名前の関数を検索
@@ -368,7 +374,15 @@ class CCDTester2D(BaseCCDTester):
         return standard_funcs[0]
         
     def _process_solution(self, test_func):
-        """2D解の処理"""
+        """
+        数値解と誤差を計算して結果を返す (2D version)
+        
+        Args:
+            test_func: テスト関数
+            
+        Returns:
+            テスト結果の辞書
+        """
         # グリッド点を取得
         X, Y = self.grid.get_points()
         nx, ny = self.grid.nx_points, self.grid.ny_points
@@ -425,7 +439,9 @@ class CCDTester2D(BaseCCDTester):
             left_neumann=left_neumann,
             right_neumann=right_neumann,
             bottom_neumann=bottom_neumann,
-            top_neumann=top_neumann
+            top_neumann=top_neumann,
+            enable_dirichlet=self.enable_dirichlet,
+            enable_neumann=self.enable_neumann
         )
 
         # 誤差を計算

@@ -37,18 +37,6 @@ class Equation(ABC):
         pass
 
     @abstractmethod
-    def get_rhs(self, i=None):
-        """方程式の右辺を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        pass
-
-    @abstractmethod
     def is_valid_at(self, i=None):
         """方程式がグリッド点iに適用可能かを判定
         
@@ -157,25 +145,6 @@ class CombinedEquation(Equation):
 
         return combined_coeffs
 
-    def get_rhs(self, i=None):
-        """結合された右辺を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        if self.grid is None:
-            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
-        
-        if i is None:
-            raise ValueError("グリッド点のインデックスiを指定する必要があります。")
-        
-        rhs1 = self.eq1.get_rhs(i)
-        rhs2 = self.eq2.get_rhs(i)
-        return rhs1 + rhs2 if self.operation == "+" else rhs1 - rhs2
-
     def is_valid_at(self, i=None):
         """結合された方程式が有効かどうかを判定
         
@@ -253,23 +222,6 @@ class ScaledEquation(Equation):
         
         coeffs = self.equation.get_stencil_coefficients(i)
         return {offset: self.scalar * coeff for offset, coeff in coeffs.items()}
-
-    def get_rhs(self, i=None):
-        """スケールされた右辺を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        if self.grid is None:
-            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
-        
-        if i is None:
-            raise ValueError("グリッド点のインデックスiを指定する必要があります。")
-        
-        return self.scalar * self.equation.get_rhs(i)
 
     def is_valid_at(self, i=None):
         """方程式が有効かどうかを判定

@@ -34,18 +34,6 @@ class Internal1stDerivativeEquation(Equation):
         }
         return coeffs
 
-    def get_rhs(self, i=None):
-        """
-        右辺値を返す
-        
-        Args:
-            i: グリッド点のインデックス
-            
-        Returns:
-            右辺の値
-        """
-        return 0.0
-
     def is_valid_at(self, i=None):
         """
         方程式が有効かどうかを判定
