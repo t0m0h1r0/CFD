@@ -52,7 +52,7 @@ def parse_args():
     solver_group.add_argument(
         "--solver", 
         type=str, 
-        choices=['direct', 'gmres', 'cg', 'cgs'], 
+        choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'lsmr', 'minres'], 
         default='direct',
         help="使用するソルバー (デフォルト: direct)"
     )

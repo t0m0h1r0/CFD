@@ -34,11 +34,11 @@ class BaseCCDSolver(ABC):
         ソルバーメソッドとオプションを設定
         
         Args:
-            method: 解法メソッド ("direct", "gmres", "cg", "cgs")
+            method: 解法メソッド ("direct", "gmres", "cg", "cgs", "lsqr", "lsmr", "minres")
             options: ソルバーオプション辞書
             scaling_method: スケーリング手法名（Noneの場合はスケーリングなし）
         """
-        valid_methods = ["direct", "gmres", "cg", "cgs"]
+        valid_methods = ["direct", "gmres", "cg", "cgs", "lsqr", "lsmr", "minres"]
         if method not in valid_methods:
             method = "direct"
             
@@ -131,6 +131,59 @@ class BaseCCDSolver(ABC):
                 maxiter = self.solver_options.get("maxiter", 1000)
                 
                 x, info = splinalg.cgs(A, b, tol=tol, maxiter=maxiter, M=precond)
+                
+                # 反復回数を保存
+                if hasattr(info, 'iterations'):
+                    self.last_iterations = info.iterations
+                else:
+                    self.last_iterations = maxiter if info != 0 else None
+                    
+                if info == 0:
+                    return x
+                
+            elif self.solver_method == "lsqr":
+                tol = self.solver_options.get("tol", 1e-10)
+                maxiter = self.solver_options.get("maxiter", 1000)
+                atol = self.solver_options.get("atol", 0.0)
+                btol = self.solver_options.get("btol", 0.0)
+                
+                x, info, itn, _, _, _, _, _ = splinalg.lsqr(
+                    A, b, 
+                    atol=atol, 
+                    btol=btol, 
+                    iter_lim=maxiter
+                )
+                
+                # 反復回数を保存
+                self.last_iterations = itn
+                
+                if info > 0 and info < 7:  # 正常終了のケース
+                    return x
+
+            elif self.solver_method == "lsmr":
+                tol = self.solver_options.get("tol", 1e-10)
+                maxiter = self.solver_options.get("maxiter", 1000)
+                atol = self.solver_options.get("atol", 0.0)
+                btol = self.solver_options.get("btol", 0.0)
+                
+                x, info, itn, _, _, _, _, _, _, _ = splinalg.lsmr(
+                    A, b, 
+                    atol=atol, 
+                    btol=btol, 
+                    maxiter=maxiter
+                )
+                
+                # 反復回数を保存
+                self.last_iterations = itn
+                
+                if info > 0 and info < 7:  # 正常終了のケース
+                    return x
+
+            elif self.solver_method == "minres":
+                tol = self.solver_options.get("tol", 1e-10)
+                maxiter = self.solver_options.get("maxiter", 1000)
+                
+                x, info = splinalg.minres(A, b, tol=tol, maxiter=maxiter, M=precond)
                 
                 # 反復回数を保存
                 if hasattr(info, 'iterations'):
