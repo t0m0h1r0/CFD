@@ -455,7 +455,7 @@ def verify_system(dimension: int, output_dir: str = "results"):
         try:
             # グリッドの作成
             if dimension == 1:
-                grid = Grid(3, x_range=(-1.0, 1.0))
+                grid = Grid(16, x_range=(-1.0, 1.0))
                 # テスト関数を取得
                 test_funcs = TestFunctionFactory.create_standard_1d_functions()
                 test_func = test_funcs[3]  # Sine関数

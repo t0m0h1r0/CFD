@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import cupy as cp
 from grid import Grid
 from solver import CCDSolver1D, CCDSolver2D  # 直接次元別クラスをインポート
-from equation_sets import EquationSet  # 方程式セットを直接インポート
+from equation_sets import EquationSet, DerivativeEquationSet1D, DerivativeEquationSet2D  # 追加
 
 class BaseCCDTester(ABC):
     """CCDメソッドのテストを行う抽象基底クラス"""
@@ -261,8 +261,17 @@ class CCDTester1D(BaseCCDTester):
         n = self.grid.n_points
         x_min, x_max = self.grid.x_min, self.grid.x_max
         
-        # 支配方程式（ポアソン方程式）の右辺 - d2f(x)を使用
-        f_values = cp.array([test_func.d2f(xi) for xi in x])
+        # 方程式セットのタイプに応じて適切な関数値を使用
+        is_derivative_set = isinstance(self.equation_set, DerivativeEquationSet1D)
+        
+        if is_derivative_set:
+            # 導関数計算の場合は元の関数値を使用
+            print("テスト関数から直接導関数を計算します (Derivative)")
+            f_values = cp.array([test_func.f(xi) for xi in x])
+        else:
+            # ポアソン方程式の場合は2階微分値を使用
+            print("ポアソン方程式 ψ''(x) = f(x) を解きます (Poisson)")
+            f_values = cp.array([test_func.d2f(xi) for xi in x])
         
         # 境界条件の値
         left_dirichlet = test_func.f(x_min)
@@ -391,12 +400,26 @@ class CCDTester2D(BaseCCDTester):
                 exact_psi_xxx[i, j] = test_func.d3f_dx3(x, y)
                 exact_psi_yyy[i, j] = test_func.d3f_dy3(x, y)
 
-        # 支配方程式（ポアソン方程式）の右辺 - ラプラシアン（f_xx + f_yy）を使用
+        # 方程式セットのタイプに応じて適切な関数値を使用
+        is_derivative_set = isinstance(self.equation_set, DerivativeEquationSet2D)
+
+        # 右辺の値を準備
         f_values = cp.zeros((nx, ny))
-        for i in range(nx):
-            for j in range(ny):
-                x, y = self.grid.get_point(i, j)
-                f_values[i, j] = test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
+        
+        if is_derivative_set:
+            # 導関数計算の場合は元の関数値を使用
+            print("テスト関数から直接導関数を計算します (Derivative)")
+            for i in range(nx):
+                for j in range(ny):
+                    x, y = self.grid.get_point(i, j)
+                    f_values[i, j] = test_func.f(x, y)
+        else:
+            # ポアソン方程式の場合はラプラシアン（∆ψ = f）を使用
+            print("ポアソン方程式 ∆ψ = f(x,y) を解きます (Poisson)")
+            for i in range(nx):
+                for j in range(ny):
+                    x, y = self.grid.get_point(i, j)
+                    f_values[i, j] = test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
 
         # 境界条件の値
         left_dirichlet = cp.array([test_func.f(x_min, y) for y in self.grid.y])
