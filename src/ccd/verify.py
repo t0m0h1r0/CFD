@@ -9,7 +9,7 @@ from typing import Dict, Optional, Tuple, List, Any
 # CCD関連コンポーネント
 from grid import Grid
 from equation_system import EquationSystem
-from test_functions import TestFunctionFactory  # 新しいテスト関数モジュールを使用
+from test_functions import TestFunctionFactory
 from equation_sets import EquationSet
 from solver import CCDSolver1D, CCDSolver2D
 from scaling import plugin_manager
@@ -29,7 +29,7 @@ class MatrixVisualizer:
     
     def _to_numpy_dense(self, matrix):
         """
-        行列をNumpy密行列に変換
+        行列をNumPy密行列に変換
         
         Args:
             matrix: CuPy/SciPy疎行列
@@ -129,6 +129,122 @@ class MatrixVisualizer:
             plt.close()
             return ""
 
+    def visualize_system_structure(self, A, b, grid, title: str, prefix: str = ""):
+        """
+        システムAx = bの構造を可視化
+        
+        Args:
+            A: システム行列
+            b: 右辺ベクトル
+            grid: グリッドオブジェクト
+            title: グラフタイトル
+            prefix: 出力ファイル名の接頭辞
+            
+        Returns:
+            str: 生成された画像のファイルパス
+        """
+        plt.figure(figsize=(12, 8))
+        
+        # 行列とベクトルを密行列に変換
+        A_dense = self._to_numpy_dense(A)
+        b_dense = self._to_numpy_dense(b)
+        
+        # AとbをSide-by-sideで配置
+        # bを列ベクトルに整形
+        b_reshaped = b_dense.reshape(-1, 1)
+        combined = np.hstack([A_dense, b_reshaped])
+        
+        # システム構造（非ゼロパターン）の可視化
+        plt.imshow(combined != 0, cmap='binary', aspect='auto', interpolation='nearest')
+        
+        # Aとbの間に垂直線を追加
+        plt.axvline(x=A_dense.shape[1] - 0.5, color='red', linestyle='-', linewidth=2)
+        
+        plt.title(f"System Structure (Ax = b): {title}")
+        plt.xlabel("Column Index (with b vector)")
+        plt.ylabel("Row Index")
+        plt.colorbar(label='Non-zero Elements')
+        
+        # "b"ラベルを右辺ベクトルに追加
+        plt.text(A_dense.shape[1] + b_reshaped.shape[1]/2, -1, "b", fontsize=12, color='red',
+                ha='center', bbox=dict(facecolor='white', alpha=0.5))
+        
+        # 保存とクリーンアップ
+        filename = os.path.join(self.output_dir, f"{prefix}_system_structure.png")
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        return filename
+
+    def visualize_system_values(self, A, b, grid, title: str, prefix: str = ""):
+        """
+        システムAx = bの値を可視化
+        
+        Args:
+            A: システム行列
+            b: 右辺ベクトル
+            grid: グリッドオブジェクト
+            title: グラフタイトル
+            prefix: 出力ファイル名の接頭辞
+            
+        Returns:
+            str: 生成された画像のファイルパス
+        """
+        try:
+            plt.figure(figsize=(12, 8))
+            
+            # 行列とベクトルを密行列に変換
+            A_dense = self._to_numpy_dense(A)
+            b_dense = self._to_numpy_dense(b)
+            
+            # AとbをSide-by-sideで配置
+            # bを列ベクトルに整形
+            b_reshaped = b_dense.reshape(-1, 1)
+            combined = np.hstack([A_dense, b_reshaped])
+            
+            # 対数スケールでシステム値を可視化し、よりよいコントラストを実現
+            abs_combined = abs(combined)
+            
+            # vminを決めるために非ゼロ値を探す
+            non_zero_abs = abs_combined[abs_combined > 0]
+            
+            if len(non_zero_abs) == 0:
+                print(f"警告: {title} のシステムにゼロ以外の要素がありません。")
+                plt.close()
+                return ""
+            
+            # 最小値と最大値を計算
+            vmin = non_zero_abs.min()
+            vmax = abs_combined.max()
+            
+            # より良い可視化のために対数スケールを使用
+            norm = LogNorm(vmin=vmin, vmax=vmax)
+            plt.imshow(abs_combined, cmap='viridis', norm=norm, aspect='auto', interpolation='nearest')
+            
+            # Aとbの間に垂直線を追加
+            plt.axvline(x=A_dense.shape[1] - 0.5, color='red', linestyle='-', linewidth=2)
+            
+            plt.title(f"System Values (Ax = b, Log Scale): {title}")
+            plt.xlabel("Column Index (with b vector)")
+            plt.ylabel("Row Index")
+            plt.colorbar(label='Absolute Value (Log Scale)')
+            
+            # "b"ラベルを右辺ベクトルに追加
+            plt.text(A_dense.shape[1] + b_reshaped.shape[1]/2, -1, "b", fontsize=12, color='red',
+                    ha='center', bbox=dict(facecolor='white', alpha=0.5))
+            
+            # 保存とクリーンアップ
+            filename = os.path.join(self.output_dir, f"{prefix}_system_values.png")
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            return filename
+        
+        except Exception as e:
+            print(f"システム値の可視化中にエラーが発生しました: {e}")
+            plt.close()
+            return ""
+
 
 class MatrixAnalyzer:
     """行列システムの解析を行うクラス"""
@@ -169,7 +285,7 @@ class MatrixAnalyzer:
         print(f"  メモリ使用量(密行列): {(total_size * total_size * 8) / (1024 * 1024):.2f} MB")
         print(f"  メモリ使用量(疎行列): {(nnz * 12) / (1024 * 1024):.2f} MB")
     
-    def analyze_system(self, system: EquationSystem, name: str = "", scaling_method: Optional[str] = None) -> Dict:
+    def analyze_system(self, system: EquationSystem, name: str = "", scaling_method: Optional[str] = None, test_func=None) -> Dict:
         """
         方程式システムを分析し、行列構造を検証
         
@@ -177,27 +293,89 @@ class MatrixAnalyzer:
             system: EquationSystem のインスタンス
             name: 識別用の名前
             scaling_method: スケーリング手法の名前
+            test_func: テスト関数（オプション）
             
         Returns:
             分析結果の辞書
         """
         try:
-            # スケール付き行列システムを構築
-            if scaling_method:
-                # スケーリングプラグインを取得
-                scaler = plugin_manager.get_plugin(scaling_method)
-                # 行列システムを構築
-                A, b = system.build_matrix_system()
-                
-                # スケーリングを適用
-                A_scaled, b_scaled, _ = scaler.scale(A, b)
-            else:
-                # スケーリングなしで行列システムを構築
-                A_scaled, b_scaled = system.build_matrix_system()
+            # 行列システムを構築
+            A, b = system.build_matrix_system()
             
             # グリッド情報の取得
             grid = system.grid
             is_2d = grid.is_2d
+            
+            # 適切なソルバーのインスタンスを作成
+            if is_2d:
+                solver = CCDSolver2D(system, grid)
+            else:
+                solver = CCDSolver1D(system, grid)
+            
+            # スケーリング手法を設定
+            solver.scaling_method = scaling_method
+            
+            # テスト関数から境界値を生成
+            if test_func is not None:
+                if is_2d:
+                    nx, ny = grid.nx_points, grid.ny_points
+                    x_min, x_max = grid.x_min, grid.x_max
+                    y_min, y_max = grid.y_min, grid.y_max
+                    
+                    # fの値を計算
+                    f_values = cp.zeros((nx, ny))
+                    for i in range(nx):
+                        for j in range(ny):
+                            x, y = grid.get_point(i, j)
+                            f_values[i, j] = test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
+                    
+                    # 境界値を計算
+                    left_dirichlet = cp.array([test_func.f(x_min, y) for y in grid.y])
+                    right_dirichlet = cp.array([test_func.f(x_max, y) for y in grid.y])
+                    bottom_dirichlet = cp.array([test_func.f(x, y_min) for x in grid.x])
+                    top_dirichlet = cp.array([test_func.f(x, y_max) for x in grid.x])
+                    
+                    left_neumann = cp.array([test_func.df_dx(x_min, y) for y in grid.y])
+                    right_neumann = cp.array([test_func.df_dx(x_max, y) for y in grid.y])
+                    bottom_neumann = cp.array([test_func.df_dy(x, y_min) for x in grid.x])
+                    top_neumann = cp.array([test_func.df_dy(x, y_max) for x in grid.x])
+                    
+                    # _update_rhsメソッドを呼び出してbを更新
+                    b_updated = solver._update_rhs(
+                        b.copy(), f_values,
+                        left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
+                        left_neumann, right_neumann, bottom_neumann, top_neumann,
+                        enable_dirichlet=True, enable_neumann=True
+                    )
+                else:
+                    n = grid.n_points
+                    x_min, x_max = grid.x_min, grid.x_max
+                    
+                    # fの値を計算
+                    f_values = cp.array([test_func.d2f(x) for x in grid.x])
+                    
+                    # 境界値を計算
+                    left_dirichlet = test_func.f(x_min)
+                    right_dirichlet = test_func.f(x_max)
+                    left_neumann = test_func.df(x_min)
+                    right_neumann = test_func.df(x_max)
+                    
+                    # _update_rhsメソッドを呼び出してbを更新
+                    b_updated = solver._update_rhs(
+                        b.copy(), f_values,
+                        left_dirichlet, right_dirichlet,
+                        left_neumann, right_neumann,
+                        enable_dirichlet=True, enable_neumann=True
+                    )
+            else:
+                # テスト関数がない場合はbをそのまま使用
+                b_updated = b.copy()
+            
+            # スケーリングを適用
+            if scaling_method:
+                A_scaled, b_scaled, _, _ = solver._apply_scaling(A, b_updated)
+            else:
+                A_scaled, b_scaled = A, b_updated
             
             if is_2d:
                 nx, ny = grid.nx_points, grid.ny_points
@@ -230,6 +408,11 @@ class MatrixAnalyzer:
             title = f"{name} {'2D' if is_2d else '1D'} Matrix"
             self.visualizer.visualize_matrix_structure(A_scaled, grid, title, prefix)
             self.visualizer.visualize_matrix_values(A_scaled, grid, title, prefix)
+            
+            # システム (Ax = b) の可視化
+            system_title = f"{name} {'2D' if is_2d else '1D'} System"
+            self.visualizer.visualize_system_structure(A_scaled, b_scaled, grid, system_title, prefix)
+            self.visualizer.visualize_system_values(A_scaled, b_scaled, grid, system_title, prefix)
             
             return {
                 "size": total_size,
@@ -279,19 +462,21 @@ def verify_system(dimension: int, output_dir: str = "results"):
             
             # 方程式セットの取得と設定
             equation_set = EquationSet.create(eq_set_type, dimension=dimension)
-            equation_set.setup_equations(system, grid, test_func, use_dirichlet=True, use_neumann=True)
+            equation_set.setup_equations(system, grid, test_func)
             
             # 行列構造の分析（スケーリングなし）
             matrix_analyzer.analyze_system(
                 system, 
                 f"{eq_set_type.capitalize()}{dimension}D_{test_func.name}",
+                test_func=test_func  # テスト関数を渡す
             )
             
             # 行列構造の分析（対称スケーリング）
             matrix_analyzer.analyze_system(
                 system, 
                 f"{eq_set_type.capitalize()}{dimension}D_{test_func.name}", 
-                scaling_method="SymmetricScaling"
+                scaling_method="SymmetricScaling",
+                test_func=test_func  # テスト関数を渡す
             )
         
         except Exception as e:
