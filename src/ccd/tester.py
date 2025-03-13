@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
 import cupy as cp
 from grid import Grid
-from solver import CCDSolver1D, CCDSolver2D
-from equation_system import EquationSystem
-from equation_sets import EquationSet
+from solver import CCDSolver1D, CCDSolver2D  # 直接次元別クラスをインポート
+from equation_sets import EquationSet, DerivativeEquationSet1D, DerivativeEquationSet2D  # 追加
 
 class BaseCCDTester(ABC):
     """CCDメソッドのテストを行う抽象基底クラス"""
@@ -16,15 +15,12 @@ class BaseCCDTester(ABC):
             grid: Gridオブジェクト (1Dまたは2D)
         """
         self.grid = grid
-        self.system = None
         self.solver = None
         self.solver_method = "direct"
         self.solver_options = None
         self.scaling_method = None
         self.analyze_matrix = False
         self.equation_set = None
-        self.enable_dirichlet = True
-        self.enable_neumann = True
 
     def set_solver_options(self, method, options, analyze_matrix=False):
         """
@@ -56,44 +52,6 @@ class BaseCCDTester(ABC):
         dimension = self.get_dimension()
         self.equation_set = EquationSet.create(equation_set_name, dimension=dimension)
 
-    def setup_equation_system(self, test_func):
-        """
-        方程式システムをセットアップ
-        
-        Args:
-            test_func: テスト関数
-        """
-        # 方程式システムの作成
-        self.system = EquationSystem(self.grid)
-        
-        # 方程式セットが未設定の場合はデフォルトを使用
-        if self.equation_set is None:
-            dimension = self.get_dimension()
-            self.equation_set = EquationSet.create("poisson", dimension=dimension)
-        
-        # 方程式システム設定
-        self.enable_dirichlet, self.enable_neumann = self.equation_set.setup_equations(
-            self.system, 
-            self.grid, 
-            test_func
-        )
-
-        # 適切なソルバーを作成または更新
-        self._create_solver()
-
-        # ソルバーオプション設定
-        if self.solver_method != "direct" or self.solver_options:
-            self.solver.set_solver(method=self.solver_method, options=self.solver_options)
-        
-        # スケーリング手法設定
-        if self.scaling_method is not None:
-            self.solver.scaling_method = self.scaling_method
-            
-    @abstractmethod
-    def _create_solver(self):
-        """次元に応じた適切なソルバーを作成"""
-        pass
-            
     def run_test_with_options(self, test_func):
         """
         テスト実行
@@ -108,7 +66,21 @@ class BaseCCDTester(ABC):
         if isinstance(test_func, str):
             test_func = self.get_test_function(test_func)
         
-        self.setup_equation_system(test_func)
+        # 方程式セットが未設定の場合はデフォルトを使用
+        if self.equation_set is None:
+            dimension = self.get_dimension()
+            self.equation_set = EquationSet.create("poisson", dimension=dimension)
+
+        # 適切なソルバーを作成または更新
+        self._create_solver()
+
+        # ソルバーオプション設定
+        if self.solver_method != "direct" or self.solver_options:
+            self.solver.set_solver(method=self.solver_method, options=self.solver_options)
+        
+        # スケーリング手法設定
+        if self.scaling_method is not None:
+            self.solver.scaling_method = self.scaling_method
 
         if self.analyze_matrix:
             self.solver.analyze_system()
@@ -221,6 +193,11 @@ class BaseCCDTester(ABC):
         """
         pass
 
+    @abstractmethod
+    def _create_solver(self):
+        """次元に応じた適切なソルバーを作成"""
+        pass
+
 
 class CCDTester1D(BaseCCDTester):
     """1D CCDメソッドのテストを行うクラス"""
@@ -239,9 +216,12 @@ class CCDTester1D(BaseCCDTester):
     def _create_solver(self):
         """1D用ソルバーを作成"""
         if self.solver is None:
-            self.solver = CCDSolver1D(self.system, self.grid)
+            # 新しいインターフェースを使用: equation_set とgridを渡す
+            self.solver = CCDSolver1D(self.equation_set, self.grid)
         else:
-            self.solver.system = self.system
+            # 既存のソルバーのプロパティを更新（必要であれば）
+            if hasattr(self.solver, 'equation_set'):
+                self.solver.equation_set = self.equation_set
             
     def get_dimension(self):
         """次元を返す"""
@@ -281,8 +261,17 @@ class CCDTester1D(BaseCCDTester):
         n = self.grid.n_points
         x_min, x_max = self.grid.x_min, self.grid.x_max
         
-        # 支配方程式（ポアソン方程式）の右辺 - d2f(x)を使用
-        f_values = cp.array([test_func.d2f(xi) for xi in x])
+        # 方程式セットのタイプに応じて適切な関数値を使用
+        is_derivative_set = isinstance(self.equation_set, DerivativeEquationSet1D)
+        
+        if is_derivative_set:
+            # 導関数計算の場合は元の関数値を使用
+            print("テスト関数から直接導関数を計算します (Derivative)")
+            f_values = cp.array([test_func.f(xi) for xi in x])
+        else:
+            # ポアソン方程式の場合は2階微分値を使用
+            print("ポアソン方程式 ψ''(x) = f(x) を解きます (Poisson)")
+            f_values = cp.array([test_func.d2f(xi) for xi in x])
         
         # 境界条件の値
         left_dirichlet = test_func.f(x_min)
@@ -290,16 +279,14 @@ class CCDTester1D(BaseCCDTester):
         left_neumann = test_func.df(x_min)
         right_neumann = test_func.df(x_max)
 
-        # ソルバーで解を計算
+        # ソルバーで解を計算 - 新しいインターフェース
         psi, psi_prime, psi_second, psi_third = self.solver.solve(
             analyze_before_solve=False,
             f_values=f_values,
             left_dirichlet=left_dirichlet,
             right_dirichlet=right_dirichlet,
             left_neumann=left_neumann,
-            right_neumann=right_neumann,
-            enable_dirichlet=self.enable_dirichlet,
-            enable_neumann=self.enable_neumann
+            right_neumann=right_neumann
         )
 
         # 誤差計算
@@ -341,9 +328,12 @@ class CCDTester2D(BaseCCDTester):
     def _create_solver(self):
         """2D用ソルバーを作成"""
         if self.solver is None:
-            self.solver = CCDSolver2D(self.system, self.grid)
+            # 新しいインターフェースを使用: equation_set とgridを渡す
+            self.solver = CCDSolver2D(self.equation_set, self.grid)
         else:
-            self.solver.system = self.system
+            # 既存のソルバーのプロパティを更新（必要であれば）
+            if hasattr(self.solver, 'equation_set'):
+                self.solver.equation_set = self.equation_set
             
     def get_dimension(self):
         """次元を返す"""
@@ -410,12 +400,26 @@ class CCDTester2D(BaseCCDTester):
                 exact_psi_xxx[i, j] = test_func.d3f_dx3(x, y)
                 exact_psi_yyy[i, j] = test_func.d3f_dy3(x, y)
 
-        # 支配方程式（ポアソン方程式）の右辺 - ラプラシアン（f_xx + f_yy）を使用
+        # 方程式セットのタイプに応じて適切な関数値を使用
+        is_derivative_set = isinstance(self.equation_set, DerivativeEquationSet2D)
+
+        # 右辺の値を準備
         f_values = cp.zeros((nx, ny))
-        for i in range(nx):
-            for j in range(ny):
-                x, y = self.grid.get_point(i, j)
-                f_values[i, j] = test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
+        
+        if is_derivative_set:
+            # 導関数計算の場合は元の関数値を使用
+            print("テスト関数から直接導関数を計算します (Derivative)")
+            for i in range(nx):
+                for j in range(ny):
+                    x, y = self.grid.get_point(i, j)
+                    f_values[i, j] = test_func.f(x, y)
+        else:
+            # ポアソン方程式の場合はラプラシアン（∆ψ = f）を使用
+            print("ポアソン方程式 ∆ψ = f(x,y) を解きます (Poisson)")
+            for i in range(nx):
+                for j in range(ny):
+                    x, y = self.grid.get_point(i, j)
+                    f_values[i, j] = test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
 
         # 境界条件の値
         left_dirichlet = cp.array([test_func.f(x_min, y) for y in self.grid.y])
@@ -428,7 +432,7 @@ class CCDTester2D(BaseCCDTester):
         bottom_neumann = cp.array([test_func.df_dy(x, y_min) for x in self.grid.x])
         top_neumann = cp.array([test_func.df_dy(x, y_max) for x in self.grid.x])
 
-        # ソルバーで解を計算
+        # ソルバーで解を計算 - 新しいインターフェース
         psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy = self.solver.solve(
             analyze_before_solve=False,
             f_values=f_values,
@@ -439,9 +443,7 @@ class CCDTester2D(BaseCCDTester):
             left_neumann=left_neumann,
             right_neumann=right_neumann,
             bottom_neumann=bottom_neumann,
-            top_neumann=top_neumann,
-            enable_dirichlet=self.enable_dirichlet,
-            enable_neumann=self.enable_neumann
+            top_neumann=top_neumann
         )
 
         # 誤差を計算

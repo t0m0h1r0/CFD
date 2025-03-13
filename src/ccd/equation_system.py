@@ -24,7 +24,7 @@ class EquationSystem:
             # 境界の方程式
             self.left_boundary_equations = []    # i = 0
             self.right_boundary_equations = []   # i = nx-1
-            self.bottom_boundary_equations = []  # j = 0
+            self.bottom_boundary_equations = []  # j = A0
             self.top_boundary_equations = []     # j = ny-1
             
             # 角の方程式（より詳細な境界条件管理用）
@@ -257,6 +257,18 @@ class EquationSystem:
             raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
             
         return i == self.grid.nx_points - 1 and j == self.grid.ny_points - 1
+
+    def build_matrix_system(self):
+        """
+        行列システムを構築
+        
+        Returns:
+            システム行列
+        """
+        if self.is_2d:
+            return self._build_matrix_system_2d()
+        else:
+            return self._build_matrix_system_1d()
 
     def _build_matrix_system_1d(self):
         """1D行列システムの構築"""
@@ -496,7 +508,6 @@ class EquationSystem:
             data: 行列値のリスト
             row_indices: 行インデックスのリスト
             col_indices: 列インデックスのリスト
-            b: 右辺ベクトル
         """
         # 行インデックス
         row = base_idx + row_offset
@@ -529,7 +540,6 @@ class EquationSystem:
             data: 行列値のリスト
             row_indices: 行インデックスのリスト
             col_indices: 列インデックスのリスト
-            b: 右辺ベクトル
         """
         # 行インデックス
         row = base_idx + row_offset
@@ -548,22 +558,10 @@ class EquationSystem:
                         row_indices.append(row)
                         col_indices.append(col_base + m)
                         data.append(float(coeff))
-        
-    def build_matrix_system(self):
-        """
-        行列システムを構築
-        
-        Returns:
-            Tuple[sp.csr_matrix, cp.ndarray]: システム行列と右辺ベクトル
-        """
-        if self.is_2d:
-            return self._build_matrix_system_2d()
-        else:
-            return self._build_matrix_system_1d()
 
     def analyze_sparsity(self):
         """行列の疎性を分析"""
-        A, _ = self.build_matrix_system()
+        A = self.build_matrix_system()
         
         total_size = A.shape[0]
         nnz = A.nnz

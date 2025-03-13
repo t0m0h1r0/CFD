@@ -43,6 +43,30 @@ class EquationSet(ABC):
         """
         pass
 
+    def get_boundary_settings(self):
+        """
+        境界条件の設定を取得
+        
+        Returns:
+            Tuple[bool, bool]: ディリクレ境界条件とノイマン境界条件の有効フラグ
+        """
+        return self.enable_dirichlet, self.enable_neumann
+
+    def set_boundary_options(self, use_dirichlet=True, use_neumann=True):
+        """
+        境界条件のオプションを設定する
+        
+        Args:
+            use_dirichlet: ディリクレ境界条件を使用するかどうか
+            use_neumann: ノイマン境界条件を使用するかどうか
+            
+        Returns:
+            self: メソッドチェーン用
+        """
+        self.enable_dirichlet = use_dirichlet
+        self.enable_neumann = use_neumann
+        return self
+
     @classmethod
     def get_available_sets(cls, dimension=None):
         """
@@ -108,21 +132,6 @@ class EquationSet(ABC):
                     return available_sets["poisson"]()
             else:
                 return available_sets["poisson"]() if not isinstance(available_sets["poisson"], dict) else available_sets["poisson"][f"{dimension}d"]()
-
-    def set_boundary_options(self, use_dirichlet=True, use_neumann=True):
-        """
-        境界条件のオプションを設定する
-        
-        Args:
-            use_dirichlet: ディリクレ境界条件を使用するかどうか
-            use_neumann: ノイマン境界条件を使用するかどうか
-            
-        Returns:
-            self: メソッドチェーン用
-        """
-        self.enable_dirichlet = use_dirichlet
-        self.enable_neumann = use_neumann
-        return self
 
 
 class DimensionalEquationSetWrapper(EquationSet):
