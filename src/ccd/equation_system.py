@@ -1,8 +1,18 @@
 import cupy as cp
 import cupyx.scipy.sparse as sp
+from typing import Dict, List, Tuple, Optional, Any
+
+# 必要な方程式タイプを最初にインポート
+from equation.poisson import PoissonEquation, PoissonEquation2D
+from equation.original import OriginalEquation, OriginalEquation2D
+from equation.boundary import (
+    DirichletBoundaryEquation, NeumannBoundaryEquation,
+    DirichletXBoundaryEquation2D, DirichletYBoundaryEquation2D,
+    NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
+)
 
 class EquationSystem:
-    """1D/2D 両対応の方程式システムを管理するクラス"""
+    """1D/2D両対応の方程式システムを管理するクラス"""
 
     def __init__(self, grid):
         """
@@ -12,55 +22,47 @@ class EquationSystem:
             grid: Grid (1D/2D) オブジェクト
         """
         self.grid = grid
-        
-        # 1D or 2D mode判定
         self.is_2d = grid.is_2d
         
+        # 基本方程式コレクション（すべての次元で共通）
+        self.left_boundary_equations = []
+        self.interior_equations = []
+        self.right_boundary_equations = []
+        
+        # 2D特有の方程式コレクション
         if self.is_2d:
-            # 2D specific variables
-            # 内部点の方程式
-            self.interior_equations = []
-            
-            # 境界の方程式
-            self.left_boundary_equations = []    # i = 0
-            self.right_boundary_equations = []   # i = nx-1
-            self.bottom_boundary_equations = []  # j = A0
-            self.top_boundary_equations = []     # j = ny-1
-            
-            # 角の方程式（より詳細な境界条件管理用）
-            self.left_bottom_equations = []      # i = 0, j = 0
-            self.right_bottom_equations = []     # i = nx-1, j = 0
-            self.left_top_equations = []         # i = 0, j = ny-1
-            self.right_top_equations = []        # i = nx-1, j = ny-1
-        else:
-            # 1D specific variables
-            self.left_boundary_equations = []
-            self.interior_equations = []
-            self.right_boundary_equations = []
+            self.bottom_boundary_equations = []
+            self.top_boundary_equations = []
+            self.corner_equations = {
+                'left_bottom': [],
+                'right_bottom': [],
+                'left_top': [],
+                'right_top': []
+            }
 
     def validate_equation_system(self):
         """方程式システムの妥当性を検証"""
-        checks = []
+        required_equation_sets = [
+            (self.left_boundary_equations, "左境界方程式"),
+            (self.interior_equations, "内部方程式"),
+            (self.right_boundary_equations, "右境界方程式")
+        ]
         
-        # 1D/2Dに応じて異なるチェック
-        if not self.is_2d:
-            checks = [
-                (self.left_boundary_equations, "左境界方程式"),
-                (self.interior_equations, "内部方程式"),
-                (self.right_boundary_equations, "右境界方程式")
-            ]
-        else:
-            checks = [
-                (self.left_boundary_equations, "左境界方程式"),
-                (self.right_boundary_equations, "右境界方程式"),
+        if self.is_2d:
+            required_equation_sets.extend([
                 (self.bottom_boundary_equations, "下境界方程式"),
-                (self.top_boundary_equations, "上境界方程式"),
-                (self.interior_equations, "内部方程式")
-            ]
+                (self.top_boundary_equations, "上境界方程式")
+            ])
         
-        for equations, description in checks:
+        for equations, description in required_equation_sets:
             if not equations:
                 raise ValueError(f"{description}が設定されていません。")
+
+    def _set_grid_to_equation(self, equation):
+        """方程式にグリッドを設定（必要な場合）"""
+        if hasattr(equation, 'set_grid'):
+            equation.set_grid(self.grid)
+        return equation
 
     def add_left_boundary_equation(self, equation):
         """
@@ -69,16 +71,13 @@ class EquationSystem:
         Args:
             equation: 方程式オブジェクト
         """
-        # 方程式にグリッドを設定
-        if hasattr(equation, 'set_grid'):
-            equation.set_grid(self.grid)
-            
+        equation = self._set_grid_to_equation(equation)
         self.left_boundary_equations.append(equation)
         
         # 2Dの場合、左側の角にも同じ方程式を追加
         if self.is_2d:
-            self.left_bottom_equations.append(equation)
-            self.left_top_equations.append(equation)
+            self.corner_equations['left_bottom'].append(equation)
+            self.corner_equations['left_top'].append(equation)
 
     def add_interior_equation(self, equation):
         """
@@ -87,11 +86,7 @@ class EquationSystem:
         Args:
             equation: 方程式オブジェクト
         """
-        # 方程式にグリッドを設定
-        if hasattr(equation, 'set_grid'):
-            equation.set_grid(self.grid)
-            
-        self.interior_equations.append(equation)
+        self.interior_equations.append(self._set_grid_to_equation(equation))
 
     def add_right_boundary_equation(self, equation):
         """
@@ -100,16 +95,13 @@ class EquationSystem:
         Args:
             equation: 方程式オブジェクト
         """
-        # 方程式にグリッドを設定
-        if hasattr(equation, 'set_grid'):
-            equation.set_grid(self.grid)
-            
+        equation = self._set_grid_to_equation(equation)
         self.right_boundary_equations.append(equation)
         
         # 2Dの場合、右側の角にも同じ方程式を追加
         if self.is_2d:
-            self.right_bottom_equations.append(equation)
-            self.right_top_equations.append(equation)
+            self.corner_equations['right_bottom'].append(equation)
+            self.corner_equations['right_top'].append(equation)
 
     def add_equation(self, equation):
         """
@@ -118,10 +110,9 @@ class EquationSystem:
         Args:
             equation: 方程式オブジェクト
         """
-        # 方程式にグリッドを設定
-        if hasattr(equation, 'set_grid'):
-            equation.set_grid(self.grid)
-            
+        equation = self._set_grid_to_equation(equation)
+        
+        # 基本境界に追加
         self.left_boundary_equations.append(equation)
         self.interior_equations.append(equation)
         self.right_boundary_equations.append(equation)
@@ -130,21 +121,17 @@ class EquationSystem:
         if self.is_2d:
             self.bottom_boundary_equations.append(equation)
             self.top_boundary_equations.append(equation)
-            self.left_bottom_equations.append(equation)
-            self.right_bottom_equations.append(equation)
-            self.left_top_equations.append(equation)
-            self.right_top_equations.append(equation)
+            
+            for corner in self.corner_equations.values():
+                corner.append(equation)
 
     # 2D固有のメソッド群
     def add_interior_x_equation(self, equation):
         """内部点のx方向の方程式を追加 (2D only)"""
         if not self.is_2d:
             raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
-        # 方程式にグリッドを設定
-        if hasattr(equation, 'set_grid'):
-            equation.set_grid(self.grid)
-            
+        
+        equation = self._set_grid_to_equation(equation)
         self.interior_equations.append(equation)
         self.bottom_boundary_equations.append(equation)
         self.top_boundary_equations.append(equation)
@@ -153,11 +140,8 @@ class EquationSystem:
         """内部点のy方向の方程式を追加 (2D only)"""
         if not self.is_2d:
             raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
-        # 方程式にグリッドを設定
-        if hasattr(equation, 'set_grid'):
-            equation.set_grid(self.grid)
-            
+        
+        equation = self._set_grid_to_equation(equation)
         self.interior_equations.append(equation)
         self.left_boundary_equations.append(equation)
         self.right_boundary_equations.append(equation)
@@ -166,31 +150,23 @@ class EquationSystem:
         """下境界の方程式を追加 (j=0) (2D only)"""
         if not self.is_2d:
             raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
-        # 方程式にグリッドを設定
-        if hasattr(equation, 'set_grid'):
-            equation.set_grid(self.grid)
-            
+        
+        equation = self._set_grid_to_equation(equation)
         self.bottom_boundary_equations.append(equation)
-        # 下側の角にも同じ方程式を追加
-        self.left_bottom_equations.append(equation)
-        self.right_bottom_equations.append(equation)
+        self.corner_equations['left_bottom'].append(equation)
+        self.corner_equations['right_bottom'].append(equation)
     
     def add_top_boundary_equation(self, equation):
         """上境界の方程式を追加 (j=ny-1) (2D only)"""
         if not self.is_2d:
             raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
-        # 方程式にグリッドを設定
-        if hasattr(equation, 'set_grid'):
-            equation.set_grid(self.grid)
-            
+        
+        equation = self._set_grid_to_equation(equation)
         self.top_boundary_equations.append(equation)
-        # 上側の角にも同じ方程式を追加
-        self.left_top_equations.append(equation)
-        self.right_top_equations.append(equation)
+        self.corner_equations['left_top'].append(equation)
+        self.corner_equations['right_top'].append(equation)
 
-    # 位置判定メソッド（1D/2D両対応）
+    # グリッド点の位置判定メソッド
     def is_boundary_point(self, i, j=None):
         """境界点かどうかを判定"""
         return self.grid.is_boundary_point(i, j)
@@ -200,63 +176,57 @@ class EquationSystem:
         return self.grid.is_interior_point(i, j)
 
     # 2D用の位置判定メソッド
-    def is_left_boundary(self, i, j=None):
-        """左境界かどうかを判定（角を除く）(2D only)"""
+    def _check_2d_grid(self):
+        """2Dグリッドチェック用ヘルパーメソッド"""
         if not self.is_2d:
             raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
+
+    def is_left_boundary(self, i, j):
+        """左境界かどうかを判定（角を除く）(2D only)"""
+        self._check_2d_grid()
         return i == 0 and 0 < j < self.grid.ny_points - 1
     
-    def is_right_boundary(self, i, j=None):
+    def is_right_boundary(self, i, j):
         """右境界かどうかを判定（角を除く）(2D only)"""
-        if not self.is_2d:
-            raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
-        nx = self.grid.nx_points
-        return i == nx - 1 and 0 < j < self.grid.ny_points - 1
+        self._check_2d_grid()
+        return i == self.grid.nx_points - 1 and 0 < j < self.grid.ny_points - 1
     
-    def is_bottom_boundary(self, i, j=None):
+    def is_bottom_boundary(self, i, j):
         """下境界かどうかを判定（角を除く）(2D only)"""
-        if not self.is_2d:
-            raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
+        self._check_2d_grid()
         return j == 0 and 0 < i < self.grid.nx_points - 1
     
-    def is_top_boundary(self, i, j=None):
+    def is_top_boundary(self, i, j):
         """上境界かどうかを判定（角を除く）(2D only)"""
-        if not self.is_2d:
-            raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
-        ny = self.grid.ny_points
-        return j == ny - 1 and 0 < i < self.grid.nx_points - 1
+        self._check_2d_grid()
+        return j == self.grid.ny_points - 1 and 0 < i < self.grid.nx_points - 1
     
-    def is_left_bottom_corner(self, i, j=None):
-        """左下の角かどうかを判定 (2D only)"""
-        if not self.is_2d:
-            raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
+    def is_corner_point(self, i, j, corner_type):
+        """
+        指定された角かどうかを判定 (2D only)
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            corner_type: 角のタイプ ('left_bottom', 'right_bottom', 'left_top', 'right_top')
             
-        return i == 0 and j == 0
-    
-    def is_right_bottom_corner(self, i, j=None):
-        """右下の角かどうかを判定 (2D only)"""
-        if not self.is_2d:
-            raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
-        return i == self.grid.nx_points - 1 and j == 0
-    
-    def is_left_top_corner(self, i, j=None):
-        """左上の角かどうかを判定 (2D only)"""
-        if not self.is_2d:
-            raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
-        return i == 0 and j == self.grid.ny_points - 1
-    
-    def is_right_top_corner(self, i, j=None):
-        """右上の角かどうかを判定 (2D only)"""
-        if not self.is_2d:
-            raise ValueError("2D専用のメソッドが1Dグリッドで呼び出されました")
-            
-        return i == self.grid.nx_points - 1 and j == self.grid.ny_points - 1
+        Returns:
+            bool: 指定された角かどうか
+        """
+        self._check_2d_grid()
+        
+        nx, ny = self.grid.nx_points, self.grid.ny_points
+        
+        if corner_type == 'left_bottom':
+            return i == 0 and j == 0
+        elif corner_type == 'right_bottom':
+            return i == nx - 1 and j == 0
+        elif corner_type == 'left_top':
+            return i == 0 and j == ny - 1
+        elif corner_type == 'right_top':
+            return i == nx - 1 and j == ny - 1
+        
+        return False
 
     def build_matrix_system(self):
         """
@@ -265,20 +235,49 @@ class EquationSystem:
         Returns:
             システム行列
         """
+        return self._build_matrix_system_2d() if self.is_2d else self._build_matrix_system_1d()
+
+    def _classify_equation(self, equation, i, j=None):
+        """
+        方程式をタイプごとに分類するヘルパーメソッド
+        
+        Args:
+            equation: 検査する方程式
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス (2Dのみ)
+            
+        Returns:
+            str: 方程式タイプを表す文字列
+        """
+        if not equation.is_valid_at(i, j) if self.is_2d else not equation.is_valid_at(i):
+            return None
+            
+        # 1D/2D共通の方程式タイプ
+        if isinstance(equation, (PoissonEquation, PoissonEquation2D)):
+            return "governing"
+        elif isinstance(equation, (OriginalEquation, OriginalEquation2D)):
+            return "governing"
+        elif isinstance(equation, DirichletBoundaryEquation):
+            return "dirichlet"
+        elif isinstance(equation, NeumannBoundaryEquation):
+            return "neumann"
+        
+        # 2D固有の方程式タイプ
         if self.is_2d:
-            return self._build_matrix_system_2d()
-        else:
-            return self._build_matrix_system_1d()
+            if isinstance(equation, DirichletXBoundaryEquation2D):
+                return "dirichlet_x"
+            elif isinstance(equation, NeumannXBoundaryEquation2D):
+                return "neumann_x"
+            elif isinstance(equation, DirichletYBoundaryEquation2D):
+                return "dirichlet_y"
+            elif isinstance(equation, NeumannYBoundaryEquation2D):
+                return "neumann_y"
+        
+        # その他の方程式は補助方程式として扱う
+        return "auxiliary"
 
     def _build_matrix_system_1d(self):
         """1D行列システムの構築"""
-        # 境界条件のタイプを判別するために必要なクラスをインポート
-        from equation.poisson import PoissonEquation
-        from equation.original import OriginalEquation
-        from equation.boundary import (
-            DirichletBoundaryEquation, NeumannBoundaryEquation
-        )
-        
         # システムの妥当性を検証
         self.validate_equation_system()
         
@@ -301,61 +300,61 @@ class EquationSystem:
             else:
                 applicable_equations = self.interior_equations
             
-            # 各タイプの方程式を格納するリスト
-            governing_eq = None  # 支配方程式
-            dirichlet_eq = None  # Dirichlet境界条件
-            neumann_eq = None    # Neumann境界条件
-            aux_equations = []   # 補助方程式
+            # 方程式をタイプ別に分類
+            categorized_eqs = {
+                "governing": None,
+                "dirichlet": None,
+                "neumann": None,
+                "auxiliary": []
+            }
             
-            # 方程式をタイプごとに分類
+            # 各方程式をタイプ別に分類
             for eq in applicable_equations:
-                if eq.is_valid_at(i=i):
-                    if isinstance(eq, PoissonEquation):
-                        governing_eq = eq
-                    elif isinstance(eq, OriginalEquation):
-                        governing_eq = eq
-                    elif isinstance(eq, DirichletBoundaryEquation):
-                        dirichlet_eq = eq
-                    elif isinstance(eq, NeumannBoundaryEquation):
-                        neumann_eq = eq
-                    else:
-                        aux_equations.append(eq)
+                eq_type = self._classify_equation(eq, i)
+                if eq_type == "auxiliary":
+                    categorized_eqs["auxiliary"].append(eq)
+                elif eq_type:  # Noneでない場合
+                    categorized_eqs[eq_type] = eq
             
-            # 方程式が見つからない場合は例外
-            if not governing_eq:
+            # 方程式が不足している場合の検証
+            if not categorized_eqs["governing"]:
                 raise ValueError(f"点 {i} に支配方程式が見つかりません。方程式システムを確認してください。")
             
-            # 1: ψ' の方程式
-            if not dirichlet_eq and not aux_equations:
+            if not categorized_eqs["dirichlet"] and not categorized_eqs["auxiliary"]:
                 raise ValueError(f"点 {i} にψ'の方程式が見つかりません。")
             
-            # 2: ψ'' の方程式
-            if not neumann_eq and not aux_equations:
+            if not categorized_eqs["neumann"] and not categorized_eqs["auxiliary"]:
                 raise ValueError(f"点 {i} にψ''の方程式が見つかりません。")
             
-            # 3: ψ''' の方程式
-            if not aux_equations:
+            if not categorized_eqs["auxiliary"]:
                 raise ValueError(f"点 {i} にψ'''の方程式が見つかりません。")
             
             # 1D用に方程式を特定の順序で配置
             # 0: ψ - 常に支配方程式
-            self._add_equation_to_matrix_1d(governing_eq, i, base_idx, 0, data, row_indices, col_indices)
+            self._add_equation_to_matrix_1d(
+                categorized_eqs["governing"], i, base_idx, 0, 
+                data, row_indices, col_indices
+            )
             
             # 1: ψ' - ディリクレ境界または補助方程式
-            if dirichlet_eq:
-                self._add_equation_to_matrix_1d(dirichlet_eq, i, base_idx, 1, data, row_indices, col_indices)
-            else:
-                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 1, data, row_indices, col_indices)
+            eq = categorized_eqs["dirichlet"] if categorized_eqs["dirichlet"] else categorized_eqs["auxiliary"].pop(0)
+            self._add_equation_to_matrix_1d(
+                eq, i, base_idx, 1, data, row_indices, col_indices
+            )
             
             # 2: ψ'' - ノイマン境界または補助方程式
-            if neumann_eq:
-                self._add_equation_to_matrix_1d(neumann_eq, i, base_idx, 2, data, row_indices, col_indices)
-            else:
-                self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 2, data, row_indices, col_indices)
+            eq = categorized_eqs["neumann"] if categorized_eqs["neumann"] else categorized_eqs["auxiliary"].pop(0)
+            self._add_equation_to_matrix_1d(
+                eq, i, base_idx, 2, data, row_indices, col_indices
+            )
             
             # 3: ψ''' - 補助方程式
-            self._add_equation_to_matrix_1d(aux_equations.pop(0), i, base_idx, 3, data, row_indices, col_indices)
+            self._add_equation_to_matrix_1d(
+                categorized_eqs["auxiliary"].pop(0), i, base_idx, 3, 
+                data, row_indices, col_indices
+            )
 
+        # 疎行列を構築
         A = sp.csr_matrix(
             (cp.array(data), (cp.array(row_indices), cp.array(col_indices))), 
             shape=(size, size)
@@ -365,14 +364,6 @@ class EquationSystem:
 
     def _build_matrix_system_2d(self):
         """2D行列システムの構築"""
-        # 境界条件のタイプを判別するために必要なクラスをインポート
-        from equation.poisson import PoissonEquation2D
-        from equation.original import OriginalEquation2D
-        from equation.boundary import (
-            DirichletXBoundaryEquation2D, DirichletYBoundaryEquation2D,
-            NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
-        )
-        
         # システムの妥当性を検証
         self.validate_equation_system()
         
@@ -392,101 +383,73 @@ class EquationSystem:
                 # グリッド点の基本インデックス
                 base_idx = (j * nx + i) * n_unknowns_per_point
                 
-                # この点で適用する方程式リスト
-                applicable_equations = []
+                # この点の位置タイプに基づいて適用する方程式を決定
+                applicable_equations = self._get_applicable_equations_2d(i, j)
                 
-                # 点のタイプに基づいて適用する方程式を決定
-                if self.is_interior_point(i, j):
-                    # 内部点
-                    applicable_equations = self.interior_equations
-                elif self.is_left_bottom_corner(i, j):
-                    # 左下の角
-                    applicable_equations = self.left_bottom_equations
-                elif self.is_right_bottom_corner(i, j):
-                    # 右下の角
-                    applicable_equations = self.right_bottom_equations
-                elif self.is_left_top_corner(i, j):
-                    # 左上の角
-                    applicable_equations = self.left_top_equations
-                elif self.is_right_top_corner(i, j):
-                    # 右上の角
-                    applicable_equations = self.right_top_equations
-                elif self.is_left_boundary(i, j):
-                    # 左境界（角を除く）
-                    applicable_equations = self.left_boundary_equations
-                elif self.is_right_boundary(i, j):
-                    # 右境界（角を除く）
-                    applicable_equations = self.right_boundary_equations
-                elif self.is_bottom_boundary(i, j):
-                    # 下境界（角を除く）
-                    applicable_equations = self.bottom_boundary_equations
-                elif self.is_top_boundary(i, j):
-                    # 上境界（角を除く）
-                    applicable_equations = self.top_boundary_equations
+                # 方程式をタイプ別に分類
+                categorized_eqs = {
+                    "governing": None,
+                    "dirichlet_x": None,
+                    "neumann_x": None,
+                    "dirichlet_y": None,
+                    "neumann_y": None,
+                    "auxiliary": []
+                }
                 
-                # 各タイプの方程式を格納するリスト
-                governing_eq = None  # 支配方程式
-                dirichlet_x_eq = None  # Dirichlet X
-                neumann_x_eq = None  # Neumann X
-                dirichlet_y_eq = None  # Dirichlet Y
-                neumann_y_eq = None  # Neumann Y
-                aux_equations = []  # 補助方程式
-                
-                # 方程式をタイプごとに分類
+                # 各方程式をタイプ別に分類
                 for eq in applicable_equations:
-                    if eq.is_valid_at(i=i, j=j):
-                        if isinstance(eq, PoissonEquation2D):
-                            governing_eq = eq
-                        elif isinstance(eq, OriginalEquation2D):
-                            governing_eq = eq
-                        elif isinstance(eq, DirichletXBoundaryEquation2D):
-                            dirichlet_x_eq = eq
-                        elif isinstance(eq, NeumannXBoundaryEquation2D):
-                            neumann_x_eq = eq
-                        elif isinstance(eq, DirichletYBoundaryEquation2D):
-                            dirichlet_y_eq = eq
-                        elif isinstance(eq, NeumannYBoundaryEquation2D):
-                            neumann_y_eq = eq
-                        else:
-                            aux_equations.append(eq)
+                    eq_type = self._classify_equation(eq, i, j)
+                    if eq_type == "auxiliary":
+                        categorized_eqs["auxiliary"].append(eq)
+                    elif eq_type:  # Noneでない場合
+                        categorized_eqs[eq_type] = eq
                 
                 # 方程式が見つからない場合は例外
-                if not governing_eq:
+                if not categorized_eqs.get("governing"):
                     raise ValueError(f"点 ({i}, {j}) に支配方程式が見つかりません。方程式システムを確認してください。")
                 
-                # 各位置に方程式を配置
+                # 各変数に対応する方程式を配置
                 # 0: ψ - 常に支配方程式
-                self._add_equation_to_matrix_2d(governing_eq, i, j, base_idx, 0, data, row_indices, col_indices)
+                self._add_equation_to_matrix_2d(
+                    categorized_eqs["governing"], i, j, base_idx, 0, 
+                    data, row_indices, col_indices
+                )
                 
                 # 1: ψ_x - x方向のディリクレ境界または補助方程式
-                if dirichlet_x_eq:
-                    self._add_equation_to_matrix_2d(dirichlet_x_eq, i, j, base_idx, 1, data, row_indices, col_indices)
-                else:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 1, data, row_indices, col_indices)
+                eq = categorized_eqs.get("dirichlet_x") or categorized_eqs["auxiliary"].pop(0)
+                self._add_equation_to_matrix_2d(
+                    eq, i, j, base_idx, 1, data, row_indices, col_indices
+                )
                 
                 # 2: ψ_xx - x方向のノイマン境界または補助方程式
-                if neumann_x_eq:
-                    self._add_equation_to_matrix_2d(neumann_x_eq, i, j, base_idx, 2, data, row_indices, col_indices)
-                else:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 2, data, row_indices, col_indices)
+                eq = categorized_eqs.get("neumann_x") or categorized_eqs["auxiliary"].pop(0)
+                self._add_equation_to_matrix_2d(
+                    eq, i, j, base_idx, 2, data, row_indices, col_indices
+                )
                 
                 # 3: ψ_xxx - 補助方程式
-                self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 3, data, row_indices, col_indices)
+                self._add_equation_to_matrix_2d(
+                    categorized_eqs["auxiliary"].pop(0), i, j, base_idx, 3, 
+                    data, row_indices, col_indices
+                )
                 
                 # 4: ψ_y - y方向のディリクレ境界または補助方程式
-                if dirichlet_y_eq:
-                    self._add_equation_to_matrix_2d(dirichlet_y_eq, i, j, base_idx, 4, data, row_indices, col_indices)
-                else:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 4, data, row_indices, col_indices)
+                eq = categorized_eqs.get("dirichlet_y") or categorized_eqs["auxiliary"].pop(0)
+                self._add_equation_to_matrix_2d(
+                    eq, i, j, base_idx, 4, data, row_indices, col_indices
+                )
                 
                 # 5: ψ_yy - y方向のノイマン境界または補助方程式
-                if neumann_y_eq:
-                    self._add_equation_to_matrix_2d(neumann_y_eq, i, j, base_idx, 5, data, row_indices, col_indices)
-                else:
-                    self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 5, data, row_indices, col_indices)
+                eq = categorized_eqs.get("neumann_y") or categorized_eqs["auxiliary"].pop(0)
+                self._add_equation_to_matrix_2d(
+                    eq, i, j, base_idx, 5, data, row_indices, col_indices
+                )
                 
                 # 6: ψ_yyy - 補助方程式
-                self._add_equation_to_matrix_2d(aux_equations.pop(0), i, j, base_idx, 6, data, row_indices, col_indices)
+                self._add_equation_to_matrix_2d(
+                    categorized_eqs["auxiliary"].pop(0), i, j, base_idx, 6, 
+                    data, row_indices, col_indices
+                )
         
         # 疎行列を作成
         A = sp.csr_matrix(
@@ -495,6 +458,39 @@ class EquationSystem:
         )
         
         return A
+        
+    def _get_applicable_equations_2d(self, i, j):
+        """
+        2Dグリッド点の位置に基づいて適用する方程式リストを取得
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            
+        Returns:
+            list: 適用可能な方程式のリスト
+        """
+        # 内部点
+        if self.is_interior_point(i, j):
+            return self.interior_equations
+        
+        # 角点
+        for corner_type, equations in self.corner_equations.items():
+            if self.is_corner_point(i, j, corner_type):
+                return equations
+        
+        # 境界点（角を除く）
+        if self.is_left_boundary(i, j):
+            return self.left_boundary_equations
+        elif self.is_right_boundary(i, j):
+            return self.right_boundary_equations
+        elif self.is_bottom_boundary(i, j):
+            return self.bottom_boundary_equations
+        elif self.is_top_boundary(i, j):
+            return self.top_boundary_equations
+            
+        # 該当しない場合は空リストを返す（通常はここに到達しない）
+        return []
 
     def _add_equation_to_matrix_1d(self, eq, i, base_idx, row_offset, data, row_indices, col_indices):
         """
@@ -548,10 +544,10 @@ class EquationSystem:
         stencil_coeffs = eq.get_stencil_coefficients(i=i, j=j)
         
         # 行列に係数を追加
-        nx = self.grid.nx_points
+        nx, ny = self.grid.nx_points, self.grid.ny_points
         for (di, dj), coeffs in stencil_coeffs.items():
             ni, nj = i + di, j + dj
-            if 0 <= ni < nx and 0 <= nj < self.grid.ny_points:
+            if 0 <= ni < nx and 0 <= nj < ny:
                 col_base = (nj * nx + ni) * 7
                 for m, coeff in enumerate(coeffs):
                     if coeff != 0.0:
@@ -560,7 +556,12 @@ class EquationSystem:
                         data.append(float(coeff))
 
     def analyze_sparsity(self):
-        """行列の疎性を分析"""
+        """
+        行列の疎性を分析
+        
+        Returns:
+            Dict: 疎性分析結果の辞書
+        """
         A = self.build_matrix_system()
         
         total_size = A.shape[0]
@@ -571,12 +572,10 @@ class EquationSystem:
         memory_dense_MB = (total_size * total_size * 8) / (1024 * 1024)  # 8 bytes per double
         memory_sparse_MB = (nnz * 12) / (1024 * 1024)  # 8 bytes for value + 4 bytes for indices
         
-        results = {
+        return {
             "matrix_size": total_size,
             "non_zeros": nnz,
             "sparsity": sparsity,
             "memory_dense_MB": memory_dense_MB,
             "memory_sparse_MB": memory_sparse_MB
         }
-        
-        return results
