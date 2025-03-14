@@ -364,20 +364,20 @@ class PoissonEquationSet2D(EquationSet):
         
         # 左右境界の補助方程式
         # 左境界の補助方程式
-        left_combined = converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid)
+        left_combined = converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid)
         system.add_left_boundary_equation(left_combined)
                 
         # 右境界の補助方程式
-        right_combined = converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid)
+        right_combined = converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid)
         system.add_right_boundary_equation(right_combined)
                 
         # 上下境界の補助方程式
         # 下境界の補助方程式
-        bottom_combined = converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid)
+        bottom_combined = converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid)
         system.add_bottom_boundary_equation(bottom_combined)
                 
         # 上境界の補助方程式
-        top_combined = converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid)
+        top_combined = converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid)
         system.add_top_boundary_equation(top_combined)
         
         return self.enable_dirichlet, self.enable_neumann
