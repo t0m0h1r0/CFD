@@ -26,11 +26,13 @@ def parse_args():
     parser.add_argument("--yrange", type=float, nargs=2, default=[-1.0, 1.0], help="y方向の範囲 (2Dのみ)")
     
     # ソルバー設定
-    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs'], 
+    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'minres', 'lsmr'], 
                       default='direct', help="ソルバー手法")
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法")
     parser.add_argument("--analyze", action="store_true", help="行列を分析する")
     parser.add_argument("--monitor", action="store_true", help="収束過程をモニタリングする")
+    parser.add_argument("--maxiter", type=int, default=1000, help="反復解法の最大反復回数")
+    parser.add_argument("--tol", type=float, default=1e-10, help="反復解法の収束許容誤差")
     
     # テストモード
     parser.add_argument("--list", action="store_true", help="利用可能な関数一覧を表示")
@@ -53,8 +55,8 @@ def create_tester(args):
     
     # テスター設定
     solver_options = {
-        "tol": 1e-10, 
-        "maxiter": 1000,
+        "tol": args.tol, 
+        "maxiter": args.maxiter,
         "monitor_convergence": args.monitor,
         "output_dir": args.out,
         "prefix": args.prefix
@@ -145,8 +147,12 @@ def test_all_functions(args):
                 result["exact"], result["errors"], prefix=args.prefix
             )
     
-    # 全関数比較
-    visualizer.compare_all_functions_errors(results, grid_size=args.nx, prefix=args.prefix)
+    # 全関数の誤差比較グラフ
+    if args.dim == 1:
+        visualizer.compare_all_functions_errors(results, prefix=args.prefix)
+    else:
+        visualizer.compare_all_functions_errors(results, grid_size=args.nx, prefix=args.prefix)
+
 
 def run_single_test(args):
     """単一関数テスト実行"""
@@ -154,12 +160,17 @@ def run_single_test(args):
     test_func = tester.get_test_function(args.func)
     
     print(f"\n{test_func.name}関数でテスト実行中...")
+    if args.solver != 'direct':
+        print(f"最大反復回数: {args.maxiter}  収束許容誤差: {args.tol}")
+    
     start_time = time.time()
     result = tester.run_test_with_options(test_func)
     elapsed = time.time() - start_time
     
     # 結果表示
     print(f"\n実行時間: {elapsed:.4f}秒")
+    if args.solver != 'direct' and hasattr(tester.solver, 'last_iterations'):
+        print(f"反復回数: {tester.solver.last_iterations}")
     
     # 可視化
     if args.dim == 1:
