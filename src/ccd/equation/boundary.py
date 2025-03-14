@@ -117,7 +117,7 @@ class DirichletXBoundaryEquation2D(Equation2D):
         Returns:
             ステンシル係数の辞書
         """
-        coeffs = {(0, 0): cp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])}
+        coeffs = {(0, 0): cp.array([1, 0, 0, 0, 0, 0, 0])}
         return coeffs
         
     def is_valid_at(self, i=None, j=None):
@@ -165,7 +165,7 @@ class DirichletYBoundaryEquation2D(Equation2D):
         Returns:
             ステンシル係数の辞書
         """
-        coeffs = {(0, 0): cp.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])}
+        coeffs = {(0, 0): cp.array([1, 0, 0, 0, 0, 0, 0])}
         return coeffs
         
     def is_valid_at(self, i=None, j=None):
@@ -212,7 +212,7 @@ class NeumannXBoundaryEquation2D(Equation2D):
         Returns:
             ステンシル係数の辞書
         """
-        coeffs = {(0, 0): cp.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])}
+        coeffs = {(0, 0): cp.array([0, 1, 0, 0, 0, 0, 0])}
         return coeffs
         
     def is_valid_at(self, i=None, j=None):
@@ -260,7 +260,7 @@ class NeumannYBoundaryEquation2D(Equation2D):
         Returns:
             ステンシル係数の辞書
         """
-        coeffs = {(0, 0): cp.array([0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])}
+        coeffs = {(0, 0): cp.array([0, 0, 0, 0, 1, 0, 0])}
         return coeffs
         
     def is_valid_at(self, i=None, j=None):
