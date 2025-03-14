@@ -17,6 +17,7 @@ from equation_system import EquationSystem
 from test_functions import TestFunctionFactory
 from equation_sets import EquationSet
 from solver import CCDSolver1D, CCDSolver2D
+from scaling import plugin_manager
 
 
 def visualize_system(A: Any, b: Any, x: Any, 
@@ -50,8 +51,10 @@ def visualize_system(A: Any, b: Any, x: Any,
     # A、x、bを結合
     if x_np is not None:
         combined = np.hstack([A_np, x_np, b_np])
+        column_labels = ["A"] * A_np.shape[1] + ["x"] + ["b"]
     else:
         combined = np.hstack([A_np, b_np])
+        column_labels = ["A"] * A_np.shape[1] + ["b"]
     
     # 可視化用の設定
     abs_combined = np.abs(combined)
@@ -63,7 +66,7 @@ def visualize_system(A: Any, b: Any, x: Any,
     
     # 対数スケールで表示
     plt.figure(figsize=(12, 8))
-    plt.imshow(
+    im = plt.imshow(
         abs_combined, 
         norm=LogNorm(vmin=non_zero.min(), vmax=abs_combined.max()),
         cmap='viridis', 
@@ -74,7 +77,7 @@ def visualize_system(A: Any, b: Any, x: Any,
     plt.title(f"System Values (Ax = b): {title}")
     plt.xlabel("Column Index")
     plt.ylabel("Row Index")
-    plt.colorbar(label='Absolute Value (Log Scale)')
+    plt.colorbar(im, label='Absolute Value (Log Scale)')
     
     # 保存して後片付け
     plt.tight_layout()
@@ -179,51 +182,77 @@ def analyze_system(equation_set: EquationSet, grid: Grid, name: str,
         scaling_method: スケーリング手法
         output_dir: 出力ディレクトリ
     """
-    # ソルバーのセットアップ
-    solver, A = setup_solver(equation_set, grid, scaling_method)
-    
-    # 右辺ベクトル構築
-    b = build_rhs_vector(solver, grid, test_func)
-    
-    # スケーリング適用
-    if scaling_method:
-        A_scaled, b_scaled, scaling_info, scaler = solver._apply_scaling(A, b)
-    else:
-        A_scaled, b_scaled = A, b
-        scaling_info, scaler = None, None
-    
-    # 解ベクトル計算
     try:
-        x = solver._solve_linear_system(A_scaled, b_scaled)
-        if scaling_info is not None and scaler is not None:
-            x = scaler.unscale(x, scaling_info)
-    except Exception as e:
-        print(f"線形方程式系の解法でエラーが発生しました: {e}")
+        # ソルバーのセットアップ
+        solver, A = setup_solver(equation_set, grid, scaling_method)
+        
+        # 右辺ベクトル構築
+        b = build_rhs_vector(solver, grid, test_func)
+        
+        # システム分析
+        total_size = A.shape[0]
+        nnz = A.nnz if hasattr(A, 'nnz') else np.count_nonzero(A)
+        sparsity = 1.0 - (nnz / (total_size * total_size))
+        
+        grid_info = f"{grid.nx_points}x{grid.ny_points}" if grid.is_2d else f"{grid.n_points}"
+        
+        print(f"\n{name} 行列分析:")
+        print(f"  グリッド: {grid_info}")
+        print(f"  行列サイズ: {total_size}, 非ゼロ要素: {nnz}, 疎性率: {sparsity:.6f}")
+        
+        # Ax=bを解いてxを計算
+        print("  線形方程式を解いています...")
         x = None
-    
-    # 統計情報計算と表示
-    total_size = A_scaled.shape[0]
-    nnz = A_scaled.nnz if hasattr(A_scaled, 'nnz') else np.count_nonzero(solver._solve_linear_system)
-    sparsity = 1.0 - (nnz / (total_size * total_size))
-    
-    grid_info = f"{grid.nx_points}x{grid.ny_points}" if grid.is_2d else f"{grid.n_points}"
-    
-    print(f"\n{name} 行列分析:")
-    print(f"  グリッド: {grid_info}")
-    print(f"  行列サイズ: {total_size}, 非ゼロ要素: {nnz}, 疎性率: {sparsity:.6f}")
-    if scaling_method:
-        print(f"  スケーリング: {scaling_method}")
-    
-    # 可視化用ファイル名
-    prefix = f"{name.lower()}_{grid_info}"
-    if scaling_method:
-        prefix += f"_{scaling_method.lower()}"
-    
-    # システム可視化
-    dimension = "2D" if grid.is_2d else "1D"
-    title = f"{name} {dimension} System"
-    output_path = os.path.join(output_dir, f"{prefix}_system_values.png")
-    visualize_system(A_scaled, b_scaled, x, title, output_path)
+        
+        # スケーリングが適用されている場合
+        A_vis = A
+        b_vis = b
+        
+        if scaling_method is not None:
+            print(f"  スケーリング: {scaling_method}")
+            
+            # スケーリングを試みる
+            try:
+                scaler = plugin_manager.get_plugin(scaling_method)
+                if scaler:
+                    A_vis, b_vis, scaling_info = scaler.scale(A, b)
+                    
+                    # 線形方程式を解く
+                    try:
+                        x_vis = solver.linear_solver.solve(A_vis, b_vis)
+                        # スケーリングを元に戻す
+                        x = scaler.unscale(x_vis, scaling_info)
+                    except Exception as e:
+                        print(f"  線形方程式の解法に失敗しました: {e}")
+            except Exception as e:
+                print(f"  スケーリングの適用に失敗しました: {e}")
+        else:
+            # スケーリングなしで解く
+            try:
+                x = solver.linear_solver.solve(A, b)
+            except Exception as e:
+                print(f"  線形方程式の解法に失敗しました: {e}")
+        
+        if x is not None:
+            print("  線形方程式の解を計算しました")
+        
+        # 可視化用ファイル名
+        prefix = f"{name.lower()}_{grid_info}"
+        if scaling_method:
+            prefix += f"_{scaling_method.lower()}"
+        
+        # システム可視化
+        dimension = "2D" if grid.is_2d else "1D"
+        title = f"{name} {dimension} System"
+        output_path = os.path.join(output_dir, f"{prefix}_system_values.png")
+        
+        # 可視化（これでA, x, bが表示される）
+        visualize_system(A_vis, b_vis, x, title, output_path)
+        
+    except Exception as e:
+        print(f"行列分析でエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def run_verification(dimension: int, output_dir: str = "results") -> None:
@@ -245,7 +274,7 @@ def run_verification(dimension: int, output_dir: str = "results") -> None:
                 grid = Grid(16, x_range=(-1.0, 1.0))
                 test_func = TestFunctionFactory.create_standard_1d_functions()[3]  # Sine
             else:
-                grid = Grid(3, 3, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
+                grid = Grid(5, 5, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
                 test_func = TestFunctionFactory.create_standard_2d_functions()[0]  # Sine2D
             
             # 方程式セット作成
@@ -272,7 +301,8 @@ def run_verification(dimension: int, output_dir: str = "results") -> None:
             
         except Exception as e:
             print(f"{dimension}D {eq_type} 検証でエラーが発生しました: {e}")
-            raise
+            import traceback
+            traceback.print_exc()
 
 
 def main(output_dir: str = "results") -> None:
