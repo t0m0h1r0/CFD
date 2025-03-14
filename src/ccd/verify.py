@@ -8,199 +8,51 @@ from typing import Dict, Optional
 
 # CCD関連コンポーネント
 from grid import Grid
+from equation_system import EquationSystem
 from test_functions import TestFunctionFactory
 from equation_sets import EquationSet
 from solver import CCDSolver1D, CCDSolver2D
+from scaling import plugin_manager
 
 class MatrixVisualizer:
     """行列構造可視化クラス"""
     
     def __init__(self, output_dir: str = "results"):
-        """
-        初期化
-        
-        Args:
-            output_dir: 出力ディレクトリのパス
-        """
+        """初期化"""
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
     
     def _to_numpy_dense(self, matrix):
-        """
-        行列をNumPy密行列に変換
-        
-        Args:
-            matrix: CuPy/SciPy疎行列
-            
-        Returns:
-            NumPy密行列
-        """
+        """行列をNumPy密行列に変換"""
         if hasattr(matrix, 'toarray'):
             return matrix.toarray().get() if hasattr(matrix, 'get') else matrix.toarray()
         elif hasattr(matrix, 'get'):
             return matrix.get()
         return matrix
     
-    def visualize_matrix_structure(self, matrix, grid, title: str, prefix: str = ""):
-        """
-        行列構造を可視化
-        
-        Args:
-            matrix: システム行列
-            grid: グリッドオブジェクト
-            title: グラフタイトル
-            prefix: 出力ファイル名の接頭辞
-        
-        Returns:
-            str: 生成された画像のファイルパス
-        """
-        plt.figure(figsize=(10, 8))
-        
-        # 行列を密行列に変換
-        matrix_dense = self._to_numpy_dense(matrix)
-        
-        # 構造の可視化
-        plt.imshow(matrix_dense != 0, cmap='binary', aspect='auto', interpolation='nearest')
-        plt.title(f"Matrix Structure: {title}")
-        plt.xlabel("Column Index")
-        plt.ylabel("Row Index")
-        plt.colorbar(label='Non-zero Elements')
-        
-        # 保存とクリーンアップ
-        filename = os.path.join(self.output_dir, f"{prefix}_matrix_structure.png")
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        return filename
-    
-    def visualize_matrix_values(self, matrix, grid, title: str, prefix: str = ""):
-        """
-        行列値を可視化
-        
-        Args:
-            matrix: システム行列
-            grid: グリッドオブジェクト
-            title: グラフタイトル
-            prefix: 出力ファイル名の接頭辞
-        
-        Returns:
-            str: 生成された画像のファイルパス、または警告メッセージ
-        """
-        try:
-            plt.figure(figsize=(10, 8))
-            
-            # 行列を密行列に変換
-            matrix_dense = self._to_numpy_dense(matrix)
-            
-            # 値の可視化（対数スケール）
-            abs_matrix = abs(matrix_dense)
-            
-            # ゼロ以外の値のみを考慮
-            non_zero_abs = abs_matrix[abs_matrix > 0]
-            
-            if len(non_zero_abs) == 0:
-                print(f"警告: {title} の行列にゼロ以外の要素がありません。")
-                plt.close()
-                return ""
-            
-            # 最小値と最大値を慎重に計算
-            vmin = non_zero_abs.min()
-            vmax = abs_matrix.max()
-            
-            norm = LogNorm(vmin=vmin, vmax=vmax)
-            plt.imshow(abs_matrix, cmap='viridis', norm=norm, 
-                       aspect='auto', interpolation='nearest')
-            plt.title(f"Matrix Values (Log Scale): {title}")
-            plt.xlabel("Column Index")
-            plt.ylabel("Row Index")
-            plt.colorbar(label='Absolute Value (Log Scale)')
-            
-            # 保存とクリーンアップ
-            filename = os.path.join(self.output_dir, f"{prefix}_matrix_values.png")
-            plt.savefig(filename, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            return filename
-        
-        except Exception as e:
-            print(f"マトリックス値の可視化中にエラーが発生しました: {e}")
-            plt.close()
-            return ""
-
-    def visualize_system_structure(self, A, b, grid, title: str, prefix: str = ""):
-        """
-        システムAx = bの構造を可視化
-        
-        Args:
-            A: システム行列
-            b: 右辺ベクトル
-            grid: グリッドオブジェクト
-            title: グラフタイトル
-            prefix: 出力ファイル名の接頭辞
-            
-        Returns:
-            str: 生成された画像のファイルパス
-        """
-        plt.figure(figsize=(12, 8))
-        
-        # 行列とベクトルを密行列に変換
-        A_dense = self._to_numpy_dense(A)
-        b_dense = self._to_numpy_dense(b)
-        
-        # AとbをSide-by-sideで配置
-        # bを列ベクトルに整形
-        b_reshaped = b_dense.reshape(-1, 1)
-        combined = np.hstack([A_dense, b_reshaped])
-        
-        # システム構造（非ゼロパターン）の可視化
-        plt.imshow(combined != 0, cmap='binary', aspect='auto', interpolation='nearest')
-        
-        # Aとbの間に垂直線を追加
-        plt.axvline(x=A_dense.shape[1] - 0.5, color='red', linestyle='-', linewidth=2)
-        
-        plt.title(f"System Structure (Ax = b): {title}")
-        plt.xlabel("Column Index (with b vector)")
-        plt.ylabel("Row Index")
-        plt.colorbar(label='Non-zero Elements')
-        
-        # "b"ラベルを右辺ベクトルに追加
-        plt.text(A_dense.shape[1] + b_reshaped.shape[1]/2, -1, "b", fontsize=12, color='red',
-                ha='center', bbox=dict(facecolor='white', alpha=0.5))
-        
-        # 保存とクリーンアップ
-        filename = os.path.join(self.output_dir, f"{prefix}_system_structure.png")
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        return filename
-
-    def visualize_system_values(self, A, b, grid, title: str, prefix: str = ""):
-        """
-        システムAx = bの値を可視化
-        
-        Args:
-            A: システム行列
-            b: 右辺ベクトル
-            grid: グリッドオブジェクト
-            title: グラフタイトル
-            prefix: 出力ファイル名の接頭辞
-            
-        Returns:
-            str: 生成された画像のファイルパス
-        """
+    def visualize_system_values(self, A, b, x, grid, title: str, prefix: str = ""):
+        """システムAx = bの値を可視化 (解ベクトルxも含む)"""
         try:
             plt.figure(figsize=(12, 8))
             
             # 行列とベクトルを密行列に変換
             A_dense = self._to_numpy_dense(A)
             b_dense = self._to_numpy_dense(b)
+            x_dense = self._to_numpy_dense(x) if x is not None else None
             
-            # AとbをSide-by-sideで配置
             # bを列ベクトルに整形
             b_reshaped = b_dense.reshape(-1, 1)
-            combined = np.hstack([A_dense, b_reshaped])
             
-            # 対数スケールでシステム値を可視化し、よりよいコントラストを実現
+            if x_dense is not None:
+                # xを列ベクトルに整形
+                x_reshaped = x_dense.reshape(-1, 1)
+                # A, x, bをSide-by-sideで配置
+                combined = np.hstack([A_dense, x_reshaped, b_reshaped])
+            else:
+                # xが提供されていない場合はA, bだけ表示
+                combined = np.hstack([A_dense, b_reshaped])
+            
+            # 対数スケールでシステム値を可視化
             abs_combined = abs(combined)
             
             # vminを決めるために非ゼロ値を探す
@@ -215,21 +67,14 @@ class MatrixVisualizer:
             vmin = non_zero_abs.min()
             vmax = abs_combined.max()
             
-            # より良い可視化のために対数スケールを使用
+            # 対数スケールを使用
             norm = LogNorm(vmin=vmin, vmax=vmax)
             plt.imshow(abs_combined, cmap='viridis', norm=norm, aspect='auto', interpolation='nearest')
             
-            # Aとbの間に垂直線を追加
-            plt.axvline(x=A_dense.shape[1] - 0.5, color='red', linestyle='-', linewidth=2)
-            
             plt.title(f"System Values (Ax = b, Log Scale): {title}")
-            plt.xlabel("Column Index (with b vector)")
+            plt.xlabel("Column Index (with x and b vectors)")
             plt.ylabel("Row Index")
             plt.colorbar(label='Absolute Value (Log Scale)')
-            
-            # "b"ラベルを右辺ベクトルに追加
-            plt.text(A_dense.shape[1] + b_reshaped.shape[1]/2, -1, "b", fontsize=12, color='red',
-                    ha='center', bbox=dict(facecolor='white', alpha=0.5))
             
             # 保存とクリーンアップ
             filename = os.path.join(self.output_dir, f"{prefix}_system_values.png")
@@ -248,28 +93,13 @@ class MatrixAnalyzer:
     """行列システムの解析を行うクラス"""
     
     def __init__(self, output_dir: str = "results"):
-        """
-        初期化
-        
-        Args:
-            output_dir: 出力ディレクトリのパス
-        """
+        """初期化"""
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
         self.visualizer = MatrixVisualizer(output_dir)
     
     def _print_analysis_results(self, name: str, grid, total_size: int, nnz: int, sparsity: float, scaling_info: Optional[str] = None):
-        """
-        分析結果を出力
-        
-        Args:
-            name: 分析対象の名前
-            grid: グリッドオブジェクト
-            total_size: 行列サイズ
-            nnz: 非ゼロ要素数
-            sparsity: 疎性率
-            scaling_info: スケーリング情報
-        """
+        """分析結果を出力"""
         print(f"\n{name} 行列分析:")
         if scaling_info:
             print(f"  スケーリング: {scaling_info}")
@@ -280,26 +110,12 @@ class MatrixAnalyzer:
         print(f"  行列サイズ: {total_size} x {total_size}")
         print(f"  非ゼロ要素数: {nnz}")
         print(f"  疎性率: {sparsity:.6f}")
-        print(f"  メモリ使用量(密行列): {(total_size * total_size * 8) / (1024 * 1024):.2f} MB")
-        print(f"  メモリ使用量(疎行列): {(nnz * 12) / (1024 * 1024):.2f} MB")
     
     def analyze_system(self, equation_set, grid, name: str = "", scaling_method: Optional[str] = None, 
                      test_func=None) -> Dict:
-        """
-        方程式システムを分析し、行列構造を検証
-        
-        Args:
-            equation_set: EquationSet のインスタンス
-            grid: Grid オブジェクト
-            name: 識別用の名前
-            scaling_method: スケーリング手法の名前
-            test_func: テスト関数（オプション）
-            
-        Returns:
-            分析結果の辞書
-        """
+        """方程式システムを分析し、行列構造を検証"""
         try:
-            # ソルバーを作成（新しいインターフェース）
+            # ソルバーを作成
             if grid.is_2d:
                 solver = CCDSolver2D(equation_set, grid)
             else:
@@ -382,10 +198,23 @@ class MatrixAnalyzer:
             
             # スケーリングを適用（必要に応じて）
             if scaling_method:
-                A_scaled, b_scaled, _, _ = solver._apply_scaling(A, b)
+                A_scaled, b_scaled, scaling_info, scaler = solver._apply_scaling(A, b)
             else:
                 A_scaled, b_scaled = A, b
+                scaling_info, scaler = None, None
             
+            # 解ベクトル x を計算
+            try:
+                x = solver._solve_linear_system(A_scaled, b_scaled)
+                
+                # スケーリングが適用された場合は解をアンスケール
+                if scaling_info is not None and scaler is not None:
+                    x = scaler.unscale(x, scaling_info)
+            except Exception as e:
+                print(f"線形方程式系の解法でエラーが発生しました: {e}")
+                x = None
+            
+            # グリッド情報
             if grid.is_2d:
                 nx, ny = grid.nx_points, grid.ny_points
                 grid_info = f"{nx}x{ny}"
@@ -413,22 +242,19 @@ class MatrixAnalyzer:
             if scaling_method:
                 prefix += f"_{scaling_method.lower()}"
             
-            # 全体構造の可視化
-            title = f"{name} {'2D' if grid.is_2d else '1D'} Matrix"
-            self.visualizer.visualize_matrix_structure(A_scaled, grid, title, prefix)
-            self.visualizer.visualize_matrix_values(A_scaled, grid, title, prefix)
-            
             # システム (Ax = b) の可視化
             system_title = f"{name} {'2D' if grid.is_2d else '1D'} System"
-            self.visualizer.visualize_system_structure(A_scaled, b_scaled, grid, system_title, prefix)
-            self.visualizer.visualize_system_values(A_scaled, b_scaled, grid, system_title, prefix)
+            
+            # 値の可視化はxベクトル含めて
+            if x is not None:
+                self.visualizer.visualize_system_values(A_scaled, b_scaled, x, grid, system_title, prefix)
+            else:
+                self.visualizer.visualize_system_values(A_scaled, b_scaled, None, grid, system_title, prefix)
             
             return {
                 "size": total_size,
                 "nnz": nnz,
-                "sparsity": sparsity,
-                "memory_dense_MB": (total_size * total_size * 8) / (1024 * 1024),
-                "memory_sparse_MB": (nnz * 12) / (1024 * 1024)
+                "sparsity": sparsity
             }
             
         except Exception as e:
@@ -437,13 +263,7 @@ class MatrixAnalyzer:
 
 
 def verify_system(dimension: int, output_dir: str = "results"):
-    """
-    方程式システムを検証
-    
-    Args:
-        dimension: 次元 (1 or 2)
-        output_dir: 出力ディレクトリのパス
-    """
+    """方程式システムを検証"""
     # 両方の方程式セットで検証を行う
     equation_set_types = ["poisson", "derivative"]
     
@@ -458,7 +278,7 @@ def verify_system(dimension: int, output_dir: str = "results"):
                 test_funcs = TestFunctionFactory.create_standard_1d_functions()
                 test_func = test_funcs[3]  # Sine関数
             else:
-                grid = Grid(3, 3, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
+                grid = Grid(9, 3, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
                 # テスト関数を取得
                 test_funcs = TestFunctionFactory.create_standard_2d_functions()
                 test_func = test_funcs[0]  # Sine2D関数
@@ -492,12 +312,7 @@ def verify_system(dimension: int, output_dir: str = "results"):
 
 
 def main(output_dir: str = "results"):
-    """
-    メイン関数
-    
-    Args:
-        output_dir: 出力ディレクトリのパス
-    """
+    """メイン関数"""
     print("==== CCD行列構造検証ツール ====")
     
     try:
