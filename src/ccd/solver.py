@@ -1,549 +1,39 @@
-from abc import ABC, abstractmethod
-import cupy as cp
-import cupyx.scipy.sparse.linalg as splinalg
-import matplotlib.pyplot as plt
+"""
+高精度コンパクト差分法 (CCD) のための線形方程式系ソルバーモジュール
+
+このモジュールは1次元・2次元のポアソン方程式および高階微分方程式を解くための
+ソルバーを提供します。equation_system.pyと連携して方程式系を構築し解きます。
+"""
+
 import os
 import time
+import cupy as cp
+import cupyx.scipy.sparse as sp
+import cupyx.scipy.sparse.linalg as splinalg
+import matplotlib.pyplot as plt
+from abc import ABC, abstractmethod
 
 from equation_system import EquationSystem
 from scaling import plugin_manager
 
 
-# ========== 戦略パターンによるソルバーインターフェース ==========
-class SolverStrategy(ABC):
-    """線形方程式系を解くための戦略インターフェース"""
-    
-    @abstractmethod
-    def solve(self, A, b, options=None, callback=None):
-        """線形方程式系を解くメソッド"""
-        pass
-    
-    @abstractmethod
-    def get_name(self):
-        """戦略の名前を返す"""
-        pass
-
-
-class DirectSolverStrategy(SolverStrategy):
-    """直接解法の戦略クラス"""
-    
-    def solve(self, A, b, options=None, callback=None):
-        """直接解法を使用して線形方程式系を解く"""
-        x = splinalg.spsolve(A, b)
-        return x, None
-    
-    def get_name(self):
-        return "Direct"
-
-
-class GMRESSolverStrategy(SolverStrategy):
-    """GMRES法の戦略クラス"""
-    
-    def solve(self, A, b, options=None, callback=None):
-        """GMRES法を使用して線形方程式系を解く"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        restart = options.get("restart", 100)
-        
-        # 前処理子の作成
-        precond = self._create_preconditioner(A, options)
-        
-        # GMRES法で解く
-        try:
-            x, info = splinalg.gmres(
-                A, b, 
-                tol=tol, 
-                maxiter=maxiter, 
-                M=precond,
-                restart=restart,
-                x0=cp.ones_like(b),
-                callback=callback
-            )
-            
-            # 反復回数を取得
-            iterations = None
-            if hasattr(info, 'iterations'):
-                iterations = info.iterations
-            elif isinstance(info, tuple) and len(info) > 0:
-                iterations = info[0]
-            else:
-                iterations = maxiter if info != 0 else None
-                
-            return x, iterations
-        except Exception as e:
-            print(f"GMRES解法でエラーが発生しました: {e}")
-            print("直接解法にフォールバックします")
-            return splinalg.spsolve(A, b), None
-    
-    def _create_preconditioner(self, A, options):
-        """前処理子を作成する"""
-        if not options.get("use_preconditioner", True):
-            return None
-        
-        # ヤコビ前処理子
-        diag = A.diagonal()
-        diag = cp.where(cp.abs(diag) < 1e-14, 1.0, diag)
-        
-        D_inv = splinalg.LinearOperator(
-            A.shape, 
-            matvec=lambda x: x / diag
-        )
-        
-        return D_inv
-    
-    def get_name(self):
-        return "GMRES"
-
-
-class CGSolverStrategy(SolverStrategy):
-    """共役勾配法の戦略クラス"""
-    
-    def solve(self, A, b, options=None, callback=None):
-        """共役勾配法を使用して線形方程式系を解く"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        
-        # 前処理子の作成
-        precond = self._create_preconditioner(A, options)
-        
-        # CG法で解く
-        try:
-            x, info = splinalg.cg(
-                A, b, 
-                tol=tol, 
-                maxiter=maxiter, 
-                M=precond, 
-                x0=cp.ones_like(b),
-                callback=callback
-            )
-            
-            # 反復回数を取得
-            iterations = None
-            if hasattr(info, 'iterations'):
-                iterations = info.iterations
-            else:
-                iterations = maxiter if info != 0 else None
-                
-            return x, iterations
-        except Exception as e:
-            print(f"CG解法でエラーが発生しました: {e}")
-            print("直接解法にフォールバックします")
-            return splinalg.spsolve(A, b), None
-    
-    def _create_preconditioner(self, A, options):
-        """前処理子を作成する"""
-        if not options.get("use_preconditioner", True):
-            return None
-        
-        # ヤコビ前処理子
-        diag = A.diagonal()
-        diag = cp.where(cp.abs(diag) < 1e-14, 1.0, diag)
-        
-        D_inv = splinalg.LinearOperator(
-            A.shape, 
-            matvec=lambda x: x / diag
-        )
-        
-        return D_inv
-    
-    def get_name(self):
-        return "CG"
-
-
-class CGSSolverStrategy(SolverStrategy):
-    """CGS法（共役勾配の平方）の戦略クラス"""
-    
-    def solve(self, A, b, options=None, callback=None):
-        """CGS法を使用して線形方程式系を解く"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        
-        # 前処理子を作成
-        precond = self._create_preconditioner(A, options)
-        
-        # CGS法で解く
-        try:
-            x, info = splinalg.cgs(
-                A, b, 
-                tol=tol, 
-                maxiter=maxiter, 
-                M=precond,
-                x0=cp.ones_like(b),
-                callback=callback
-            )
-            
-            # 反復回数を取得
-            iterations = None
-            if hasattr(info, 'iterations'):
-                iterations = info.iterations
-            else:
-                iterations = maxiter if info != 0 else None
-                
-            return x, iterations
-        except Exception as e:
-            print(f"CGS解法でエラーが発生しました: {e}")
-            print("直接解法にフォールバックします")
-            return splinalg.spsolve(A, b), None
-    
-    def _create_preconditioner(self, A, options):
-        """前処理子を作成する"""
-        if not options.get("use_preconditioner", True):
-            return None
-        
-        # ヤコビ前処理子
-        diag = A.diagonal()
-        diag = cp.where(cp.abs(diag) < 1e-14, 1.0, diag)
-        
-        D_inv = splinalg.LinearOperator(
-            A.shape, 
-            matvec=lambda x: x / diag
-        )
-        
-        return D_inv
-    
-    def get_name(self):
-        return "CGS"
-
-
-class MINRESSolverStrategy(SolverStrategy):
-    """MINRES法の戦略クラス"""
-    
-    def solve(self, A, b, options=None, callback=None):
-        """MINRES法を使用して線形方程式系を解く"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        
-        # 前処理子を作成
-        precond = self._create_preconditioner(A, options)
-        
-        # MINRES法で解く
-        try:
-            x, info = splinalg.minres(
-                A, b, 
-                tol=tol, 
-                maxiter=maxiter, 
-                M=precond,
-                x0=cp.ones_like(b),
-                callback=callback
-            )
-            
-            # 反復回数を取得
-            iterations = None
-            if hasattr(info, 'iterations'):
-                iterations = info.iterations
-            else:
-                iterations = maxiter if info != 0 else None
-                
-            return x, iterations
-        except Exception as e:
-            print(f"MINRES解法でエラーが発生しました: {e}")
-            print("直接解法にフォールバックします")
-            return splinalg.spsolve(A, b), None
-    
-    def _create_preconditioner(self, A, options):
-        """前処理子を作成する"""
-        if not options.get("use_preconditioner", True):
-            return None
-        
-        # ヤコビ前処理子
-        diag = A.diagonal()
-        diag = cp.where(cp.abs(diag) < 1e-14, 1.0, diag)
-        
-        D_inv = splinalg.LinearOperator(
-            A.shape, 
-            matvec=lambda x: x / diag
-        )
-        
-        return D_inv
-    
-    def get_name(self):
-        return "MINRES"
-
-
-class LSQRSolverStrategy(SolverStrategy):
-    """LSQR法の戦略クラス"""
-    
-    def solve(self, A, b, options=None, callback=None):
-        """LSQR法を使用して線形方程式系を解く"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        atol = options.get("atol", 0.0)
-        btol = options.get("btol", 0.0)
-        
-        # LSQR法で解く
-        try:
-            lsqr_callback = None
-            if callback:
-                def lsqr_callback_wrapper(x, itn, residual):
-                    callback(x)
-                lsqr_callback = lsqr_callback_wrapper
-                
-            x, info, itn, _, _, _, _, _, _, _ = splinalg.lsqr(
-                A, b, 
-            )
-            
-            return x, itn
-        except Exception as e:
-            print(f"LSQR解法でエラーが発生しました: {e}")
-            print("直接解法にフォールバックします")
-            return splinalg.spsolve(A, b), None
-    
-    def get_name(self):
-        return "LSQR"
-
-
-class LSMRSolverStrategy(SolverStrategy):
-    """LSMR法の戦略クラス"""
-    
-    def solve(self, A, b, options=None, callback=None):
-        """LSMR法を使用して線形方程式系を解く"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        atol = options.get("atol", 0.0)
-        btol = options.get("btol", 0.0)
-        
-        # LSMR法で解く
-        try:
-            lsmr_callback = None
-            if callback:
-                def lsmr_callback_wrapper(x, itn, residual):
-                    callback(x)
-                lsmr_callback = lsmr_callback_wrapper
-                
-            x, info, itn, _, _, _, _, _ = splinalg.lsmr(
-                A, b, 
-                atol=atol, 
-                btol=btol, 
-                maxiter=maxiter,
-                x0=cp.ones_like(b),
-                #show=False,
-                #callback=lsmr_callback
-            )
-            
-            return x, itn
-        except Exception as e:
-            print(f"LSMR解法でエラーが発生しました: {e}")
-            print("直接解法にフォールバックします")
-            return splinalg.spsolve(A, b), None
-    
-    def get_name(self):
-        return "LSMR"
-
-
-# ========== ファクトリーパターンによるソルバー生成 ==========
-class SolverFactory:
-    """適切なソルバー戦略を作成するファクトリークラス"""
-    
-    @staticmethod
-    def create_solver(method="direct"):
-        """
-        ソルバー戦略を作成
-        
-        Args:
-            method: 解法メソッド名
-            
-        Returns:
-            SolverStrategy インスタンス
-        """
-        method = method.lower()
-        
-        if method == "gmres":
-            return GMRESSolverStrategy()
-        elif method == "cg":
-            return CGSolverStrategy()
-        elif method == "cgs":
-            return CGSSolverStrategy()
-        elif method == "lsqr":
-            return LSQRSolverStrategy()
-        elif method == "lsmr":
-            return LSMRSolverStrategy()
-        elif method == "minres":
-            return MINRESSolverStrategy()
-        else:
-            return DirectSolverStrategy()
-
-
-# ========== 収束モニタリングの分離 ==========
-class ConvMonitor:
-    """反復ソルバーの収束状況をモニタリングするクラス"""
-    
-    def __init__(self, enable=False, display_interval=10, output_dir="results"):
-        """
-        モニタリング設定を初期化
-        
-        Args:
-            enable: モニタリングを有効にするかどうか
-            display_interval: 表示間隔（何反復ごとに表示するか）
-            output_dir: 出力ディレクトリ
-        """
-        self.enable = enable
-        self.display_interval = display_interval
-        self.output_dir = output_dir
-        self.residuals = []
-        self.iterations = []
-        self.start_time = None
-        self.elapsed_times = []
-        self.cb_A = None
-        self.cb_b = None
-        
-    def set_system(self, A, b):
-        """
-        残差計算のためのシステム情報を設定
-        
-        Args:
-            A: システム行列
-            b: 右辺ベクトル
-        """
-        self.cb_A = A
-        self.cb_b = b
-        
-    def start(self):
-        """モニタリングを開始"""
-        if self.enable:
-            self.residuals = []
-            self.iterations = []
-            self.elapsed_times = []
-            self.start_time = time.time()
-            print("\n収束状況モニタリングを開始...")
-    
-    def update(self, iteration, residual):
-        """
-        収束状況を更新
-        
-        Args:
-            iteration: 現在の反復回数
-            residual: 現在の残差
-        """
-        if not self.enable:
-            return
-            
-        self.iterations.append(iteration)
-        self.residuals.append(residual)
-        self.elapsed_times.append(time.time() - self.start_time)
-        
-        # 表示間隔ごとに出力
-        if iteration % self.display_interval == 0:
-            print(f"  反復 {iteration}: 残差 = {residual:.6e}, 経過時間 = {self.elapsed_times[-1]:.4f}秒")
-    
-    def get_callback(self):
-        """反復ソルバー用のコールバック関数を返す"""
-        def callback(xk):
-            iteration = len(self.residuals)
-            # xkから残差を計算
-            if self.cb_A is not None and self.cb_b is not None:
-                residual = cp.linalg.norm(self.cb_b - self.cb_A @ xk) / cp.linalg.norm(self.cb_b)
-                self.update(iteration, float(residual))
-        
-        return callback if self.enable else None
-    
-    def finalize(self, total_iterations, method_name, prefix=""):
-        """
-        モニタリングを終了し、結果を可視化
-        
-        Args:
-            total_iterations: 総反復回数
-            method_name: ソルバー手法名
-            prefix: 出力ファイル名の接頭辞
-        """
-        if not self.enable or not self.residuals:
-            return
-            
-        print(f"収束状況モニタリングを終了: 総反復回数 = {total_iterations}")
-        
-        # 収束履歴を可視化
-        self.visualize_convergence(method_name, prefix)
-    
-    def visualize_convergence(self, method_name, prefix=""):
-        """
-        収束履歴をグラフとして可視化
-        
-        Args:
-            method_name: ソルバー手法名
-            prefix: 出力ファイル名の接頭辞
-        """
-        if not self.enable or not self.residuals:
-            return
-            
-        os.makedirs(self.output_dir, exist_ok=True)
-        
-        # 残差の推移グラフ
-        plt.figure(figsize=(10, 6))
-        plt.semilogy(self.iterations, self.residuals, 'b-o')
-        plt.grid(True, which="both", ls="--")
-        plt.xlabel('反復回数')
-        plt.ylabel('残差 (対数スケール)')
-        plt.title(f'{method_name} ソルバーの収束履歴')
-        
-        # 保存
-        filename = os.path.join(self.output_dir, f"{prefix}_convergence_{method_name.lower()}.png")
-        plt.savefig(filename, dpi=150)
-        plt.close()
-        print(f"収束履歴グラフを保存しました: {filename}")
-        
-        # 経過時間グラフも作成
-        plt.figure(figsize=(10, 6))
-        plt.plot(self.iterations, self.elapsed_times, 'r-o')
-        plt.grid(True)
-        plt.xlabel('反復回数')
-        plt.ylabel('経過時間 (秒)')
-        plt.title(f'{method_name} ソルバーの計算時間履歴')
-        
-        # 保存
-        filename = os.path.join(self.output_dir, f"{prefix}_timing_{method_name.lower()}.png")
-        plt.savefig(filename, dpi=150)
-        plt.close()
-        print(f"計算時間履歴グラフを保存しました: {filename}")
-
-
-# ========== 線形システムソルバー ==========
 class LinearSystemSolver:
-    """
-    線形方程式系を解くためのクラス
-    単一責任: 線形システムの解法とスケーリングの管理
-    """
+    """線形方程式系 Ax=b を解くためのクラス"""
     
     def __init__(self, method="direct", options=None, scaling_method=None):
         """
         線形方程式系ソルバーを初期化
         
         Args:
-            method: 解法メソッド
-            options: ソルバーオプション
-            scaling_method: スケーリング手法
+            method: 解法メソッド ("direct", "gmres", "cg", "cgs", "minres", "lsqr")
+            options: ソルバーオプション辞書
+            scaling_method: スケーリング手法名
         """
-        self.solver_strategy = SolverFactory.create_solver(method)
+        self.method = method
         self.options = options or {}
         self.scaling_method = scaling_method
-        self.conv_monitor = ConvMonitor(
-            enable=self.options.get("monitor_convergence", False),
-            display_interval=self.options.get("display_interval", 10),
-            output_dir=self.options.get("output_dir", "results")
-        )
         self.last_iterations = None
-    
-    def set_options(self, options):
-        """ソルバーオプションを設定"""
-        self.options = options or {}
-        # 収束モニタリングを更新
-        self.conv_monitor = ConvMonitor(
-            enable=self.options.get("monitor_convergence", False),
-            display_interval=self.options.get("display_interval", 10),
-            output_dir=self.options.get("output_dir", "results")
-        )
-    
-    def set_method(self, method):
-        """解法メソッドを設定"""
-        self.solver_strategy = SolverFactory.create_solver(method)
-    
-    def set_scaling_method(self, scaling_method):
-        """スケーリング手法を設定"""
-        self.scaling_method = scaling_method
+        self.monitor_convergence = self.options.get("monitor_convergence", False)
     
     def solve(self, A, b):
         """
@@ -554,35 +44,74 @@ class LinearSystemSolver:
             b: 右辺ベクトル
             
         Returns:
-            解ベクトル
+            解ベクトル x
         """
         # スケーリングを適用
         A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A, b)
         
-        # 収束モニタリングを準備
-        prefix = self.options.get("prefix", "")
-        self.conv_monitor.start()
-        self.conv_monitor.set_system(A_scaled, b_scaled)
+        # 方程式を解く
+        start_time = time.time()
+        residuals = []
         
-        # 線形方程式系を解く
-        callback = self.conv_monitor.get_callback() if self.conv_monitor.enable else None
-        x, iterations = self.solver_strategy.solve(A_scaled, b_scaled, self.options, callback)
+        # モニタリングコールバック
+        if self.monitor_convergence:
+            def callback(xk):
+                residual = cp.linalg.norm(b_scaled - A_scaled @ xk) / cp.linalg.norm(b_scaled)
+                residuals.append(float(residual))
+                if len(residuals) % 10 == 0:
+                    print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
+        else:
+            callback = None
         
-        # 反復回数を保存
+        # ソルバー選択
+        try:
+            if self.method == "direct":
+                x = splinalg.spsolve(A_scaled, b_scaled)
+                iterations = None
+            elif self.method == "gmres":
+                tol = self.options.get("tol", 1e-10)
+                maxiter = self.options.get("maxiter", 1000)
+                restart = self.options.get("restart", 100)
+                x, info = splinalg.gmres(A_scaled, b_scaled, tol=tol, maxiter=maxiter, 
+                                        restart=restart, callback=callback)
+                iterations = info
+            elif self.method in ["cg", "cgs", "minres"]:
+                tol = self.options.get("tol", 1e-10)
+                maxiter = self.options.get("maxiter", 1000)
+                solver_func = getattr(splinalg, self.method)
+                x, info = solver_func(A_scaled, b_scaled, tol=tol, maxiter=maxiter, callback=callback)
+                iterations = info
+            elif self.method in ["lsqr", "lsmr"]:
+                tol = self.options.get("tol", 1e-10)
+                maxiter = self.options.get("maxiter", 1000)
+                solver_func = getattr(splinalg, self.method)
+                x = solver_func(A_scaled, b_scaled, atol=tol, btol=tol, iter_lim=maxiter)[0]
+                iterations = None
+            else:
+                print(f"未知の解法 {self.method}。直接解法を使用します。")
+                x = splinalg.spsolve(A_scaled, b_scaled)
+                iterations = None
+        except Exception as e:
+            print(f"解法エラー: {e}。直接解法にフォールバックします。")
+            x = splinalg.spsolve(A_scaled, b_scaled)
+            iterations = None
+            
+        elapsed = time.time() - start_time
         self.last_iterations = iterations
         
-        # 収束モニタリングを終了
-        if self.conv_monitor.enable:
-            self.conv_monitor.finalize(
-                iterations or len(self.conv_monitor.residuals),
-                self.solver_strategy.get_name(),
-                prefix
-            )
+        # 実行情報表示
+        print(f"解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
+        if iterations:
+            print(f"反復回数: {iterations}")
         
         # スケーリングを解除
         if scaling_info is not None and scaler is not None:
             x = scaler.unscale(x, scaling_info)
             
+        # 収束履歴の可視化
+        if self.monitor_convergence and residuals:
+            self._visualize_convergence(residuals)
+        
         return x
     
     def _apply_scaling(self, A, b):
@@ -596,20 +125,39 @@ class LinearSystemSolver:
         Returns:
             tuple: (scaled_A, scaled_b, scaling_info, scaler)
         """
-        scaling_info = None
-        scaler = None
-        
         if self.scaling_method is not None:
             scaler = plugin_manager.get_plugin(self.scaling_method)
             if scaler:
-                print(f"スケーリング手法を適用: {scaler.name} - {scaler.description}")
+                print(f"スケーリング: {scaler.name}")
                 A_scaled, b_scaled, scaling_info = scaler.scale(A, b)
                 return A_scaled, b_scaled, scaling_info, scaler
         
         return A, b, None, None
+    
+    def _visualize_convergence(self, residuals):
+        """収束履歴をグラフ化（必要な場合）"""
+        if not residuals:
+            return
+            
+        # 出力ディレクトリを確保
+        output_dir = self.options.get("output_dir", "results")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 残差の推移グラフ
+        plt.figure(figsize=(8, 5))
+        plt.semilogy(range(1, len(residuals)+1), residuals, 'b-')
+        plt.grid(True, which="both", ls="--")
+        plt.xlabel('反復回数')
+        plt.ylabel('残差 (対数スケール)')
+        plt.title(f'{self.method.upper()} ソルバーの収束履歴')
+        
+        # 保存
+        prefix = self.options.get("prefix", "")
+        filename = os.path.join(output_dir, f"{prefix}_convergence_{self.method}.png")
+        plt.savefig(filename, dpi=150)
+        plt.close()
 
 
-# ========== コンパクト差分法ソルバー基底クラス ==========
 class BaseCCDSolver(ABC):
     """コンパクト差分法ソルバーの抽象基底クラス"""
 
@@ -629,24 +177,17 @@ class BaseCCDSolver(ABC):
         self.system = EquationSystem(grid)
         self.enable_dirichlet, self.enable_neumann = equation_set.setup_equations(self.system, grid)
         self.matrix_A = self.system.build_matrix_system()
-        self.sparsity_info = None
-
+    
     def set_solver(self, method="direct", options=None, scaling_method=None):
         """
-        ソルバーメソッドとオプションを設定
+        ソルバーの設定
         
         Args:
             method: 解法メソッド
             options: ソルバーオプション辞書
             scaling_method: スケーリング手法名
         """
-        self.linear_solver.set_method(method)
-        
-        if options:
-            self.linear_solver.set_options(options)
-            
-        if scaling_method is not None:
-            self.linear_solver.set_scaling_method(scaling_method)
+        self.linear_solver = LinearSystemSolver(method, options, scaling_method)
     
     @property
     def scaling_method(self):
@@ -656,7 +197,7 @@ class BaseCCDSolver(ABC):
     @scaling_method.setter
     def scaling_method(self, value):
         """スケーリング手法を設定"""
-        self.linear_solver.set_scaling_method(value)
+        self.linear_solver.scaling_method = value
     
     @property
     def last_iterations(self):
@@ -670,17 +211,27 @@ class BaseCCDSolver(ABC):
         Returns:
             疎性情報の辞書
         """
-        sparsity_info = self.system.analyze_sparsity()
-        self.sparsity_info = sparsity_info
+        A = self.matrix_A
+        total_size = A.shape[0]
+        nnz = A.nnz
+        sparsity = 1.0 - (nnz / (total_size * total_size))
+        memory_dense_MB = (total_size * total_size * 8) / (1024 * 1024)
+        memory_sparse_MB = (nnz * 12) / (1024 * 1024)
         
         print("\n行列構造分析:")
-        print(f"  行列サイズ: {sparsity_info['matrix_size']} x {sparsity_info['matrix_size']}")
-        print(f"  非ゼロ要素数: {sparsity_info['non_zeros']}")
-        print(f"  疎性率: {sparsity_info['sparsity']:.6f}")
-        print(f"  メモリ使用量(密行列): {sparsity_info['memory_dense_MB']:.2f} MB")
-        print(f"  メモリ使用量(疎行列): {sparsity_info['memory_sparse_MB']:.2f} MB")
+        print(f"  行列サイズ: {total_size} x {total_size}")
+        print(f"  非ゼロ要素数: {nnz}")
+        print(f"  疎性率: {sparsity:.6f}")
+        print(f"  メモリ使用量(密行列): {memory_dense_MB:.2f} MB")
+        print(f"  メモリ使用量(疎行列): {memory_sparse_MB:.2f} MB")
         
-        return sparsity_info
+        return {
+            "matrix_size": total_size,
+            "non_zeros": nnz,
+            "sparsity": sparsity,
+            "memory_dense_MB": memory_dense_MB,
+            "memory_sparse_MB": memory_sparse_MB
+        }
 
     def solve(self, analyze_before_solve=True, f_values=None, **boundary_values):
         """
@@ -718,7 +269,6 @@ class BaseCCDSolver(ABC):
         pass
 
 
-# ========== 1次元ソルバー ==========
 class CCDSolver1D(BaseCCDSolver):
     """1次元コンパクト差分法ソルバー"""
 
@@ -741,7 +291,7 @@ class CCDSolver1D(BaseCCDSolver):
         1D右辺ベクトルを構築
         
         Args:
-            f_values: ソース項の値
+            f_values: ソース項の値（全格子点の配列）
             left_dirichlet, right_dirichlet: ディリクレ境界値
             left_neumann, right_neumann: ノイマン境界値
             
@@ -752,77 +302,74 @@ class CCDSolver1D(BaseCCDSolver):
         var_per_point = 4  # [ψ, ψ', ψ'', ψ''']
         b = cp.zeros(n * var_per_point)
         
-        # 境界条件の設定状態を表示
-        print(f"境界条件設定: ディリクレ = {'有効' if self.enable_dirichlet else '無効'}, "
-              f"ノイマン = {'有効' if self.enable_neumann else '無効'}")
+        # 境界条件に関する情報を出力
+        boundary_info = []
+        if self.enable_dirichlet:
+            boundary_info.append(f"ディリクレ境界条件: 左={left_dirichlet}, 右={right_dirichlet}")
+        if self.enable_neumann:
+            boundary_info.append(f"ノイマン境界条件: 左={left_neumann}, 右={right_neumann}")
+        if boundary_info:
+            print(f"[1Dソルバー] " + "; ".join(boundary_info))
         
-        # 各グリッド点に対して右辺値を設定
+        # 各格子点に対して処理
         for i in range(n):
-            # グリッド点の基本インデックス
             base_idx = i * var_per_point
+            location = self.system._get_point_location(i)
+            location_equations = self.system.equations[location]
             
-            # 点の位置タイプを決定
-            point_type = self._get_point_type_1d(i)
+            # 方程式を種類別に分類
+            eq_by_type = {"governing": None, "dirichlet": None, "neumann": None, "auxiliary": []}
+            for eq in location_equations:
+                eq_type = self.system._identify_equation_type(eq, i)
+                if eq_type == "auxiliary":
+                    eq_by_type["auxiliary"].append(eq)
+                elif eq_type:  # Noneでない場合
+                    eq_by_type[eq_type] = eq
             
-            # 支配方程式の右辺値を設定 (ψ)
-            if f_values is not None:
+            # ソース項の処理（支配方程式に対応する行）
+            if eq_by_type["governing"] and f_values is not None:
                 b[base_idx] = f_values[i]
             
-            # 位置に応じて適切な境界条件を適用
-            if point_type == 'left':
-                # 左境界点の処理
+            # 境界条件の処理
+            if location == 'left':
                 if self.enable_dirichlet and left_dirichlet is not None:
-                    b[base_idx + 1] = left_dirichlet  # ψ'に対応
-                
+                    dirichlet_row = self._find_dirichlet_row(base_idx, location_equations, i)
+                    if dirichlet_row is not None:
+                        b[dirichlet_row] = left_dirichlet
+                        
                 if self.enable_neumann and left_neumann is not None:
-                    b[base_idx + 2] = left_neumann   # ψ''に対応
-                
-                # ψ'''は通常0のまま
-                
-            elif point_type == 'right':
-                # 右境界点の処理
+                    neumann_row = self._find_neumann_row(base_idx, location_equations, i)
+                    if neumann_row is not None:
+                        b[neumann_row] = left_neumann
+                        
+            elif location == 'right':
                 if self.enable_dirichlet and right_dirichlet is not None:
-                    b[base_idx + 1] = right_dirichlet  # ψ'に対応
-                
+                    dirichlet_row = self._find_dirichlet_row(base_idx, location_equations, i)
+                    if dirichlet_row is not None:
+                        b[dirichlet_row] = right_dirichlet
+                        
                 if self.enable_neumann and right_neumann is not None:
-                    b[base_idx + 2] = right_neumann   # ψ''に対応
-                
-                # ψ'''は通常0のまま
-                
-            else:
-                # 内部点 - 補助式は全て0のまま
-                pass
-        
-        # 設定された境界条件の情報を出力
-        if self.enable_dirichlet:
-            print(f"[1Dソルバー] ディリクレ境界条件: 左={left_dirichlet}, 右={right_dirichlet}")
-        else:
-            print("[1Dソルバー] ディリクレ境界条件は無効")
-        
-        if self.enable_neumann:
-            print(f"[1Dソルバー] ノイマン境界条件: 左={left_neumann}, 右={right_neumann}")
-        else:
-            print("[1Dソルバー] ノイマン境界条件は無効")
+                    neumann_row = self._find_neumann_row(base_idx, location_equations, i)
+                    if neumann_row is not None:
+                        b[neumann_row] = right_neumann
         
         return b
-
-    def _get_point_type_1d(self, i):
-        """
-        1D格子点の位置タイプを判定
-        
-        Args:
-            i: 格子点のインデックス
-            
-        Returns:
-            位置タイプを表す文字列 ('left', 'right', 'interior')
-        """
-        n = self.grid.n_points
-        if i == 0:
-            return 'left'
-        elif i == n - 1:
-            return 'right'
-        else:
-            return 'interior'
+    
+    def _find_dirichlet_row(self, base_idx, equations, i):
+        """ディリクレ境界条件に対応する行インデックスを見つける"""
+        for row_offset, eq in enumerate(equations):
+            eq_type = self.system._identify_equation_type(eq, i)
+            if eq_type == "dirichlet":
+                return base_idx + row_offset
+        return None
+    
+    def _find_neumann_row(self, base_idx, equations, i):
+        """ノイマン境界条件に対応する行インデックスを見つける"""
+        for row_offset, eq in enumerate(equations):
+            eq_type = self.system._identify_equation_type(eq, i)
+            if eq_type == "neumann":
+                return base_idx + row_offset
+        return None
 
     def _extract_solution(self, sol):
         """解ベクトルから各成分を抽出"""
@@ -835,7 +382,6 @@ class CCDSolver1D(BaseCCDSolver):
         return psi, psi_prime, psi_second, psi_third
 
 
-# ========== 2次元ソルバー ==========
 class CCDSolver2D(BaseCCDSolver):
     """2次元コンパクト差分法ソルバー"""
 
@@ -853,8 +399,8 @@ class CCDSolver2D(BaseCCDSolver):
         super().__init__(equation_set, grid)
 
     def _build_rhs_vector(self, f_values=None, left_dirichlet=None, right_dirichlet=None,
-                      bottom_dirichlet=None, top_dirichlet=None, left_neumann=None, 
-                      right_neumann=None, bottom_neumann=None, top_neumann=None, **kwargs):
+                        bottom_dirichlet=None, top_dirichlet=None, left_neumann=None, 
+                        right_neumann=None, bottom_neumann=None, top_neumann=None, **kwargs):
         """
         2D右辺ベクトルを構築
         
@@ -870,149 +416,118 @@ class CCDSolver2D(BaseCCDSolver):
         var_per_point = 7  # [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy]
         b = cp.zeros(nx * ny * var_per_point)
         
-        # 境界条件の設定状態を表示
-        boundary_status = []
-        if self.enable_dirichlet:
-            boundary_status.append("ディリクレ(有効)")
-        else:
-            boundary_status.append("ディリクレ(無効)")
+        # 境界条件の状態を出力
+        self._print_boundary_info(
+            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
+            left_neumann, right_neumann, bottom_neumann, top_neumann
+        )
         
-        if self.enable_neumann:
-            boundary_status.append("ノイマン(有効)")
-        else:
-            boundary_status.append("ノイマン(無効)")
-        
-        print(f"[2Dソルバー] 境界条件: {', '.join(boundary_status)}")
-        
-        # 各グリッド点に対して右辺値を設定
+        # 各格子点に対して処理
         for j in range(ny):
             for i in range(nx):
-                # グリッド点の基本インデックス
                 base_idx = (j * nx + i) * var_per_point
+                location = self.system._get_point_location(i, j)
+                location_equations = self.system.equations[location]
                 
-                # 点の位置タイプを決定
-                point_type = self._get_point_type_2d(i, j)
+                # 方程式を種類別に分類
+                eq_by_type = {
+                    "governing": None, 
+                    "dirichlet": None, 
+                    "neumann_x": None, 
+                    "neumann_y": None, 
+                    "auxiliary": []
+                }
                 
-                # 支配方程式の右辺値を設定 (ψ)
-                if f_values is not None:
-                    b[base_idx] = f_values[i, j]
+                for eq in location_equations:
+                    eq_type = self.system._identify_equation_type(eq, i, j)
+                    if eq_type == "auxiliary":
+                        eq_by_type["auxiliary"].append(eq)
+                    elif eq_type:  # Noneでない場合
+                        eq_by_type[eq_type] = eq
                 
-                # 位置タイプに応じて境界条件を適用
-                self._apply_boundary_conditions_2d(
-                    b, base_idx, point_type, i, j,
+                # 各行に割り当てる方程式を決定
+                assignments = self.system._assign_equations_2d(eq_by_type, i, j)
+                
+                # ソース項の処理（支配方程式に対応する行）
+                governing_row = self._find_governing_row(assignments)
+                if governing_row is not None and f_values is not None:
+                    b[base_idx + governing_row] = f_values[i, j]
+                
+                # 境界条件の処理
+                self._apply_boundary_values(
+                    b, base_idx, location, assignments,
                     left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
-                    left_neumann, right_neumann, bottom_neumann, top_neumann
+                    left_neumann, right_neumann, bottom_neumann, top_neumann,
+                    i, j
                 )
         
-        # 境界条件の設定を出力
-        if self.enable_dirichlet:
-            print(f"[2Dソルバー] ディリクレ境界条件: 左={left_dirichlet is not None}, 右={right_dirichlet is not None}, "
-                  f"下={bottom_dirichlet is not None}, 上={top_dirichlet is not None}")
-        else:
-            print("[2Dソルバー] ディリクレ境界条件は無効")
-        
-        if self.enable_neumann:
-            print(f"[2Dソルバー] ノイマン境界条件: 左={left_neumann is not None}, 右={right_neumann is not None}, "
-                  f"下={bottom_neumann is not None}, 上={top_neumann is not None}")
-        else:
-            print("[2Dソルバー] ノイマン境界条件は無効")
-        
         return b
-
-    def _get_point_type_2d(self, i, j):
-        """
-        2D格子点の位置タイプを判定
+    
+    def _print_boundary_info(self, left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
+                          left_neumann, right_neumann, bottom_neumann, top_neumann):
+        """境界条件の情報を出力"""
+        if self.enable_dirichlet:
+            print(f"[2Dソルバー] ディリクレ境界条件: "
+                  f"左={left_dirichlet is not None}, 右={right_dirichlet is not None}, "
+                  f"下={bottom_dirichlet is not None}, 上={top_dirichlet is not None}")
+        if self.enable_neumann:
+            print(f"[2Dソルバー] ノイマン境界条件: "
+                  f"左={left_neumann is not None}, 右={right_neumann is not None}, "
+                  f"下={bottom_neumann is not None}, 上={top_neumann is not None}")
+    
+    def _find_governing_row(self, assignments):
+        """支配方程式が割り当てられた行を見つける"""
+        from equation.poisson import PoissonEquation, PoissonEquation2D
+        from equation.original import OriginalEquation, OriginalEquation2D
         
-        Args:
-            i: x方向のインデックス
-            j: y方向のインデックス
-            
-        Returns:
-            位置タイプを表す文字列
-        """
-        nx, ny = self.grid.nx_points, self.grid.ny_points
+        for row, eq in enumerate(assignments):
+            if isinstance(eq, (PoissonEquation, PoissonEquation2D, OriginalEquation, OriginalEquation2D)):
+                return row
+        return None
+    
+    def _apply_boundary_values(self, b, base_idx, location, assignments,
+                            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
+                            left_neumann, right_neumann, bottom_neumann, top_neumann,
+                            i, j):
+        """適切な場所に境界値を設定"""
+        # インポートは関数内で行い、依存関係をローカルに限定
+        from equation.boundary import (
+            DirichletBoundaryEquation, NeumannBoundaryEquation,
+            DirichletBoundaryEquation2D, NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
+        )
         
-        # 内部点
-        if 0 < i < nx - 1 and 0 < j < ny - 1:
-            return 'interior'
-        
-        # 角点
-        if i == 0 and j == 0:
-            return 'left_bottom'
-        elif i == nx - 1 and j == 0:
-            return 'right_bottom'
-        elif i == 0 and j == ny - 1:
-            return 'left_top'
-        elif i == nx - 1 and j == ny - 1:
-            return 'right_top'
-        
-        # 境界エッジ（角を除く）
-        if i == 0:
-            return 'left'
-        elif i == nx - 1:
-            return 'right'
-        elif j == 0:
-            return 'bottom'
-        elif j == ny - 1:
-            return 'top'
-        
-        # 通常はここに到達しない
-        return 'interior'
-
-    def _apply_boundary_conditions_2d(self, b, base_idx, point_type, i, j,
-                                    left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
-                                    left_neumann, right_neumann, bottom_neumann, top_neumann):
-        """
-        2D格子点の位置に応じて適切な境界条件を適用
-        
-        Args:
-            b: 右辺ベクトル
-            base_idx: 基本インデックス
-            point_type: 点の位置タイプ
-            i, j: 格子点のインデックス
-            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet: ディリクレ境界値
-            left_neumann, right_neumann, bottom_neumann, top_neumann: ノイマン境界値
-        """
-        nx, ny = self.grid.nx_points, self.grid.ny_points
-        
-        # ディリクレ境界値を取得する関数
-        def get_boundary_value(value, index=None):
-            if isinstance(value, (list, cp.ndarray)) and index is not None and index < len(value):
-                return value[index]
+        # 境界値の取得
+        def get_boundary_value(value, idx):
+            if isinstance(value, (list, cp.ndarray)) and idx < len(value):
+                return value[idx]
             return value
         
-        # 境界条件のチェックと設定
-        if 'left' in point_type and self.enable_dirichlet and left_dirichlet is not None:
-            # 左境界のディリクレ条件（ψ_x）
-            b[base_idx + 1] = get_boundary_value(left_dirichlet, j)
-        
-        if 'left' in point_type and self.enable_neumann and left_neumann is not None:
-            # 左境界のノイマン条件（ψ_xx）
-            b[base_idx + 2] = get_boundary_value(left_neumann, j)
-        
-        if 'right' in point_type and self.enable_dirichlet and right_dirichlet is not None:
-            # 右境界のディリクレ条件（ψ_x）
-            b[base_idx + 1] = get_boundary_value(right_dirichlet, j)
-        
-        if 'right' in point_type and self.enable_neumann and right_neumann is not None:
-            # 右境界のノイマン条件（ψ_xx）
-            b[base_idx + 2] = get_boundary_value(right_neumann, j)
-        
-        if ('bottom' in point_type or j == 0) and self.enable_dirichlet and bottom_dirichlet is not None:
-            # 下境界のディリクレ条件（ψ_y）
-            b[base_idx + 4] = get_boundary_value(bottom_dirichlet, i)
-        
-        if ('bottom' in point_type or j == 0) and self.enable_neumann and bottom_neumann is not None:
-            # 下境界のノイマン条件（ψ_yy）
-            b[base_idx + 5] = get_boundary_value(bottom_neumann, i)
-        
-        if ('top' in point_type or j == ny - 1) and self.enable_dirichlet and top_dirichlet is not None:
-            # 上境界のディリクレ条件（ψ_y）
-            b[base_idx + 4] = get_boundary_value(top_dirichlet, i)
-        
-        if ('top' in point_type or j == ny - 1) and self.enable_neumann and top_neumann is not None:
-            # 上境界のノイマン条件（ψ_yy）
-            b[base_idx + 5] = get_boundary_value(top_neumann, i)
+        # 各行に割り当てられた方程式をチェック
+        for row, eq in enumerate(assignments):
+            # ディリクレ条件
+            if isinstance(eq, DirichletBoundaryEquation2D) and self.enable_dirichlet:
+                if 'left' in location and left_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(left_dirichlet, j)
+                elif 'right' in location and right_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(right_dirichlet, j)
+                elif 'bottom' in location and bottom_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(bottom_dirichlet, i)
+                elif 'top' in location and top_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(top_dirichlet, i)
+            
+            # X方向ノイマン条件
+            elif isinstance(eq, NeumannXBoundaryEquation2D) and self.enable_neumann:
+                if 'left' in location and left_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(left_neumann, j)
+                elif 'right' in location and right_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(right_neumann, j)
+            
+            # Y方向ノイマン条件
+            elif isinstance(eq, NeumannYBoundaryEquation2D) and self.enable_neumann:
+                if 'bottom' in location and bottom_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(bottom_neumann, i)
+                elif 'top' in location and top_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(top_neumann, i)
 
     def _extract_solution(self, sol):
         """解ベクトルから各成分を抽出"""
