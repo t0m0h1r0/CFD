@@ -150,7 +150,7 @@ def test_all_functions(args):
             )
     
     # 全関数比較
-    visualizer.compare_all_functions_errors(results, prefix=args.prefix)
+    visualizer.compare_all_functions_errors(results, grid_size=args.nx, prefix=args.prefix)
 
 def run_single_test(args):
     """単一関数テスト実行"""

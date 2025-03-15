@@ -57,7 +57,7 @@ class CCDVisualizer:
 
         return filepath
 
-    def compare_all_functions_errors(self, results_summary, prefix="", dpi=150, show=False):
+    def compare_all_functions_errors(self, results_summary, grid_size=None, prefix="", dpi=150, show=False):
         """全テスト関数の誤差比較グラフを生成"""
         func_names = list(results_summary.keys())
 
