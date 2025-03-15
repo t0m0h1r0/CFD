@@ -100,6 +100,7 @@ class DirichletBoundaryEquation2D(Equation2D):
         初期化
         
         Args:
+            direction: 境界条件の適用方向 ('x', 'y', 'both')
             grid: 計算格子オブジェクト
         """
         super().__init__(grid)
@@ -115,6 +116,7 @@ class DirichletBoundaryEquation2D(Equation2D):
         Returns:
             ステンシル係数の辞書
         """
+        # ψ (インデックス0) に制約を設定
         coeffs = {(0, 0): cp.array([1, 0, 0, 0, 0, 0, 0])}
         return coeffs
         
@@ -163,6 +165,7 @@ class NeumannXBoundaryEquation2D(Equation2D):
         Returns:
             ステンシル係数の辞書
         """
+        # ψ_x (インデックス1) に制約を設定
         coeffs = {(0, 0): cp.array([0, 1, 0, 0, 0, 0, 0])}
         return coeffs
         
@@ -210,6 +213,7 @@ class NeumannYBoundaryEquation2D(Equation2D):
         Returns:
             ステンシル係数の辞書
         """
+        # ψ_y (インデックス4) に制約を設定
         coeffs = {(0, 0): cp.array([0, 0, 0, 0, 1, 0, 0])}
         return coeffs
         

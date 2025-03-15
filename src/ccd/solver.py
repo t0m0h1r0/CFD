@@ -813,9 +813,11 @@ class CCDSolver2D(BaseCCDSolver):
             
         super().__init__(equation_set, grid)
 
-    def _build_rhs_vector(self, f_values=None, left_dirichlet=None, right_dirichlet=None, 
-                      bottom_dirichlet=None, top_dirichlet=None, left_neumann=None, 
-                      right_neumann=None, bottom_neumann=None, top_neumann=None, **kwargs):
+    # solver.py の _build_rhs_vector メソッド修正例
+
+    def _build_rhs_vector(self, f_values=None, left_dirichlet=None, right_dirichlet=None,
+                    bottom_dirichlet=None, top_dirichlet=None, left_neumann=None, 
+                    right_neumann=None, bottom_neumann=None, top_neumann=None, **kwargs):
         """
         2D右辺ベクトルを構築
         
@@ -858,7 +860,7 @@ class CCDSolver2D(BaseCCDSolver):
             for j in range(ny):
                 # 左境界ディリクレ(i=0)
                 if left_dirichlet is not None:
-                    idx = (j * nx + 0) * n_unknowns + 1  # ψ_x
+                    idx = (j * nx + 0) * n_unknowns + 0  # ψ (インデックス修正)
                     if isinstance(left_dirichlet, (list, cp.ndarray)) and j < len(left_dirichlet):
                         b[idx] = left_dirichlet[j]
                     elif isinstance(left_dirichlet, (int, float)):
@@ -866,7 +868,7 @@ class CCDSolver2D(BaseCCDSolver):
                 
                 # 右境界ディリクレ(i=nx-1)
                 if right_dirichlet is not None:
-                    idx = (j * nx + (nx-1)) * n_unknowns + 1  # ψ_x
+                    idx = (j * nx + (nx-1)) * n_unknowns + 0  # ψ (インデックス修正)
                     if isinstance(right_dirichlet, (list, cp.ndarray)) and j < len(right_dirichlet):
                         b[idx] = right_dirichlet[j]
                     elif isinstance(right_dirichlet, (int, float)):
@@ -876,7 +878,7 @@ class CCDSolver2D(BaseCCDSolver):
             for i in range(nx):
                 # 下境界ディリクレ(j=0)
                 if bottom_dirichlet is not None:
-                    idx = (0 * nx + i) * n_unknowns + 4  # ψ_y
+                    idx = (0 * nx + i) * n_unknowns + 0  # ψ (インデックス修正)
                     if isinstance(bottom_dirichlet, (list, cp.ndarray)) and i < len(bottom_dirichlet):
                         b[idx] = bottom_dirichlet[i]
                     elif isinstance(bottom_dirichlet, (int, float)):
@@ -884,7 +886,7 @@ class CCDSolver2D(BaseCCDSolver):
                 
                 # 上境界ディリクレ(j=ny-1)
                 if top_dirichlet is not None:
-                    idx = ((ny-1) * nx + i) * n_unknowns + 4  # ψ_y
+                    idx = ((ny-1) * nx + i) * n_unknowns + 0  # ψ (インデックス修正)
                     if isinstance(top_dirichlet, (list, cp.ndarray)) and i < len(top_dirichlet):
                         b[idx] = top_dirichlet[i]
                     elif isinstance(top_dirichlet, (int, float)):
@@ -896,7 +898,7 @@ class CCDSolver2D(BaseCCDSolver):
             for j in range(ny):
                 # 左境界ノイマン(i=0)
                 if left_neumann is not None:
-                    idx = (j * nx + 0) * n_unknowns + 2  # ψ_xx
+                    idx = (j * nx + 0) * n_unknowns + 1  # ψ_x (インデックス修正)
                     if isinstance(left_neumann, (list, cp.ndarray)) and j < len(left_neumann):
                         b[idx] = left_neumann[j]
                     elif isinstance(left_neumann, (int, float)):
@@ -904,7 +906,7 @@ class CCDSolver2D(BaseCCDSolver):
                 
                 # 右境界ノイマン(i=nx-1)
                 if right_neumann is not None:
-                    idx = (j * nx + (nx-1)) * n_unknowns + 2  # ψ_xx
+                    idx = (j * nx + (nx-1)) * n_unknowns + 1  # ψ_x (インデックス修正)
                     if isinstance(right_neumann, (list, cp.ndarray)) and j < len(right_neumann):
                         b[idx] = right_neumann[j]
                     elif isinstance(right_neumann, (int, float)):
@@ -914,7 +916,7 @@ class CCDSolver2D(BaseCCDSolver):
             for i in range(nx):
                 # 下境界ノイマン(j=0)
                 if bottom_neumann is not None:
-                    idx = (0 * nx + i) * n_unknowns + 5  # ψ_yy
+                    idx = (0 * nx + i) * n_unknowns + 4  # ψ_y (インデックス修正)
                     if isinstance(bottom_neumann, (list, cp.ndarray)) and i < len(bottom_neumann):
                         b[idx] = bottom_neumann[i]
                     elif isinstance(bottom_neumann, (int, float)):
@@ -922,7 +924,7 @@ class CCDSolver2D(BaseCCDSolver):
                 
                 # 上境界ノイマン(j=ny-1)
                 if top_neumann is not None:
-                    idx = ((ny-1) * nx + i) * n_unknowns + 5  # ψ_yy
+                    idx = ((ny-1) * nx + i) * n_unknowns + 4  # ψ_y (インデックス修正)
                     if isinstance(top_neumann, (list, cp.ndarray)) and i < len(top_neumann):
                         b[idx] = top_neumann[i]
                     elif isinstance(top_neumann, (int, float)):
