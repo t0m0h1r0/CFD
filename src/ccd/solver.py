@@ -57,6 +57,7 @@ class GMRESSolverStrategy(SolverStrategy):
                 maxiter=maxiter, 
                 M=precond,
                 restart=restart,
+                x0=cp.ones_like(b),
                 callback=callback
             )
             
@@ -114,6 +115,7 @@ class CGSolverStrategy(SolverStrategy):
                 tol=tol, 
                 maxiter=maxiter, 
                 M=precond, 
+                x0=cp.ones_like(b),
                 callback=callback
             )
             
@@ -169,6 +171,7 @@ class CGSSolverStrategy(SolverStrategy):
                 tol=tol, 
                 maxiter=maxiter, 
                 M=precond,
+                x0=cp.ones_like(b),
                 callback=callback
             )
             
@@ -224,6 +227,7 @@ class MINRESSolverStrategy(SolverStrategy):
                 tol=tol, 
                 maxiter=maxiter, 
                 M=precond,
+                x0=cp.ones_like(b),
                 callback=callback
             )
             
@@ -279,13 +283,8 @@ class LSQRSolverStrategy(SolverStrategy):
                     callback(x)
                 lsqr_callback = lsqr_callback_wrapper
                 
-            x, info, itn, _, _, _, _, _ = splinalg.lsqr(
+            x, info, itn, _, _, _, _, _, _, _ = splinalg.lsqr(
                 A, b, 
-                atol=atol, 
-                btol=btol, 
-                iter_lim=maxiter,
-                show=False,
-                callback=lsqr_callback
             )
             
             return x, itn
@@ -317,13 +316,14 @@ class LSMRSolverStrategy(SolverStrategy):
                     callback(x)
                 lsmr_callback = lsmr_callback_wrapper
                 
-            x, info, itn, _, _, _, _, _, _, _ = splinalg.lsmr(
+            x, info, itn, _, _, _, _, _ = splinalg.lsmr(
                 A, b, 
                 atol=atol, 
                 btol=btol, 
                 maxiter=maxiter,
-                show=False,
-                callback=lsmr_callback
+                x0=cp.ones_like(b),
+                #show=False,
+                #callback=lsmr_callback
             )
             
             return x, itn

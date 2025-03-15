@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument("--yrange", type=float, nargs=2, default=[-1.0, 1.0], help="y方向の範囲 (2Dのみ)")
     
     # ソルバー設定
-    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs'], 
+    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'minres', 'lsmr'], 
                       default='direct', help="ソルバー手法")
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法")
     parser.add_argument("--analyze", action="store_true", help="行列を分析する")
@@ -38,6 +38,10 @@ def parse_args():
     parser.add_argument("--converge", action="store_true", help="格子収束テスト実行")
     parser.add_argument("--all", action="store_true", help="全関数でテスト実行")
     parser.add_argument("--compare-scaling", action="store_true", help="スケーリング手法比較")
+    
+    # 検証モード (新規追加)
+    parser.add_argument("--verify", action="store_true", help="行列構造検証実行")
+    parser.add_argument("--verify-all", action="store_true", help="全方程式・次元・スケーリング手法で検証実行")
     
     return parser.parse_args()
 
@@ -175,6 +179,33 @@ def run_single_test(args):
             result["exact"], result["errors"], prefix=args.prefix
         )
 
+def run_verification(args):
+    """行列構造検証の実行"""
+    from verify import run_verification, run_all_verifications
+    
+    # verify用の出力ディレクトリ
+    verify_dir = os.path.join(args.out, "verify")
+    os.makedirs(verify_dir, exist_ok=True)
+    
+    if args.verify_all:
+        print("\nすべての方程式・次元・スケーリング手法で行列構造検証を実行します...")
+        run_all_verifications(
+            output_dir=verify_dir, 
+            scaling_methods=[args.scaling] if args.scaling else None,
+            solver_method=args.solver
+        )
+    else:
+        print(f"\n{args.equation}方程式の{args.dim}D行列構造検証を実行します...")
+        run_verification(
+            equation_set_name=args.equation,
+            dimension=args.dim,
+            nx=args.nx,
+            ny=args.ny,
+            scaling_method=args.scaling,
+            output_dir=verify_dir,
+            solver_method=args.solver
+        )
+
 def run_cli():
     """CLIエントリーポイント"""
     args = parse_args()
@@ -190,7 +221,9 @@ def run_cli():
         return
     
     # テストモード選択実行
-    if args.compare_scaling:
+    if args.verify or args.verify_all:
+        run_verification(args)
+    elif args.compare_scaling:
         compare_scaling(args)
     elif args.converge:
         run_convergence_test(args)

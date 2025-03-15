@@ -265,8 +265,16 @@ class PoissonEquationSet1D(EquationSet):
         system.add_right_boundary_equation(neumann_right)
                         
         # 3階導関数補助方程式
-        system.add_left_boundary_equation(LeftBoundary3rdDerivativeEquation(grid))
-        system.add_right_boundary_equation(RightBoundary3rdDerivativeEquation(grid))
+        system.add_left_boundary_equation(
+            LeftBoundary1stDerivativeEquation(grid)
+            + LeftBoundary2ndDerivativeEquation(grid)
+            + LeftBoundary3rdDerivativeEquation(grid)
+            )
+        system.add_right_boundary_equation(
+            RightBoundary1stDerivativeEquation(grid)
+            + RightBoundary2ndDerivativeEquation(grid)
+            + RightBoundary3rdDerivativeEquation(grid)
+            )
 
         return self.enable_dirichlet, self.enable_neumann
 
