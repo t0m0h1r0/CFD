@@ -495,7 +495,11 @@ class PoissonEquationSet2D(EquationSet):
         x_left_eqs = [
             DirichletBoundaryEquation2D(grid=grid),
             NeumannXBoundaryEquation2D(grid=grid),
-            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation()+
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
             converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
             converter.to_y(Internal3rdDerivativeEquation(), grid=grid)
@@ -507,7 +511,11 @@ class PoissonEquationSet2D(EquationSet):
         x_right_eqs = [
             DirichletBoundaryEquation2D(grid=grid),
             NeumannXBoundaryEquation2D(grid=grid),
-            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation()+
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
             converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
             converter.to_y(Internal3rdDerivativeEquation(), grid=grid)
@@ -522,7 +530,11 @@ class PoissonEquationSet2D(EquationSet):
             converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
             DirichletBoundaryEquation2D(grid=grid),
             NeumannYBoundaryEquation2D(grid=grid),
-            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(
+                LeftBoundary1stDerivativeEquation()+
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
         ]
         
         system.add_equations('bottom', y_bottom_eqs)
@@ -534,7 +546,11 @@ class PoissonEquationSet2D(EquationSet):
             converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
             DirichletBoundaryEquation2D(grid=grid),
             NeumannYBoundaryEquation2D(grid=grid),
-            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation()+
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
         ]
         
         system.add_equations('top', y_top_eqs)
@@ -543,10 +559,17 @@ class PoissonEquationSet2D(EquationSet):
         left_bottom_eqs = [
             DirichletBoundaryEquation2D(grid=grid),
             NeumannXBoundaryEquation2D(grid=grid),
-            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation()+
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
             NeumannYBoundaryEquation2D(grid=grid),
             converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid)
+            converter.to_y(
+                LeftBoundary1stDerivativeEquation()+
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid)
         ]
                     
         system.add_equations('left_bottom', left_bottom_eqs)
@@ -555,10 +578,17 @@ class PoissonEquationSet2D(EquationSet):
         right_top_eqs = [
             DirichletBoundaryEquation2D(grid=grid),
             NeumannXBoundaryEquation2D(grid=grid),
-            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation()+
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
             NeumannYBoundaryEquation2D(grid=grid),
             converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid)
+            converter.to_y(
+                RightBoundary1stDerivativeEquation()+
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid)
         ]
             
         system.add_equations('right_top', right_top_eqs)
@@ -567,10 +597,17 @@ class PoissonEquationSet2D(EquationSet):
         left_top_eqs = [
             NeumannXBoundaryEquation2D(grid=grid),
             converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation()+
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
             DirichletBoundaryEquation2D(grid=grid),
             NeumannYBoundaryEquation2D(grid=grid),
-            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation()+
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
         ]
             
         system.add_equations('left_top', left_top_eqs)
@@ -579,10 +616,17 @@ class PoissonEquationSet2D(EquationSet):
         right_bottom_eqs = [
             NeumannXBoundaryEquation2D(grid=grid),
             converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation()+
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
             DirichletBoundaryEquation2D(grid=grid),
             NeumannYBoundaryEquation2D(grid=grid),
-            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(
+                LeftBoundary1stDerivativeEquation()+
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
         ]
                     
         system.add_equations('right_bottom', right_bottom_eqs)
