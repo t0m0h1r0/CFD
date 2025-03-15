@@ -40,15 +40,17 @@ class CCDVerifier:
         return os.path.join(self.output_dir, f"{title}{scaling_suffix}_matrix.png")
     
     def verify_equation_set(self, equation_set_name: str, dimension: int, 
-                           grid_size: int, scaling_method: Optional[str] = None,
-                           solver_method: str = "direct") -> Dict:
+                        nx: int, ny: Optional[int] = None,
+                        scaling_method: Optional[str] = None,
+                        solver_method: str = "direct") -> Dict:
         """
         方程式セットを検証
         
         Args:
             equation_set_name: 方程式セット名
             dimension: 次元（1または2）
-            grid_size: グリッドサイズ
+            nx: x方向のグリッドサイズ
+            ny: y方向のグリッドサイズ (2Dのみ)
             scaling_method: スケーリング手法名（オプション）
             solver_method: ソルバー手法名
             
@@ -57,10 +59,13 @@ class CCDVerifier:
         """
         # グリッド作成
         if dimension == 1:
-            grid = Grid(grid_size, x_range=(-1.0, 1.0))
+            grid = Grid(nx, x_range=(-1.0, 1.0))
             test_func = TestFunctionFactory.create_standard_1d_functions()[3]  # Sine
         else:
-            grid = Grid(grid_size, grid_size, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
+            # 2Dの場合、nyが指定されていなければnxと同じにする
+            if ny is None:
+                ny = nx
+            grid = Grid(nx, ny, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
             test_func = TestFunctionFactory.create_standard_2d_functions()[0]  # Sine2D
         
         # 方程式セット作成
@@ -94,9 +99,19 @@ class CCDVerifier:
         
         # スケーリング適用（有効な場合）
         if scaling_method:
-            A_scaled, b_scaled, scaling_info, scaler = tester.solver._apply_scaling(A, b)
+            # 正しいスケーリング処理を行う
+            scaler = plugin_manager.get_plugin(scaling_method)
+            if scaler:
+                print(f"スケーリング手法を適用: {scaler.name} - {scaler.description}")
+                A_scaled, b_scaled, scaling_info = scaler.scale(A, b)
+            else:
+                print(f"警告: スケーリング手法 {scaling_method} が見つかりません。スケーリングなしで処理します。")
+                A_scaled, b_scaled = A, b
+                scaling_info = None
         else:
             A_scaled, b_scaled = A, b
+            scaling_info = None
+            scaler = None
         
         # 系の可視化
         title = f"{equation_set_name.capitalize()}{dimension}D_{test_func.name}"
@@ -112,7 +127,8 @@ class CCDVerifier:
         return {
             "equation_set": equation_set_name,
             "dimension": dimension,
-            "grid_size": grid_size,
+            "nx": nx,
+            "ny": ny if dimension == 2 else None,
             "matrix_size": A.shape[0],
             "non_zeros": A.nnz if hasattr(A, "nnz") else np.count_nonzero(A),
             "sparsity": sparsity,
@@ -259,21 +275,27 @@ class CCDVerifier:
         for eq_type in equation_set_types:
             for dim in dimensions:
                 for size in grid_sizes:
-                    # スケーリングなし検証
-                    result = self.verify_equation_set(
-                        eq_type, dim, size, 
-                        solver_method=solver_method
-                    )
-                    results.append(result)
-                    
-                    # スケーリング有り検証
-                    if scaling_methods:
-                        for scaling in scaling_methods:
-                            result = self.verify_equation_set(
-                                eq_type, dim, size, scaling,
-                                solver_method=solver_method
-                            )
-                            results.append(result)
+                    try:
+                        # スケーリングなし検証
+                        result = self.verify_equation_set(
+                            eq_type, dim, size, 
+                            solver_method=solver_method
+                        )
+                        results.append(result)
+                        
+                        # スケーリング有り検証
+                        if scaling_methods:
+                            for scaling in scaling_methods:
+                                try:
+                                    result = self.verify_equation_set(
+                                        eq_type, dim, size, size, scaling,
+                                        solver_method=solver_method
+                                    )
+                                    results.append(result)
+                                except Exception as e:
+                                    print(f"検証エラー ({eq_type}, {dim}D, サイズ={size}, スケーリング={scaling}): {e}")
+                    except Exception as e:
+                        print(f"検証エラー ({eq_type}, {dim}D, サイズ={size}): {e}")
         
         return results
     
@@ -285,26 +307,32 @@ class CCDVerifier:
             results: 検証結果のリスト
         """
         print("\n検証結果のまとめ:")
-        print("{:<15} {:<5} {:<8} {:<15} {:<10} {:<10}".format(
+        print("{:<15} {:<5} {:<12} {:<15} {:<10} {:<10}".format(
             "方程式セット", "次元", "グリッド", "スケーリング", "行列サイズ", "疎性率"
         ))
-        print("-" * 70)
+        print("-" * 75)
         
         for result in results:
             equation_set = result["equation_set"]
             dimension = result["dimension"]
-            grid_size = result["grid_size"]
+            
+            # グリッドサイズ表示の調整
+            if dimension == 1:
+                grid_size = f"{result['nx']}"
+            else:
+                grid_size = f"{result['nx']}x{result['ny']}"
+                
             scaling = result.get("scaling_method", "なし")
             matrix_size = result["matrix_size"]
             sparsity = result.get("sparsity", "N/A")
             sparsity_str = f"{sparsity:.4f}" if isinstance(sparsity, (int, float)) else "N/A"
             
-            print("{:<15} {:<5d} {:<8d} {:<15} {:<10d} {:<10}".format(
+            print("{:<15} {:<5d} {:<12} {:<15} {:<10d} {:<10}".format(
                 equation_set, dimension, grid_size, str(scaling), matrix_size, sparsity_str
             ))
 
 
-def run_verification(equation_set_name="poisson", dimension=1, grid_size=10, 
+def run_verification(equation_set_name="poisson", dimension=1, nx=10, ny=None, 
                     scaling_method=None, output_dir="verify_results", solver_method="direct"):
     """
     検証処理のエントリポイント
@@ -312,7 +340,8 @@ def run_verification(equation_set_name="poisson", dimension=1, grid_size=10,
     Args:
         equation_set_name: 方程式セット名
         dimension: 次元（1または2）
-        grid_size: グリッドサイズ
+        nx: x方向のグリッドサイズ
+        ny: y方向のグリッドサイズ（2Dのみ）
         scaling_method: スケーリング手法名
         output_dir: 出力ディレクトリ
         solver_method: ソルバー手法
@@ -323,14 +352,20 @@ def run_verification(equation_set_name="poisson", dimension=1, grid_size=10,
     verifier = CCDVerifier(output_dir=output_dir)
     
     result = verifier.verify_equation_set(
-        equation_set_name, dimension, grid_size, scaling_method,
-        solver_method=solver_method
+        equation_set_name, dimension, nx, ny,
+        scaling_method, solver_method
     )
     
     # 結果表示
     dimension = result["dimension"]
     eqs = result["equation_set"]
-    size = result["grid_size"]
+    
+    # グリッドサイズ表示の調整
+    if dimension == 1:
+        grid_info = f"{result['nx']}"
+    else:
+        grid_info = f"{result['nx']}x{result['ny']}"
+        
     matrix_size = result["matrix_size"]
     scaling = result.get("scaling_method", "なし")
     sparsity = result.get("sparsity", "N/A")
@@ -338,7 +373,7 @@ def run_verification(equation_set_name="poisson", dimension=1, grid_size=10,
     output_path = result.get("output_path", "")
     
     print(f"\n{dimension}D {eqs} 方程式の行列検証結果:")
-    print(f"  グリッドサイズ: {size}")
+    print(f"  グリッドサイズ: {grid_info}")
     print(f"  スケーリング: {scaling}")
     print(f"  行列サイズ: {matrix_size}")
     print(f"  疎性率: {sparsity_str}")
@@ -388,7 +423,8 @@ def parse_args():
     parser.add_argument("-o", "--out", type=str, default="verify_results", help="出力ディレクトリ")
     
     # グリッド設定
-    parser.add_argument("--grid-size", type=int, default=10, help="検証用グリッドサイズ")
+    parser.add_argument("--nx", type=int, default=10, help="x方向の格子点数")
+    parser.add_argument("--ny", type=int, default=None, help="y方向の格子点数 (2Dのみ)")
     
     # ソルバー設定
     parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'minres', 'lsmr'], 
@@ -436,7 +472,8 @@ if __name__ == "__main__":
         run_verification(
             equation_set_name=args.equation,
             dimension=args.dim,
-            grid_size=args.grid_size,
+            nx=args.nx,
+            ny=args.ny,
             scaling_method=args.scaling,
             output_dir=args.out,
             solver_method=args.solver

@@ -41,7 +41,6 @@ def parse_args():
     
     # 検証モード (新規追加)
     parser.add_argument("--verify", action="store_true", help="行列構造検証実行")
-    parser.add_argument("--verify-grid-size", type=int, default=10, help="検証用グリッドサイズ")
     parser.add_argument("--verify-all", action="store_true", help="全方程式・次元・スケーリング手法で検証実行")
     
     return parser.parse_args()
@@ -200,7 +199,8 @@ def run_verification(args):
         run_verification(
             equation_set_name=args.equation,
             dimension=args.dim,
-            grid_size=args.verify_grid_size,
+            nx=args.nx,
+            ny=args.ny,
             scaling_method=args.scaling,
             output_dir=verify_dir,
             solver_method=args.solver
