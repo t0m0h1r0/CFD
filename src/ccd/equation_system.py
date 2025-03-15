@@ -103,12 +103,7 @@ class EquationSystem:
             for region in self.equations.keys():
                 if region != 'interior':
                     if use_dirichlet:
-                        if region in ['left', 'right']:
-                            self.add_equation(region, DirichletBoundaryEquation2D(direction='x', grid=self.grid))
-                        elif region in ['bottom', 'top']:
-                            self.add_equation(region, DirichletBoundaryEquation2D(direction='y', grid=self.grid))
-                        else:  # corners
-                            self.add_equation(region, DirichletBoundaryEquation2D(direction='both', grid=self.grid))
+                        self.add_equation(region, DirichletBoundaryEquation2D(grid=self.grid))
                     
                     if use_neumann:
                         if region in ['left', 'right']:
