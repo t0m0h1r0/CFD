@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument("--all", action="store_true", help="全関数でテスト実行")
     parser.add_argument("--compare-scaling", action="store_true", help="スケーリング手法比較")
     
-    # 検証モード (新規追加)
+    # 検証モード (verify.py 機能統合)
     parser.add_argument("--verify", action="store_true", help="行列構造検証実行")
     parser.add_argument("--verify-all", action="store_true", help="全方程式・次元・スケーリング手法で検証実行")
     
@@ -180,31 +180,71 @@ def run_single_test(args):
         )
 
 def run_verification(args):
-    """行列構造検証の実行"""
-    from verify import run_verification, run_all_verifications
-    
+    """行列構造検証の実行 (tester.py の新機能を使用)"""
     # verify用の出力ディレクトリ
     verify_dir = os.path.join(args.out, "verify")
     os.makedirs(verify_dir, exist_ok=True)
     
+    # テスターを作成
+    tester = create_tester(args)
+    tester.results_dir = verify_dir  # 出力ディレクトリを設定
+    
     if args.verify_all:
         print("\nすべての方程式・次元・スケーリング手法で行列構造検証を実行します...")
-        run_all_verifications(
-            output_dir=verify_dir, 
-            scaling_methods=[args.scaling] if args.scaling else None,
-            solver_method=args.solver
-        )
+        run_all_verifications(args, verify_dir)
     else:
         print(f"\n{args.equation}方程式の{args.dim}D行列構造検証を実行します...")
-        run_verification(
-            equation_set_name=args.equation,
-            dimension=args.dim,
-            nx=args.nx,
-            ny=args.ny,
-            scaling_method=args.scaling,
-            output_dir=verify_dir,
-            solver_method=args.solver
-        )
+        # テスト関数取得
+        test_func = tester.get_test_function(args.func)
+        
+        # 行列システム可視化
+        output_path = tester.visualize_matrix_system(test_func)
+        print(f"行列構造の可視化結果: {output_path}")
+
+def run_all_verifications(args, output_dir):
+    """すべての検証を実行するエントリポイント (tester.py の機能を使用)"""
+    print("==== CCD行列構造検証ツール ====")
+    
+    equation_set_types = ["poisson", "derivative"]
+    dimensions = [1, 2]
+    grid_sizes = [10, 20]
+    
+    results = []
+    
+    # スケーリング手法
+    scaling_methods = [args.scaling] if args.scaling else ["SymmetricScaling"]
+    
+    for eq_type in equation_set_types:
+        for dim in dimensions:
+            for size in grid_sizes:
+                # グリッド作成
+                if dim == 1:
+                    grid = Grid(size, x_range=(-1.0, 1.0))
+                    tester = CCDTester1D(grid)
+                else:
+                    grid = Grid(size, size, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
+                    tester = CCDTester2D(grid)
+                
+                # 共通設定
+                tester.set_equation_set(eq_type)
+                tester.set_solver_options(args.solver, {"tol": 1e-10, "maxiter": 1000})
+                tester.results_dir = output_dir
+                
+                try:
+                    # スケーリングなし検証
+                    test_func = tester.get_test_function("Sine")
+                    output_path = tester.visualize_matrix_system(test_func)
+                    print(f"検証完了: {eq_type}, {dim}D, サイズ={size}, スケーリング=なし")
+                    
+                    # スケーリングあり検証
+                    for scaling in scaling_methods:
+                        tester.scaling_method = scaling
+                        output_path = tester.visualize_matrix_system(test_func)
+                        print(f"検証完了: {eq_type}, {dim}D, サイズ={size}, スケーリング={scaling}")
+                except Exception as e:
+                    print(f"検証エラー ({eq_type}, {dim}D, サイズ={size}): {e}")
+    
+    print(f"\n検証が完了しました。結果は {output_dir} に保存されています。")
 
 def run_cli():
     """CLIエントリーポイント"""

@@ -1,291 +1,287 @@
 from abc import ABC, abstractmethod
+import os
 import cupy as cp
 from grid import Grid
-from solver import CCDSolver1D, CCDSolver2D  # 直接次元別クラスをインポート
-from equation_sets import EquationSet, DerivativeEquationSet1D, DerivativeEquationSet2D  # 追加
+from solver import CCDSolver1D, CCDSolver2D
+from equation_sets import EquationSet, DerivativeEquationSet1D, DerivativeEquationSet2D
+from scaling import plugin_manager
+from matrix_visualizer import MatrixVisualizer
 
-class BaseCCDTester(ABC):
-    """CCDメソッドのテストを行う抽象基底クラス"""
+
+class CCDTester(ABC):
+    """CCDテスト基底クラス"""
 
     def __init__(self, grid):
-        """
-        グリッドを指定して初期化
-        
-        Args:
-            grid: Gridオブジェクト (1Dまたは2D)
-        """
         self.grid = grid
         self.solver = None
         self.solver_method = "direct"
-        self.solver_options = None
+        self.solver_options = {}
         self.scaling_method = None
-        self.analyze_matrix = False
         self.equation_set = None
+        self.results_dir = "results"
+        os.makedirs(self.results_dir, exist_ok=True)
 
-    def set_solver_options(self, method, options, analyze_matrix=False):
-        """
-        ソルバーのオプションを設定
-        
-        Args:
-            method: ソルバー方法 ("direct", "gmres", "cg", "cgs")
-            options: ソルバーオプション辞書
-            analyze_matrix: 解く前に行列を分析するかどうか
-        """
+    def setup(self, equation="poisson", method="direct", options=None, scaling=None):
+        """テスター設定のショートカット"""
+        self.equation_set = EquationSet.create(equation, dimension=self.get_dimension())
         self.solver_method = method
-        self.solver_options = options if options else {}
-        self.analyze_matrix = analyze_matrix
+        self.solver_options = options or {}
+        self.scaling_method = scaling
+        return self
         
-        # すでにソルバーが存在する場合は設定を更新
-        if self.solver is not None:
-            self.solver.set_solver(method=self.solver_method, options=self.solver_options)
-            if self.scaling_method is not None:
-                self.solver.scaling_method = self.scaling_method
-
+    def set_solver_options(self, method, options=None, analyze_matrix=False):
+        """cli.py との互換性のため"""
+        self.solver_method = method
+        self.solver_options = options or {}
+        return self
+        
     def set_equation_set(self, equation_set_name):
-        """
-        使用する方程式セットを設定
-        
-        Args:
-            equation_set_name: 方程式セット名
-        """
-        # 次元に基づいて適切なセットを作成
-        dimension = self.get_dimension()
-        self.equation_set = EquationSet.create(equation_set_name, dimension=dimension)
+        """cli.py との互換性のため"""
+        self.equation_set = EquationSet.create(equation_set_name, dimension=self.get_dimension())
+        return self
 
-    def run_test_with_options(self, test_func):
-        """
-        テスト実行
-        
-        Args:
-            test_func: テスト関数または関数名
-            
-        Returns:
-            テスト結果の辞書
-        """
-        # test_funcが文字列の場合、対応するテスト関数を取得
+    def run_test(self, test_func):
+        """テスト実行"""
         if isinstance(test_func, str):
             test_func = self.get_test_function(test_func)
         
-        # 方程式セットが未設定の場合はデフォルトを使用
-        if self.equation_set is None:
-            dimension = self.get_dimension()
-            self.equation_set = EquationSet.create("poisson", dimension=dimension)
+        if not self.equation_set:
+            self.equation_set = EquationSet.create("poisson", dimension=self.get_dimension())
 
-        # 適切なソルバーを作成または更新
-        self._create_solver()
-
-        # ソルバーオプション設定
-        if self.solver_method != "direct" or self.solver_options:
-            self.solver.set_solver(method=self.solver_method, options=self.solver_options)
-        
-        # スケーリング手法設定
-        if self.scaling_method is not None:
-            self.solver.scaling_method = self.scaling_method
-
-        if self.analyze_matrix:
-            self.solver.analyze_system()
-
-        # ソリューション計算と結果処理
+        self._init_solver()
         return self._process_solution(test_func)
-
-    def run_grid_convergence_test(self, test_func, grid_sizes, x_range, y_range=None):
-        """
-        格子収束性テスト
-        
-        Args:
-            test_func: テスト関数または関数名
-            grid_sizes: テストするグリッドサイズのリスト
-            x_range: x方向の範囲
-            y_range: y方向の範囲（2Dのみ）
-            
-        Returns:
-            各グリッドサイズの結果を持つ辞書
-        """
-        # 結果を保存する辞書
-        results = {}
-        
-        # 現在の設定をバックアップ
-        original_method = self.solver_method
-        original_options = self.solver_options
-        original_analyze = self.analyze_matrix
-        original_equation_set = self.equation_set
-        original_scaling_method = self.scaling_method
-
-        # test_funcが文字列の場合、対応するテスト関数を取得
+    
+    def run_test_with_options(self, test_func):
+        """旧APIとの互換性用"""
+        return self.run_test(test_func)
+    
+    def run_convergence_test(self, test_func, grid_sizes, x_range, y_range=None):
+        """格子収束性テスト"""
         if isinstance(test_func, str):
             test_func = self.get_test_function(test_func)
+            
+        results = {}
+        settings = {
+            'method': self.solver_method,
+            'options': self.solver_options,
+            'equation_set': self.equation_set,
+            'scaling': self.scaling_method
+        }
 
-        # 各グリッドサイズでテスト実行
         for n in grid_sizes:
-            # 次元に基づいてグリッドを作成
-            grid = self._create_grid_for_convergence_test(n, x_range, y_range)
-            
-            # 新しいテスターを作成（次元ごとの具体的なクラスを明示的に指定）
-            tester = self._create_tester_for_convergence_test(grid)
-            
-            # 設定を引き継ぐ
-            tester.set_solver_options(original_method, original_options, original_analyze)
-            tester.equation_set = original_equation_set
-            tester.scaling_method = original_scaling_method
-            
-            # テスト実行と結果保存
-            result = tester.run_test_with_options(test_func)
+            grid = self._create_grid(n, x_range, y_range)
+            tester = (CCDTester1D(grid) if self.get_dimension() == 1 else CCDTester2D(grid))
+            tester.setup(
+                equation=settings['equation_set'].__class__.__name__.replace('EquationSet', '').replace('1D', '').replace('2D', '').lower() 
+                if settings['equation_set'] else "poisson",
+                method=settings['method'],
+                options=settings['options'],
+                scaling=settings['scaling']
+            )
+            result = tester.run_test(test_func)
             results[n] = result["errors"]
 
         return results
+    
+    def visualize_matrix_system(self, test_func=None):
+        """行列システム可視化 (MatrixVisualizer を使用)"""
+        if test_func is None:
+            # デフォルトテスト関数
+            from test_functions import TestFunctionFactory
+            test_func = (TestFunctionFactory.create_standard_1d_functions()[3] if self.get_dimension() == 1 
+                      else TestFunctionFactory.create_standard_2d_functions()[0])
+        elif isinstance(test_func, str):
+            test_func = self.get_test_function(test_func)
         
+        self._init_solver()
+        A = self.solver.matrix_A
+        b = self._build_rhs(test_func)
+        
+        # スケーリング
+        A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A, b)
+        
+        # 解計算
+        x = self._solve_system(A_scaled, b_scaled)
+        if x is not None and scaling_info is not None and scaler is not None:
+            x = scaler.unscale(x, scaling_info)
+            
+        # 厳密解計算
+        exact_x = self._compute_exact(test_func) if x is not None else None
+        print(b[-3:],x[-3:],exact_x[-3:])
+        
+        # 外部ビジュアライザーを使用して可視化
+        visualizer = MatrixVisualizer(self.results_dir)
+        eq_name = self.equation_set.__class__.__name__.replace("EquationSet", "").replace("1D", "").replace("2D", "")
+        return visualizer.visualize(
+            A_scaled, b_scaled, x, exact_x, f"{eq_name}_{test_func.name}",
+            self.get_dimension(), self.scaling_method
+        )
+    
+    def _init_solver(self):
+        """ソルバー初期化"""
+        if not self.solver:
+            self._create_solver()
+            
+        if self.solver_method != "direct" or self.solver_options:
+            self.solver.set_solver(method=self.solver_method, options=self.solver_options)
+        
+        if self.scaling_method:
+            self.solver.scaling_method = self.scaling_method
+    
+    def _apply_scaling(self, A, b):
+        """スケーリング適用"""
+        if self.scaling_method:
+            scaler = plugin_manager.get_plugin(self.scaling_method)
+            if scaler:
+                A_scaled, b_scaled, scaling_info = scaler.scale(A, b)
+                return A_scaled, b_scaled, scaling_info, scaler
+        return A, b, None, None
+    
+    def _solve_system(self, A, b):
+        """システム解法"""
+        try:
+            if self.solver_method == "direct":
+                from cupyx.scipy.sparse.linalg import spsolve
+                return spsolve(A, b)
+            
+            from cupyx.scipy.sparse.linalg import gmres, cg, cgs, lsqr, minres, lsmr
+            solvers = {"gmres": gmres, "cg": cg, "cgs": cgs, "lsqr": lsqr, "minres": minres, "lsmr": lsmr}
+            solver = solvers.get(self.solver_method)
+            
+            if solver:
+                x, _ = solver(A, b)
+                return x
+                
+            from cupyx.scipy.sparse.linalg import spsolve
+            return spsolve(A, b)
+        except Exception as e:
+            print(f"解法エラー: {e}")
+            return None
+    
+    def _create_grid(self, n, x_range, y_range=None):
+        """グリッド作成"""
+        if self.get_dimension() == 1:
+            return Grid(n, x_range=x_range)
+        return Grid(n, n, x_range=x_range, y_range=y_range or x_range)
+    
     @abstractmethod
     def get_dimension(self):
-        """次元を返す（1または2）"""
+        """次元を返す"""
         pass
         
     @abstractmethod
     def get_test_function(self, func_name):
-        """
-        関数名からテスト関数を取得
-        
-        Args:
-            func_name: テスト関数名
-            
-        Returns:
-            テスト関数オブジェクト
-        """
+        """テスト関数取得"""
         pass
-        
+    
+    @abstractmethod
+    def _create_solver(self):
+        """ソルバー作成"""
+        pass
+    
+    @abstractmethod
+    def _build_rhs(self, test_func):
+        """右辺ベクトル構築"""
+        pass
+    
+    @abstractmethod
+    def _compute_exact(self, test_func):
+        """厳密解計算"""
+        pass
+    
     @abstractmethod
     def _process_solution(self, test_func):
-        """
-        数値解と誤差を計算して結果を返す
-        
-        Args:
-            test_func: テスト関数
-            
-        Returns:
-            テスト結果の辞書
-        """
-        pass
-        
-    @abstractmethod
-    def _create_grid_for_convergence_test(self, n, x_range, y_range=None):
-        """
-        収束性テスト用のグリッドを作成
-        
-        Args:
-            n: グリッドサイズ
-            x_range: x方向の範囲
-            y_range: y方向の範囲（2Dのみ）
-            
-        Returns:
-            Grid オブジェクト
-        """
-        pass
-        
-    @abstractmethod
-    def _create_tester_for_convergence_test(self, grid):
-        """
-        収束性テスト用のテスターを作成
-        
-        Args:
-            grid: Grid オブジェクト
-            
-        Returns:
-            BaseCCDTester のサブクラスインスタンス
-        """
-        pass
-
-    @abstractmethod
-    def _create_solver(self):
-        """次元に応じた適切なソルバーを作成"""
+        """解を処理して結果を返す"""
         pass
 
 
-class CCDTester1D(BaseCCDTester):
-    """1D CCDメソッドのテストを行うクラス"""
+class CCDTester1D(CCDTester):
+    """1D CCDテスター"""
     
     def __init__(self, grid):
-        """
-        グリッドを指定して初期化
-        
-        Args:
-            grid: 1D Grid オブジェクト
-        """
-        super().__init__(grid)
         if grid.is_2d:
             raise ValueError("1Dテスターは2Dグリッドでは使用できません")
+        super().__init__(grid)
     
     def _create_solver(self):
-        """1D用ソルバーを作成"""
-        if self.solver is None:
-            # 新しいインターフェースを使用: equation_set とgridを渡す
-            self.solver = CCDSolver1D(self.equation_set, self.grid)
-        else:
-            # 既存のソルバーのプロパティを更新（必要であれば）
-            if hasattr(self.solver, 'equation_set'):
-                self.solver.equation_set = self.equation_set
+        """1D用ソルバー作成"""
+        self.solver = CCDSolver1D(self.equation_set, self.grid)
             
     def get_dimension(self):
-        """次元を返す"""
         return 1
     
     def get_test_function(self, func_name):
-        """1Dテスト関数を取得"""
+        """1Dテスト関数取得"""
         from test_functions import TestFunctionFactory
         
-        test_funcs = TestFunctionFactory.create_standard_1d_functions()
-        selected_func = next((f for f in test_funcs if f.name == func_name), None)
+        funcs = TestFunctionFactory.create_standard_1d_functions()
+        func = next((f for f in funcs if f.name == func_name), None)
         
-        if selected_func is None:
-            print(f"警告: 1D関数 '{func_name}' が見つかりませんでした。デフォルト関数を使用します。")
-            selected_func = test_funcs[0]
+        if not func:
+            print(f"警告: 1D関数 '{func_name}' が見つかりません。デフォルト関数を使用します。")
+            func = funcs[0]
             
-        return selected_func
+        return func
+    
+    def _build_rhs(self, test_func):
+        """1D右辺構築"""
+        x_min, x_max = self.grid.x_min, self.grid.x_max
         
+        # ソース項
+        is_derivative = isinstance(self.equation_set, DerivativeEquationSet1D)
+        f_values = cp.array([test_func.f(x) if is_derivative else test_func.d2f(x) for x in self.grid.x])
+        
+        # 境界値
+        boundary = {
+            'left_dirichlet': test_func.f(x_min),
+            'right_dirichlet': test_func.f(x_max),
+            'left_neumann': test_func.df(x_min),
+            'right_neumann': test_func.df(x_max)
+        }
+        
+        self._init_solver()
+        return self.solver._build_rhs_vector(f_values=f_values, **boundary)
+    
+    def _compute_exact(self, test_func):
+        """1D厳密解計算"""
+        n_points = self.grid.n_points
+        exact = cp.zeros(n_points * 4)
+        
+        for i in range(n_points):
+            xi = self.grid.get_point(i)
+            exact[i*4] = test_func.f(xi)
+            exact[i*4+1] = test_func.df(xi)
+            exact[i*4+2] = test_func.d2f(xi)
+            exact[i*4+3] = test_func.d3f(xi)
+            
+        return exact
+    
     def _process_solution(self, test_func):
-        """
-        数値解と誤差を計算して結果を返す (1D version)
-        
-        Args:
-            test_func: テスト関数
-            
-        Returns:
-            テスト結果の辞書
-        """
-        # グリッド点での厳密解を計算
+        """1D解処理"""
         x = self.grid.get_points()
+        is_derivative = isinstance(self.equation_set, DerivativeEquationSet1D)
+        
+        # 厳密解計算
         exact_psi = cp.array([test_func.f(xi) for xi in x])
         exact_psi_prime = cp.array([test_func.df(xi) for xi in x])
         exact_psi_second = cp.array([test_func.d2f(xi) for xi in x])
         exact_psi_third = cp.array([test_func.d3f(xi) for xi in x])
         
-        # 右辺の値と境界条件の値を準備
+        # 解計算のための入力準備
         x_min, x_max = self.grid.x_min, self.grid.x_max
+        f_values = cp.array([test_func.f(xi) if is_derivative else test_func.d2f(xi) for xi in x])
         
-        # 方程式セットのタイプに応じて適切な関数値を使用
-        is_derivative_set = isinstance(self.equation_set, DerivativeEquationSet1D)
-        
-        if is_derivative_set:
-            # 導関数計算の場合は元の関数値を使用
-            print("テスト関数から直接導関数を計算します (Derivative)")
-            f_values = cp.array([test_func.f(xi) for xi in x])
-        else:
-            # ポアソン方程式の場合は2階微分値を使用
-            print("ポアソン方程式 ψ''(x) = f(x) を解きます (Poisson)")
-            f_values = cp.array([test_func.d2f(xi) for xi in x])
-        
-        # 境界条件の値
-        left_dirichlet = test_func.f(x_min)
-        right_dirichlet = test_func.f(x_max)
-        left_neumann = test_func.df(x_min)
-        right_neumann = test_func.df(x_max)
+        # 境界条件
+        boundary = {
+            'left_dirichlet': test_func.f(x_min),
+            'right_dirichlet': test_func.f(x_max),
+            'left_neumann': test_func.df(x_min),
+            'right_neumann': test_func.df(x_max)
+        }
 
-        # ソルバーで解を計算 - 新しいインターフェース
+        # 解計算
         psi, psi_prime, psi_second, psi_third = self.solver.solve(
-            analyze_before_solve=False,
-            f_values=f_values,
-            left_dirichlet=left_dirichlet,
-            right_dirichlet=right_dirichlet,
-            left_neumann=left_neumann,
-            right_neumann=right_neumann
+            analyze_before_solve=False, f_values=f_values, **boundary
         )
 
         # 誤差計算
@@ -300,173 +296,159 @@ class CCDTester1D(BaseCCDTester):
             "exact": [exact_psi, exact_psi_prime, exact_psi_second, exact_psi_third],
             "errors": [err_psi, err_psi_prime, err_psi_second, err_psi_third],
         }
-        
-    def _create_grid_for_convergence_test(self, n, x_range, y_range=None):
-        """収束性テスト用の1Dグリッドを作成"""
-        return Grid(n, x_range=x_range)
-        
-    def _create_tester_for_convergence_test(self, grid):
-        """1Dテスターを作成"""
-        return CCDTester1D(grid)
 
 
-class CCDTester2D(BaseCCDTester):
-    """2D CCDメソッドのテストを行うクラス"""
+class CCDTester2D(CCDTester):
+    """2D CCDテスター"""
     
     def __init__(self, grid):
-        """
-        グリッドを指定して初期化
-        
-        Args:
-            grid: 2D Grid オブジェクト
-        """
-        super().__init__(grid)
         if not grid.is_2d:
             raise ValueError("2Dテスターは1Dグリッドでは使用できません")
+        super().__init__(grid)
     
     def _create_solver(self):
-        """2D用ソルバーを作成"""
-        if self.solver is None:
-            # 新しいインターフェースを使用: equation_set とgridを渡す
-            self.solver = CCDSolver2D(self.equation_set, self.grid)
-        else:
-            # 既存のソルバーのプロパティを更新（必要であれば）
-            if hasattr(self.solver, 'equation_set'):
-                self.solver.equation_set = self.equation_set
+        """2D用ソルバー作成"""
+        self.solver = CCDSolver2D(self.equation_set, self.grid)
             
     def get_dimension(self):
-        """次元を返す"""
         return 2
     
     def get_test_function(self, func_name):
-        """2Dテスト関数を取得"""
+        """2Dテスト関数取得"""
         from test_functions import TestFunctionFactory, TestFunction
         
-        # まず基本的な2D関数を生成
-        standard_funcs = TestFunctionFactory.create_standard_2d_functions()
+        # 基本2D関数
+        funcs = TestFunctionFactory.create_standard_2d_functions()
+        func = next((f for f in funcs if f.name == func_name), None)
+        if func:
+            return func
         
-        # 指定された名前の関数を検索
-        selected_func = next((f for f in standard_funcs if f.name == func_name), None)
-        if selected_func is not None:
-            return selected_func
-        
-        # 見つからない場合は、1D関数から動的に生成を試みる
+        # 1D関数から変換
         funcs_1d = TestFunctionFactory.create_standard_1d_functions()
         func_1d = next((f for f in funcs_1d if f.name == func_name), None)
-        
-        if func_1d is not None:
-            # テンソル積拡張を作成
+        if func_1d:
             return TestFunction.from_1d_to_2d(func_1d, method='product')
         
-        # それでも見つからない場合は、最初の関数を返す
-        print(f"警告: 2D関数 '{func_name}' が見つかりませんでした。デフォルト関数を使用します。")
-        return standard_funcs[0]
-        
-    def _process_solution(self, test_func):
-        """
-        数値解と誤差を計算して結果を返す (2D version)
-        
-        Args:
-            test_func: テスト関数
-            
-        Returns:
-            テスト結果の辞書
-        """
-        # グリッド点を取得
-        X, Y = self.grid.get_points()
+        # デフォルト
+        print(f"警告: 2D関数 '{func_name}' が見つかりません。デフォルト関数を使用します。")
+        return funcs[0]
+    
+    def _build_rhs(self, test_func):
+        """2D右辺構築"""
         nx, ny = self.grid.nx_points, self.grid.ny_points
         x_min, x_max = self.grid.x_min, self.grid.x_max
         y_min, y_max = self.grid.y_min, self.grid.y_max
-
-        # 厳密解を計算
-        exact_psi = cp.zeros((nx, ny))
-        exact_psi_x = cp.zeros((nx, ny))
-        exact_psi_y = cp.zeros((nx, ny))
-        exact_psi_xx = cp.zeros((nx, ny))
-        exact_psi_yy = cp.zeros((nx, ny))
-        exact_psi_xxx = cp.zeros((nx, ny))
-        exact_psi_yyy = cp.zeros((nx, ny))
-
-        # 各グリッド点で厳密値を計算
+        
+        # ソース項
+        is_derivative = isinstance(self.equation_set, DerivativeEquationSet2D)
+        f_values = cp.zeros((nx, ny))
         for i in range(nx):
             for j in range(ny):
                 x, y = self.grid.get_point(i, j)
-                exact_psi[i, j] = test_func.f(x, y)
-                exact_psi_x[i, j] = test_func.df_dx(x, y)
-                exact_psi_y[i, j] = test_func.df_dy(x, y)
-                exact_psi_xx[i, j] = test_func.d2f_dx2(x, y)
-                exact_psi_yy[i, j] = test_func.d2f_dy2(x, y)
-                exact_psi_xxx[i, j] = test_func.d3f_dx3(x, y)
-                exact_psi_yyy[i, j] = test_func.d3f_dy3(x, y)
-
-        # 方程式セットのタイプに応じて適切な関数値を使用
-        is_derivative_set = isinstance(self.equation_set, DerivativeEquationSet2D)
-
-        # 右辺の値を準備
-        f_values = cp.zeros((nx, ny))
+                f_values[i, j] = test_func.f(x, y) if is_derivative else (test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y))
         
-        if is_derivative_set:
-            # 導関数計算の場合は元の関数値を使用
-            print("テスト関数から直接導関数を計算します (Derivative)")
+        # 境界値
+        boundary = {
+            'left_dirichlet': cp.array([test_func.f(x_min, y) for y in self.grid.y]),
+            'right_dirichlet': cp.array([test_func.f(x_max, y) for y in self.grid.y]),
+            'bottom_dirichlet': cp.array([test_func.f(x, y_min) for x in self.grid.x]),
+            'top_dirichlet': cp.array([test_func.f(x, y_max) for x in self.grid.x]),
+            'left_neumann': cp.array([test_func.df_dx(x_min, y) for y in self.grid.y]),
+            'right_neumann': cp.array([test_func.df_dx(x_max, y) for y in self.grid.y]),
+            'bottom_neumann': cp.array([test_func.df_dy(x, y_min) for x in self.grid.x]),
+            'top_neumann': cp.array([test_func.df_dy(x, y_max) for x in self.grid.x])
+        }
+        
+        self._init_solver()
+        return self.solver._build_rhs_vector(f_values=f_values, **boundary)
+    
+    def _compute_exact(self, test_func):
+        """2D厳密解計算"""
+        nx, ny = self.grid.nx_points, self.grid.ny_points
+        exact = cp.zeros(nx * ny * 7)
+        
+        for j in range(ny):
             for i in range(nx):
-                for j in range(ny):
-                    x, y = self.grid.get_point(i, j)
-                    f_values[i, j] = test_func.f(x, y)
-        else:
-            # ポアソン方程式の場合はラプラシアン（∆ψ = f）を使用
-            print("ポアソン方程式 ∆ψ = f(x,y) を解きます (Poisson)")
-            for i in range(nx):
-                for j in range(ny):
-                    x, y = self.grid.get_point(i, j)
-                    f_values[i, j] = test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
+                idx = (j * nx + i) * 7
+                x, y = self.grid.get_point(i, j)
+                exact[idx] = test_func.f(x, y)
+                exact[idx+1] = test_func.df_dx(x, y)
+                exact[idx+2] = test_func.d2f_dx2(x, y)
+                exact[idx+3] = test_func.d3f_dx3(x, y)
+                exact[idx+4] = test_func.df_dy(x, y)
+                exact[idx+5] = test_func.d2f_dy2(x, y)
+                exact[idx+6] = test_func.d3f_dy3(x, y)
+                
+        return exact
+    
+    def _process_solution(self, test_func):
+        """2D解処理"""
+        nx, ny = self.grid.nx_points, self.grid.ny_points
+        X, Y = self.grid.get_points()
+        x_min, x_max = self.grid.x_min, self.grid.x_max
+        y_min, y_max = self.grid.y_min, self.grid.y_max
+        is_derivative = isinstance(self.equation_set, DerivativeEquationSet2D)
 
-        # 境界条件の値
-        left_dirichlet = cp.array([test_func.f(x_min, y) for y in self.grid.y])
-        right_dirichlet = cp.array([test_func.f(x_max, y) for y in self.grid.y])
-        bottom_dirichlet = cp.array([test_func.f(x, y_min) for x in self.grid.x])
-        top_dirichlet = cp.array([test_func.f(x, y_max) for x in self.grid.x])
+        # 厳密解準備
+        exact = {
+            'psi': cp.zeros((nx, ny)),
+            'psi_x': cp.zeros((nx, ny)),
+            'psi_y': cp.zeros((nx, ny)),
+            'psi_xx': cp.zeros((nx, ny)),
+            'psi_yy': cp.zeros((nx, ny)),
+            'psi_xxx': cp.zeros((nx, ny)),
+            'psi_yyy': cp.zeros((nx, ny))
+        }
 
-        left_neumann = cp.array([test_func.df_dx(x_min, y) for y in self.grid.y])
-        right_neumann = cp.array([test_func.df_dx(x_max, y) for y in self.grid.y])
-        bottom_neumann = cp.array([test_func.df_dy(x, y_min) for x in self.grid.x])
-        top_neumann = cp.array([test_func.df_dy(x, y_max) for x in self.grid.x])
+        # 各点で厳密値計算
+        for i in range(nx):
+            for j in range(ny):
+                x, y = self.grid.get_point(i, j)
+                exact['psi'][i, j] = test_func.f(x, y)
+                exact['psi_x'][i, j] = test_func.df_dx(x, y)
+                exact['psi_y'][i, j] = test_func.df_dy(x, y)
+                exact['psi_xx'][i, j] = test_func.d2f_dx2(x, y)
+                exact['psi_yy'][i, j] = test_func.d2f_dy2(x, y)
+                exact['psi_xxx'][i, j] = test_func.d3f_dx3(x, y)
+                exact['psi_yyy'][i, j] = test_func.d3f_dy3(x, y)
 
-        # ソルバーで解を計算 - 新しいインターフェース
-        psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy = self.solver.solve(
-            analyze_before_solve=False,
-            f_values=f_values,
-            left_dirichlet=left_dirichlet,
-            right_dirichlet=right_dirichlet,
-            bottom_dirichlet=bottom_dirichlet,
-            top_dirichlet=top_dirichlet,
-            left_neumann=left_neumann,
-            right_neumann=right_neumann,
-            bottom_neumann=bottom_neumann,
-            top_neumann=top_neumann
-        )
+        # 右辺値準備
+        f_values = cp.zeros((nx, ny))
+        for i in range(nx):
+            for j in range(ny):
+                x, y = self.grid.get_point(i, j)
+                f_values[i, j] = test_func.f(x, y) if is_derivative else (test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y))
 
-        # 誤差を計算
-        err_psi = float(cp.max(cp.abs(psi - exact_psi)))
-        err_psi_x = float(cp.max(cp.abs(psi_x - exact_psi_x)))
-        err_psi_y = float(cp.max(cp.abs(psi_y - exact_psi_y)))
-        err_psi_xx = float(cp.max(cp.abs(psi_xx - exact_psi_xx)))
-        err_psi_yy = float(cp.max(cp.abs(psi_yy - exact_psi_yy)))
-        err_psi_xxx = float(cp.max(cp.abs(psi_xxx - exact_psi_xxx)))
-        err_psi_yyy = float(cp.max(cp.abs(psi_yyy - exact_psi_yyy)))
+        # 境界条件
+        boundary = {
+            'left_dirichlet': cp.array([test_func.f(x_min, y) for y in self.grid.y]),
+            'right_dirichlet': cp.array([test_func.f(x_max, y) for y in self.grid.y]),
+            'bottom_dirichlet': cp.array([test_func.f(x, y_min) for x in self.grid.x]),
+            'top_dirichlet': cp.array([test_func.f(x, y_max) for x in self.grid.x]),
+            'left_neumann': cp.array([test_func.df_dx(x_min, y) for y in self.grid.y]),
+            'right_neumann': cp.array([test_func.df_dx(x_max, y) for y in self.grid.y]),
+            'bottom_neumann': cp.array([test_func.df_dy(x, y_min) for x in self.grid.x]),
+            'top_neumann': cp.array([test_func.df_dy(x, y_max) for x in self.grid.x])
+        }
+
+        # 解計算
+        sol = self.solver.solve(analyze_before_solve=False, f_values=f_values, **boundary)
+        psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy = sol
+
+        # 誤差計算
+        errors = [
+            float(cp.max(cp.abs(psi - exact['psi']))),
+            float(cp.max(cp.abs(psi_x - exact['psi_x']))),
+            float(cp.max(cp.abs(psi_y - exact['psi_y']))),
+            float(cp.max(cp.abs(psi_xx - exact['psi_xx']))),
+            float(cp.max(cp.abs(psi_yy - exact['psi_yy']))),
+            float(cp.max(cp.abs(psi_xxx - exact['psi_xxx']))),
+            float(cp.max(cp.abs(psi_yyy - exact['psi_yyy'])))
+        ]
 
         return {
             "function": test_func.name,
             "numerical": [psi, psi_x, psi_y, psi_xx, psi_yy, psi_xxx, psi_yyy],
-            "exact": [exact_psi, exact_psi_x, exact_psi_y, exact_psi_xx, exact_psi_yy, exact_psi_xxx, exact_psi_yyy],
-            "errors": [err_psi, err_psi_x, err_psi_y, err_psi_xx, err_psi_yy, err_psi_xxx, err_psi_yyy],
+            "exact": [v for v in exact.values()],
+            "errors": errors,
         }
-        
-    def _create_grid_for_convergence_test(self, n, x_range, y_range=None):
-        """収束性テスト用の2Dグリッドを作成"""
-        if y_range is None:
-            y_range = x_range  # デフォルトでx_rangeと同じ
-        return Grid(n, n, x_range=x_range, y_range=y_range)
-        
-    def _create_tester_for_convergence_test(self, grid):
-        """2Dテスターを作成"""
-        return CCDTester2D(grid)
