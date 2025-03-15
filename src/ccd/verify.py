@@ -40,9 +40,9 @@ class CCDVerifier:
         return os.path.join(self.output_dir, f"{title}{scaling_suffix}_matrix.png")
     
     def verify_equation_set(self, equation_set_name: str, dimension: int, 
-                        nx: int, ny: Optional[int] = None,
-                        scaling_method: Optional[str] = None,
-                        solver_method: str = "direct") -> Dict:
+                           nx: int, ny: Optional[int] = None,
+                           scaling_method: Optional[str] = None,
+                           solver_method: str = "direct") -> Dict:
         """
         方程式セットを検証
         
@@ -108,21 +108,102 @@ class CCDVerifier:
                 print(f"警告: スケーリング手法 {scaling_method} が見つかりません。スケーリングなしで処理します。")
                 A_scaled, b_scaled = A, b
                 scaling_info = None
+                scaler = None
         else:
             A_scaled, b_scaled = A, b
             scaling_info = None
             scaler = None
         
+        # 解ベクトルの計算
+        try:
+            if solver_method == "direct":
+                from cupyx.scipy.sparse.linalg import spsolve
+                x = spsolve(A_scaled, b_scaled)
+            else:
+                # 反復解法を使用
+                from cupyx.scipy.sparse.linalg import gmres, cg, cgs, lsqr, minres, lsmr
+                
+                if solver_method == "gmres":
+                    x, _ = gmres(A_scaled, b_scaled)
+                elif solver_method == "cg":
+                    x, _ = cg(A_scaled, b_scaled)
+                elif solver_method == "cgs":
+                    x, _ = cgs(A_scaled, b_scaled)
+                elif solver_method == "lsqr":
+                    x, _, _, _, _, _, _, _ = lsqr(A_scaled, b_scaled)
+                elif solver_method == "minres":
+                    x, _ = minres(A_scaled, b_scaled)
+                elif solver_method == "lsmr":
+                    x, _, _, _, _, _, _, _, _, _ = lsmr(A_scaled, b_scaled)
+                else:
+                    # デフォルトは直接解法
+                    from cupyx.scipy.sparse.linalg import spsolve
+                    x = spsolve(A_scaled, b_scaled)
+                    
+            # スケーリングされていた場合はアンスケール
+            if scaling_method and scaler and scaling_info:
+                x = scaler.unscale(x, scaling_info)
+        except Exception as e:
+            print(f"警告: ソルバー {solver_method} での解法に失敗しました: {e}")
+            print("解と厳密解の比較は行いません。")
+            x = None
+            
+        # 厳密解の計算
+        if x is not None:
+            try:
+                if dimension == 1:
+                    # 1Dの場合
+                    exact_solution = cp.zeros_like(x)
+                    
+                    # 各成分（ψ, ψ', ψ'', ψ'''）ごとに計算
+                    n_points = grid.n_points
+                    for i in range(n_points):
+                        xi = grid.get_point(i)
+                        exact_solution[i*4] = test_func.f(xi)         # ψ
+                        exact_solution[i*4+1] = test_func.df(xi)      # ψ'
+                        exact_solution[i*4+2] = test_func.d2f(xi)     # ψ''
+                        exact_solution[i*4+3] = test_func.d3f(xi)     # ψ'''
+                else:
+                    # 2Dの場合
+                    exact_solution = cp.zeros_like(x)
+                    
+                    # 各成分（ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy）ごとに計算
+                    nx, ny = grid.nx_points, grid.ny_points
+                    for j in range(ny):
+                        for i in range(nx):
+                            idx = (j * nx + i) * 7  # 7は2Dでの1点あたりの未知数
+                            x_val, y_val = grid.get_point(i, j)
+                            exact_solution[idx] = test_func.f(x_val, y_val)            # ψ
+                            exact_solution[idx+1] = test_func.df_dx(x_val, y_val)      # ψ_x
+                            exact_solution[idx+2] = test_func.d2f_dx2(x_val, y_val)    # ψ_xx
+                            exact_solution[idx+3] = test_func.d3f_dx3(x_val, y_val)    # ψ_xxx
+                            exact_solution[idx+4] = test_func.df_dy(x_val, y_val)      # ψ_y
+                            exact_solution[idx+5] = test_func.d2f_dy2(x_val, y_val)    # ψ_yy
+                            exact_solution[idx+6] = test_func.d3f_dy3(x_val, y_val)    # ψ_yyy
+            except Exception as e:
+                print(f"警告: 厳密解の計算に失敗しました: {e}")
+                print("解と厳密解の比較は行いません。")
+                exact_solution = None
+        else:
+            exact_solution = None
+        
         # 系の可視化
         title = f"{equation_set_name.capitalize()}{dimension}D_{test_func.name}"
         output_path = self.generate_filename(title, scaling_method)
         
-        self.visualize_system(A_scaled, b_scaled, None, title, output_path)
+        self.visualize_system(A_scaled, b_scaled, x, exact_solution, title, output_path)
         
         # 結果を返す
         sparsity = None
         if tester.solver.sparsity_info:
             sparsity = tester.solver.sparsity_info.get("sparsity")
+        
+        # エラー計算
+        if x is not None and exact_solution is not None:
+            error = cp.max(cp.abs(x - exact_solution))
+            error = float(error.get() if hasattr(error, 'get') else error)
+        else:
+            error = None
         
         return {
             "equation_set": equation_set_name,
@@ -133,6 +214,7 @@ class CCDVerifier:
             "non_zeros": A.nnz if hasattr(A, "nnz") else np.count_nonzero(A),
             "sparsity": sparsity,
             "scaling_method": scaling_method,
+            "max_error": error,
             "output_path": output_path
         }
     
@@ -191,15 +273,16 @@ class CCDVerifier:
             
             return solver._build_rhs_vector(f_values=f_values, **boundary)
     
-    def visualize_system(self, A: Any, b: Any, x: Any, 
+    def visualize_system(self, A: Any, b: Any, x: Any, exact_x: Any, 
                          title: str, output_path: str) -> str:
         """
-        システム Ax = b を可視化
+        システム Ax = b と解x、厳密解exact_xを可視化
         
         Args:
             A: システム行列
             b: 右辺ベクトル
             x: 解ベクトル
+            exact_x: 厳密解ベクトル
             title: 図のタイトル
             output_path: 出力ファイルのパス
             
@@ -218,38 +301,135 @@ class CCDVerifier:
         A_np = to_numpy(A)
         b_np = to_numpy(b).reshape(-1, 1)
         x_np = to_numpy(x).reshape(-1, 1) if x is not None else None
+        exact_x_np = to_numpy(exact_x).reshape(-1, 1) if exact_x is not None else None
         
-        # A、x、bを結合
+        # 図の準備（2x3のグリッド）
+        fig = plt.figure(figsize=(18, 12))
+        
+        # A行列の可視化
+        ax1 = fig.add_subplot(2, 3, 1)
+        abs_A = np.abs(A_np)
+        non_zero_A = abs_A[abs_A > 0]
+        
+        if len(non_zero_A) > 0:
+            im1 = ax1.imshow(
+                abs_A, 
+                norm=LogNorm(vmin=non_zero_A.min(), vmax=abs_A.max()),
+                cmap='viridis', 
+                aspect='auto', 
+                interpolation='nearest'
+            )
+            plt.colorbar(im1, ax=ax1, label='Absolute Value (Log Scale)')
+        ax1.set_title("Matrix A")
+        ax1.set_xlabel("Column Index")
+        ax1.set_ylabel("Row Index")
+        
+        # x（数値解）の可視化
         if x_np is not None:
-            combined = np.hstack([A_np, x_np, b_np])
-        else:
-            combined = np.hstack([A_np, b_np])
+            ax2 = fig.add_subplot(2, 3, 2)
+            abs_x = np.abs(x_np)
+            non_zero_x = abs_x[abs_x > 0]
+            
+            if len(non_zero_x) > 0:
+                im2 = ax2.imshow(
+                    abs_x, 
+                    norm=LogNorm(vmin=non_zero_x.min(), vmax=abs_x.max()),
+                    cmap='plasma', 
+                    aspect='auto', 
+                    interpolation='nearest'
+                )
+                plt.colorbar(im2, ax=ax2, label='Absolute Value (Log Scale)')
+            ax2.set_title("Solution x")
+            ax2.set_xlabel("Component")
+            ax2.set_ylabel("Value Index")
         
-        # 可視化用の設定
-        abs_combined = np.abs(combined)
-        non_zero = abs_combined[abs_combined > 0]
+        # b（右辺ベクトル）の可視化
+        ax3 = fig.add_subplot(2, 3, 3)
+        abs_b = np.abs(b_np)
+        non_zero_b = abs_b[abs_b > 0]
         
-        if len(non_zero) == 0:
-            print(f"警告: システムに非ゼロの要素がありません")
-            return ""
+        if len(non_zero_b) > 0:
+            im3 = ax3.imshow(
+                abs_b, 
+                norm=LogNorm(vmin=non_zero_b.min(), vmax=abs_b.max()),
+                cmap='cividis', 
+                aspect='auto', 
+                interpolation='nearest'
+            )
+            plt.colorbar(im3, ax=ax3, label='Absolute Value (Log Scale)')
+        ax3.set_title("Right-hand side b")
+        ax3.set_xlabel("Component")
+        ax3.set_ylabel("Value Index")
         
-        # 対数スケールで表示
-        plt.figure(figsize=(12, 8))
-        plt.imshow(
-            abs_combined, 
-            norm=LogNorm(vmin=non_zero.min(), vmax=abs_combined.max()),
-            cmap='viridis', 
-            aspect='auto', 
-            interpolation='nearest'
-        )
+        # exact_x（厳密解）の可視化
+        if exact_x_np is not None:
+            ax4 = fig.add_subplot(2, 3, 4)
+            abs_exact_x = np.abs(exact_x_np)
+            non_zero_exact_x = abs_exact_x[abs_exact_x > 0]
+            
+            if len(non_zero_exact_x) > 0:
+                im4 = ax4.imshow(
+                    abs_exact_x, 
+                    norm=LogNorm(vmin=non_zero_exact_x.min(), vmax=abs_exact_x.max()),
+                    cmap='plasma', 
+                    aspect='auto', 
+                    interpolation='nearest'
+                )
+                plt.colorbar(im4, ax=ax4, label='Absolute Value (Log Scale)')
+            ax4.set_title("Exact Solution")
+            ax4.set_xlabel("Component")
+            ax4.set_ylabel("Value Index")
         
-        plt.title(f"System Values (Ax = b): {title}")
-        plt.xlabel("Column Index")
-        plt.ylabel("Row Index")
-        plt.colorbar(label='Absolute Value (Log Scale)')
+        # x - exact_x（残差）の可視化
+        if x_np is not None and exact_x_np is not None:
+            ax5 = fig.add_subplot(2, 3, 5)
+            residual = np.abs(x_np - exact_x_np)
+            non_zero_residual = residual[residual > 0]
+            
+            if len(non_zero_residual) > 0:
+                im5 = ax5.imshow(
+                    residual, 
+                    norm=LogNorm(vmin=non_zero_residual.min(), vmax=residual.max()),
+                    cmap='hot', 
+                    aspect='auto', 
+                    interpolation='nearest'
+                )
+                plt.colorbar(im5, ax=ax5, label='Absolute Value (Log Scale)')
+            ax5.set_title("Solution Error (|x - exact_x|)")
+            ax5.set_xlabel("Component")
+            ax5.set_ylabel("Value Index")
+            
+            # 残差の統計情報
+            max_error = np.max(residual)
+            avg_error = np.mean(residual)
+            ax6 = fig.add_subplot(2, 3, 6)
+            ax6.axis('off')  # 枠を非表示
+            ax6.text(0.05, 0.9, "Error Statistics:", fontsize=12, weight='bold')
+            ax6.text(0.05, 0.7, f"Maximum Error: {max_error:.4e}", fontsize=10)
+            ax6.text(0.05, 0.6, f"Average Error: {avg_error:.4e}", fontsize=10)
+            
+            # 各成分の最大誤差
+            if x_np.shape[0] > 4:  # 複数の点が含まれる場合
+                ax6.text(0.05, 0.4, "Component-wise Max Error:", fontsize=10)
+                
+                if len(x_np) % 4 == 0:  # 1Dの場合（各点4成分）
+                    component_names = ["ψ", "ψ'", "ψ''", "ψ'''"]
+                    for i, name in enumerate(component_names):
+                        indices = range(i, len(x_np), 4)
+                        comp_error = np.max(np.abs(x_np[indices] - exact_x_np[indices]))
+                        ax6.text(0.05, 0.3 - i*0.1, f"{name}: {comp_error:.4e}", fontsize=10)
+                elif len(x_np) % 7 == 0:  # 2Dの場合（各点7成分）
+                    component_names = ["ψ", "ψ_x", "ψ_xx", "ψ_xxx", "ψ_y", "ψ_yy", "ψ_yyy"]
+                    for i, name in enumerate(component_names):
+                        indices = range(i, len(x_np), 7)
+                        comp_error = np.max(np.abs(x_np[indices] - exact_x_np[indices]))
+                        ax6.text(0.05, 0.3 - i*0.07, f"{name}: {comp_error:.4e}", fontsize=9)
+        
+        plt.suptitle(f"System Values & Solutions: {title}")
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.92)  # タイトル用の余白を確保
         
         # 保存して後片付け
-        plt.tight_layout()
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         
@@ -307,10 +487,10 @@ class CCDVerifier:
             results: 検証結果のリスト
         """
         print("\n検証結果のまとめ:")
-        print("{:<15} {:<5} {:<12} {:<15} {:<10} {:<10}".format(
-            "方程式セット", "次元", "グリッド", "スケーリング", "行列サイズ", "疎性率"
+        print("{:<15} {:<5} {:<12} {:<15} {:<10} {:<10} {:<15}".format(
+            "方程式セット", "次元", "グリッド", "スケーリング", "行列サイズ", "疎性率", "最大誤差"
         ))
-        print("-" * 75)
+        print("-" * 85)
         
         for result in results:
             equation_set = result["equation_set"]
@@ -327,8 +507,11 @@ class CCDVerifier:
             sparsity = result.get("sparsity", "N/A")
             sparsity_str = f"{sparsity:.4f}" if isinstance(sparsity, (int, float)) else "N/A"
             
-            print("{:<15} {:<5d} {:<12} {:<15} {:<10d} {:<10}".format(
-                equation_set, dimension, grid_size, str(scaling), matrix_size, sparsity_str
+            error = result.get("max_error", "N/A")
+            error_str = f"{error:.4e}" if isinstance(error, (int, float)) else "N/A"
+            
+            print("{:<15} {:<5d} {:<12} {:<15} {:<10d} {:<10} {:<15}".format(
+                equation_set, dimension, grid_size, str(scaling), matrix_size, sparsity_str, error_str
             ))
 
 
@@ -370,6 +553,8 @@ def run_verification(equation_set_name="poisson", dimension=1, nx=10, ny=None,
     scaling = result.get("scaling_method", "なし")
     sparsity = result.get("sparsity", "N/A")
     sparsity_str = f"{sparsity:.4f}" if isinstance(sparsity, (int, float)) else "N/A"
+    error = result.get("max_error", "N/A")
+    error_str = f"{error:.4e}" if isinstance(error, (int, float)) else "N/A"
     output_path = result.get("output_path", "")
     
     print(f"\n{dimension}D {eqs} 方程式の行列検証結果:")
@@ -377,6 +562,7 @@ def run_verification(equation_set_name="poisson", dimension=1, nx=10, ny=None,
     print(f"  スケーリング: {scaling}")
     print(f"  行列サイズ: {matrix_size}")
     print(f"  疎性率: {sparsity_str}")
+    print(f"  最大誤差: {error_str}")
     print(f"  可視化結果: {output_path}")
     
     return result
