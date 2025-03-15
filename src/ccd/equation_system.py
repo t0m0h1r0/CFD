@@ -2,14 +2,6 @@ import cupy as cp
 import cupyx.scipy.sparse as sp
 from typing import Dict, List, Tuple, Optional, Any
 
-# 必要な方程式タイプをインポート
-from equation.poisson import PoissonEquation, PoissonEquation2D
-from equation.original import OriginalEquation, OriginalEquation2D
-from equation.boundary import (
-    DirichletBoundaryEquation, NeumannBoundaryEquation,
-    DirichletBoundaryEquation2D, NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
-)
-
 class EquationSystem:
     """1D/2D両対応の方程式システムを管理するクラス"""
 
@@ -80,58 +72,6 @@ class EquationSystem:
         for region in self.equations.keys():
             self.add_equation(region, equation)
     
-    def add_boundary_equations(self, boundary_conditions=None):
-        """
-        指定された境界条件タイプに基づいて境界方程式を追加
-        
-        Args:
-            boundary_conditions: 境界条件タイプの辞書
-                {
-                    'dirichlet': True/False,  # ディリクレ境界条件の有無
-                    'neumann': True/False,    # ノイマン境界条件の有無
-                }
-        """
-        if boundary_conditions is None:
-            boundary_conditions = {'dirichlet': False, 'neumann': False}
-        
-        use_dirichlet = boundary_conditions.get('dirichlet', False)
-        use_neumann = boundary_conditions.get('neumann', False)
-        
-        if self.is_2d:
-            # 2D境界条件
-            # 境界と角に追加
-            for region in self.equations.keys():
-                if region != 'interior':
-                    if use_dirichlet:
-                        self.add_equation(region, DirichletBoundaryEquation2D(grid=self.grid))
-                    
-                    if use_neumann:
-                        if region in ['left', 'right']:
-                            self.add_equation(region, NeumannXBoundaryEquation2D(grid=self.grid))
-                        elif region in ['bottom', 'top']:
-                            self.add_equation(region, NeumannYBoundaryEquation2D(grid=self.grid))
-                        elif 'left' in region and 'bottom' in region:  # left_bottom
-                            self.add_equation(region, NeumannXBoundaryEquation2D(grid=self.grid))
-                            self.add_equation(region, NeumannYBoundaryEquation2D(grid=self.grid))
-                        elif 'right' in region and 'bottom' in region:  # right_bottom
-                            self.add_equation(region, NeumannXBoundaryEquation2D(grid=self.grid))
-                            self.add_equation(region, NeumannYBoundaryEquation2D(grid=self.grid))
-                        elif 'left' in region and 'top' in region:  # left_top
-                            self.add_equation(region, NeumannXBoundaryEquation2D(grid=self.grid))
-                            self.add_equation(region, NeumannYBoundaryEquation2D(grid=self.grid))
-                        elif 'right' in region and 'top' in region:  # right_top
-                            self.add_equation(region, NeumannXBoundaryEquation2D(grid=self.grid))
-                            self.add_equation(region, NeumannYBoundaryEquation2D(grid=self.grid))
-        else:
-            # 1D境界条件
-            if use_dirichlet:
-                self.add_equation('left', DirichletBoundaryEquation(grid=self.grid))
-                self.add_equation('right', DirichletBoundaryEquation(grid=self.grid))
-            
-            if use_neumann:
-                self.add_equation('left', NeumannBoundaryEquation(grid=self.grid))
-                self.add_equation('right', NeumannBoundaryEquation(grid=self.grid))
-    
     # 以下の古いメソッドは後方互換性のために維持
     def add_left_boundary_equation(self, equation):
         """左境界方程式を追加"""
@@ -187,6 +127,13 @@ class EquationSystem:
         Returns:
             str: 方程式タイプを表す文字列
         """
+        from equation.poisson import PoissonEquation, PoissonEquation2D
+        from equation.original import OriginalEquation, OriginalEquation2D
+        from equation.boundary import (
+            DirichletBoundaryEquation, NeumannBoundaryEquation,
+            DirichletBoundaryEquation2D, NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
+        )
+        
         if not equation.is_valid_at(i, j) if self.is_2d else not equation.is_valid_at(i):
             return None
             
@@ -254,14 +201,14 @@ class EquationSystem:
             if not categorized_eqs["governing"]:
                 raise ValueError(f"点 {i} に支配方程式が見つかりません。方程式システムを確認してください。")
             
-            if not categorized_eqs["dirichlet"] and not categorized_eqs["auxiliary"]:
+            if not categorized_eqs["dirichlet"] and len(categorized_eqs["auxiliary"]) == 0:
                 raise ValueError(f"点 {i} にψ'の方程式が見つかりません。")
             
-            if not categorized_eqs["neumann"] and not categorized_eqs["auxiliary"]:
+            if not categorized_eqs["neumann"] and len(categorized_eqs["auxiliary"]) < 2 and not categorized_eqs["dirichlet"]:
                 raise ValueError(f"点 {i} にψ''の方程式が見つかりません。")
             
-            if not categorized_eqs["auxiliary"]:
-                raise ValueError(f"点 {i} にψ'''の方程式が見つかりません。")
+            if len(categorized_eqs["auxiliary"]) < 3 and not (categorized_eqs["dirichlet"] and categorized_eqs["neumann"]):
+                raise ValueError(f"点 {i} に十分な補助方程式が見つかりません。")
             
             # 1D用に方程式を特定の順序で配置
             # 0: ψ - 常に支配方程式
@@ -271,21 +218,37 @@ class EquationSystem:
             )
             
             # 1: ψ' - ディリクレ境界または補助方程式
-            eq = categorized_eqs["dirichlet"] if categorized_eqs["dirichlet"] else categorized_eqs["auxiliary"].pop(0)
+            if categorized_eqs["dirichlet"]:
+                eq = categorized_eqs["dirichlet"]
+            elif categorized_eqs["auxiliary"]:
+                eq = categorized_eqs["auxiliary"].pop(0)
+            else:
+                raise ValueError(f"点 {i} に1行目の方程式が見つかりません。")
+                
             self._add_equation_to_matrix_1d(
                 eq, i, base_idx, 1, data, row_indices, col_indices
             )
             
             # 2: ψ'' - ノイマン境界または補助方程式
-            eq = categorized_eqs["neumann"] if categorized_eqs["neumann"] else categorized_eqs["auxiliary"].pop(0)
+            if categorized_eqs["neumann"]:
+                eq = categorized_eqs["neumann"]
+            elif categorized_eqs["auxiliary"]:
+                eq = categorized_eqs["auxiliary"].pop(0)
+            else:
+                raise ValueError(f"点 {i} に2行目の方程式が見つかりません。")
+                
             self._add_equation_to_matrix_1d(
                 eq, i, base_idx, 2, data, row_indices, col_indices
             )
             
             # 3: ψ''' - 補助方程式
+            if categorized_eqs["auxiliary"]:
+                eq = categorized_eqs["auxiliary"].pop(0)
+            else:
+                raise ValueError(f"点 {i} に3行目の方程式が見つかりません。")
+                
             self._add_equation_to_matrix_1d(
-                categorized_eqs["auxiliary"].pop(0), i, base_idx, 3, 
-                data, row_indices, col_indices
+                eq, i, base_idx, 3, data, row_indices, col_indices
             )
 
         # 疎行列を構築
@@ -341,6 +304,10 @@ class EquationSystem:
                 if not categorized_eqs.get("governing"):
                     raise ValueError(f"点 ({i}, {j}) に支配方程式が見つかりません。方程式システムを確認してください。")
                 
+                if len(categorized_eqs["auxiliary"]) < 6 and not (categorized_eqs["dirichlet"] and 
+                       categorized_eqs["neumann_x"] and categorized_eqs["neumann_y"]):
+                    raise ValueError(f"点 ({i}, {j}) に十分な方程式が見つかりません。")
+                
                 # 各変数に対応する方程式を配置
                 # 0: ψ - 常に支配方程式
                 self._add_equation_to_matrix_2d(
@@ -349,39 +316,71 @@ class EquationSystem:
                 )
                 
                 # 1: ψ_x - x方向のディリクレ境界または補助方程式
-                eq = categorized_eqs.get("dirichlet") or categorized_eqs["auxiliary"].pop(0)
+                if categorized_eqs.get("dirichlet"):
+                    eq = categorized_eqs["dirichlet"]
+                elif categorized_eqs["auxiliary"]:
+                    eq = categorized_eqs["auxiliary"].pop(0)
+                else:
+                    raise ValueError(f"点 ({i}, {j}) に1行目の方程式が見つかりません。")
+                    
                 self._add_equation_to_matrix_2d(
                     eq, i, j, base_idx, 1, data, row_indices, col_indices
                 )
                 
                 # 2: ψ_xx - x方向のノイマン境界または補助方程式
-                eq = categorized_eqs.get("neumann_x") or categorized_eqs["auxiliary"].pop(0)
+                if categorized_eqs.get("neumann_x"):
+                    eq = categorized_eqs["neumann_x"]
+                elif categorized_eqs["auxiliary"]:
+                    eq = categorized_eqs["auxiliary"].pop(0)
+                else:
+                    raise ValueError(f"点 ({i}, {j}) に2行目の方程式が見つかりません。")
+                    
                 self._add_equation_to_matrix_2d(
                     eq, i, j, base_idx, 2, data, row_indices, col_indices
                 )
                 
                 # 3: ψ_xxx - 補助方程式
+                if categorized_eqs["auxiliary"]:
+                    eq = categorized_eqs["auxiliary"].pop(0)
+                else:
+                    raise ValueError(f"点 ({i}, {j}) に3行目の方程式が見つかりません。")
+                    
                 self._add_equation_to_matrix_2d(
-                    categorized_eqs["auxiliary"].pop(0), i, j, base_idx, 3, 
-                    data, row_indices, col_indices
+                    eq, i, j, base_idx, 3, data, row_indices, col_indices
                 )
                 
                 # 4: ψ_y - y方向のディリクレ境界または補助方程式
-                eq = categorized_eqs.get("dirichlet") or categorized_eqs["auxiliary"].pop(0)
+                if categorized_eqs.get("dirichlet") and not categorized_eqs.get("dirichlet") == eq:
+                    eq = categorized_eqs["dirichlet"]
+                elif categorized_eqs["auxiliary"]:
+                    eq = categorized_eqs["auxiliary"].pop(0)
+                else:
+                    raise ValueError(f"点 ({i}, {j}) に4行目の方程式が見つかりません。")
+                    
                 self._add_equation_to_matrix_2d(
                     eq, i, j, base_idx, 4, data, row_indices, col_indices
                 )
                 
                 # 5: ψ_yy - y方向のノイマン境界または補助方程式
-                eq = categorized_eqs.get("neumann_y") or categorized_eqs["auxiliary"].pop(0)
+                if categorized_eqs.get("neumann_y"):
+                    eq = categorized_eqs["neumann_y"]
+                elif categorized_eqs["auxiliary"]:
+                    eq = categorized_eqs["auxiliary"].pop(0)
+                else:
+                    raise ValueError(f"点 ({i}, {j}) に5行目の方程式が見つかりません。")
+                    
                 self._add_equation_to_matrix_2d(
                     eq, i, j, base_idx, 5, data, row_indices, col_indices
                 )
                 
                 # 6: ψ_yyy - 補助方程式
+                if categorized_eqs["auxiliary"]:
+                    eq = categorized_eqs["auxiliary"].pop(0)
+                else:
+                    raise ValueError(f"点 ({i}, {j}) に6行目の方程式が見つかりません。")
+                    
                 self._add_equation_to_matrix_2d(
-                    categorized_eqs["auxiliary"].pop(0), i, j, base_idx, 6, 
-                    data, row_indices, col_indices
+                    eq, i, j, base_idx, 6, data, row_indices, col_indices
                 )
         
         # 疎行列を作成

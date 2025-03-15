@@ -751,37 +751,65 @@ class CCDSolver1D(BaseCCDSolver):
         n = self.grid.n_points
         b = cp.zeros(n*4)
         
-        # ポアソン方程式/ソース項の値を設定
-        if f_values is not None:
-            for i in range(n):
-                idx = i * 4  # ψのインデックス
-                b[idx] = f_values[i]
-        
         # 境界条件の設定状態を表示
         print(f"境界条件設定: ディリクレ = {'有効' if self.enable_dirichlet else '無効'}, "
               f"ノイマン = {'有効' if self.enable_neumann else '無効'}")
         
-        # ディリクレ境界条件
-        if self.enable_dirichlet:
-            if left_dirichlet is not None:
-                b[1] = left_dirichlet  # 左境界ディリクレ (ψ)
-            if right_dirichlet is not None:
-                b[(n-1) * 4 + 1] = right_dirichlet  # 右境界ディリクレ (ψ)
+        # 各グリッド点に対して右辺値を設定
+        for i in range(n):
+            # 基本インデックス
+            base_idx = i * 4
+            
+            # どのタイプの点か判定
+            if i == 0:  # 左境界
+                # 0: 支配方程式 (ψ)
+                if f_values is not None:
+                    b[base_idx] = f_values[i]
                 
-            print(f"[1Dソルバー] ディリクレ境界条件が有効: 左={left_dirichlet}, 右={right_dirichlet}")
-        else:
-            print("[1Dソルバー] ディリクレ境界条件が無効")
+                # 1: ディリクレ境界条件 (ψ)
+                if self.enable_dirichlet and left_dirichlet is not None:
+                    b[base_idx + 1] = left_dirichlet
+                
+                # 2: ノイマン境界条件 (ψ')
+                if self.enable_neumann and left_neumann is not None:
+                    b[base_idx + 2] = left_neumann
+                
+                # 3: 補助方程式 (通常は0)
+                # そのまま0のままでOK
+                
+            elif i == n - 1:  # 右境界
+                # 0: 支配方程式 (ψ)
+                if f_values is not None:
+                    b[base_idx] = f_values[i]
+                
+                # 1: ディリクレ境界条件 (ψ)
+                if self.enable_dirichlet and right_dirichlet is not None:
+                    b[base_idx + 1] = right_dirichlet
+                
+                # 2: ノイマン境界条件 (ψ')
+                if self.enable_neumann and right_neumann is not None:
+                    b[base_idx + 2] = right_neumann
+                
+                # 3: 補助方程式 (通常は0)
+                # そのまま0のままでOK
+                
+            else:  # 内部点
+                # 0: 支配方程式 (ψ)
+                if f_values is not None:
+                    b[base_idx] = f_values[i]
+                
+                # 1-3: 内部点の補助方程式 (通常は0)
+                # そのまま0のままでOK
         
-        # ノイマン境界条件
-        if self.enable_neumann:
-            if left_neumann is not None:
-                b[2] = left_neumann  # 左境界ノイマン (ψ')
-            if right_neumann is not None:
-                b[(n-1) * 4 + 2] = right_neumann  # 右境界ノイマン (ψ')
-                
-            print(f"[1Dソルバー] ノイマン境界条件が有効: 左={left_neumann}, 右={right_neumann}")
+        if self.enable_dirichlet:
+            print(f"[1Dソルバー] ディリクレ境界条件: 左={left_dirichlet}, 右={right_dirichlet}")
         else:
-            print("[1Dソルバー] ノイマン境界条件が無効")
+            print("[1Dソルバー] ディリクレ境界条件は無効")
+        
+        if self.enable_neumann:
+            print(f"[1Dソルバー] ノイマン境界条件: 左={left_neumann}, 右={right_neumann}")
+        else:
+            print("[1Dソルバー] ノイマン境界条件は無効")
         
         return b
 
@@ -813,8 +841,6 @@ class CCDSolver2D(BaseCCDSolver):
             
         super().__init__(equation_set, grid)
 
-    # solver.py の _build_rhs_vector メソッド修正例
-
     def _build_rhs_vector(self, f_values=None, left_dirichlet=None, right_dirichlet=None,
                     bottom_dirichlet=None, top_dirichlet=None, left_neumann=None, 
                     right_neumann=None, bottom_neumann=None, top_neumann=None, **kwargs):
@@ -833,13 +859,6 @@ class CCDSolver2D(BaseCCDSolver):
         n_unknowns = 7  # ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy
         b = cp.zeros(nx*ny*n_unknowns)
         
-        # ポアソン方程式/ソース項の値を設定
-        if f_values is not None:
-            for j in range(ny):
-                for i in range(nx):
-                    idx = (j * nx + i) * n_unknowns  # ψのインデックス
-                    b[idx] = f_values[i][j]
-        
         # 境界条件の設定状態を表示
         boundary_status = []
         if self.enable_dirichlet:
@@ -854,82 +873,92 @@ class CCDSolver2D(BaseCCDSolver):
         
         print(f"[2Dソルバー] 境界条件: {', '.join(boundary_status)}")
         
-        # ディリクレ境界条件
-        if self.enable_dirichlet:
-            # x方向境界（左右）
-            for j in range(ny):
-                # 左境界ディリクレ(i=0)
-                if left_dirichlet is not None:
-                    idx = (j * nx + 0) * n_unknowns + 0  # ψ (インデックス修正)
-                    if isinstance(left_dirichlet, (list, cp.ndarray)) and j < len(left_dirichlet):
-                        b[idx] = left_dirichlet[j]
-                    elif isinstance(left_dirichlet, (int, float)):
-                        b[idx] = left_dirichlet
-                
-                # 右境界ディリクレ(i=nx-1)
-                if right_dirichlet is not None:
-                    idx = (j * nx + (nx-1)) * n_unknowns + 0  # ψ (インデックス修正)
-                    if isinstance(right_dirichlet, (list, cp.ndarray)) and j < len(right_dirichlet):
-                        b[idx] = right_dirichlet[j]
-                    elif isinstance(right_dirichlet, (int, float)):
-                        b[idx] = right_dirichlet
-            
-            # y方向境界（下上）
+        # 各グリッド点に対して右辺値を設定
+        for j in range(ny):
             for i in range(nx):
-                # 下境界ディリクレ(j=0)
-                if bottom_dirichlet is not None:
-                    idx = (0 * nx + i) * n_unknowns + 0  # ψ (インデックス修正)
-                    if isinstance(bottom_dirichlet, (list, cp.ndarray)) and i < len(bottom_dirichlet):
-                        b[idx] = bottom_dirichlet[i]
-                    elif isinstance(bottom_dirichlet, (int, float)):
-                        b[idx] = bottom_dirichlet
+                # グリッド点の基本インデックス
+                base_idx = (j * nx + i) * n_unknowns
                 
-                # 上境界ディリクレ(j=ny-1)
-                if top_dirichlet is not None:
-                    idx = ((ny-1) * nx + i) * n_unknowns + 0  # ψ (インデックス修正)
-                    if isinstance(top_dirichlet, (list, cp.ndarray)) and i < len(top_dirichlet):
-                        b[idx] = top_dirichlet[i]
-                    elif isinstance(top_dirichlet, (int, float)):
-                        b[idx] = top_dirichlet
-        
-        # ノイマン境界条件
-        if self.enable_neumann:
-            # x方向境界（左右）
-            for j in range(ny):
-                # 左境界ノイマン(i=0)
-                if left_neumann is not None:
-                    idx = (j * nx + 0) * n_unknowns + 1  # ψ_x (インデックス修正)
-                    if isinstance(left_neumann, (list, cp.ndarray)) and j < len(left_neumann):
-                        b[idx] = left_neumann[j]
-                    elif isinstance(left_neumann, (int, float)):
-                        b[idx] = left_neumann
+                # 0: ψに対応する方程式の右辺値 (支配方程式)
+                if f_values is not None:
+                    b[base_idx] = f_values[i, j]
                 
-                # 右境界ノイマン(i=nx-1)
-                if right_neumann is not None:
-                    idx = (j * nx + (nx-1)) * n_unknowns + 1  # ψ_x (インデックス修正)
-                    if isinstance(right_neumann, (list, cp.ndarray)) and j < len(right_neumann):
-                        b[idx] = right_neumann[j]
-                    elif isinstance(right_neumann, (int, float)):
-                        b[idx] = right_neumann
-            
-            # y方向境界（下上）
-            for i in range(nx):
-                # 下境界ノイマン(j=0)
-                if bottom_neumann is not None:
-                    idx = (0 * nx + i) * n_unknowns + 4  # ψ_y (インデックス修正)
-                    if isinstance(bottom_neumann, (list, cp.ndarray)) and i < len(bottom_neumann):
-                        b[idx] = bottom_neumann[i]
-                    elif isinstance(bottom_neumann, (int, float)):
-                        b[idx] = bottom_neumann
-                
-                # 上境界ノイマン(j=ny-1)
-                if top_neumann is not None:
-                    idx = ((ny-1) * nx + i) * n_unknowns + 4  # ψ_y (インデックス修正)
-                    if isinstance(top_neumann, (list, cp.ndarray)) and i < len(top_neumann):
-                        b[idx] = top_neumann[i]
-                    elif isinstance(top_neumann, (int, float)):
-                        b[idx] = top_neumann
+                # どのタイプの点か判定してから適切な右辺値を設定
+                if i == 0:  # 左境界
+                    if self.enable_dirichlet and left_dirichlet is not None:
+                        # 1: ψ_x (左境界のディリクレ条件)
+                        if isinstance(left_dirichlet, (list, cp.ndarray)) and j < len(left_dirichlet):
+                            b[base_idx + 1] = left_dirichlet[j]
+                        else:
+                            b[base_idx + 1] = left_dirichlet
                     
+                    if self.enable_neumann and left_neumann is not None:
+                        # 2: ψ_xx (左境界のノイマン条件)
+                        if isinstance(left_neumann, (list, cp.ndarray)) and j < len(left_neumann):
+                            b[base_idx + 2] = left_neumann[j]
+                        else:
+                            b[base_idx + 2] = left_neumann
+                
+                elif i == nx - 1:  # 右境界
+                    if self.enable_dirichlet and right_dirichlet is not None:
+                        # 1: ψ_x (右境界のディリクレ条件)
+                        if isinstance(right_dirichlet, (list, cp.ndarray)) and j < len(right_dirichlet):
+                            b[base_idx + 1] = right_dirichlet[j]
+                        else:
+                            b[base_idx + 1] = right_dirichlet
+                    
+                    if self.enable_neumann and right_neumann is not None:
+                        # 2: ψ_xx (右境界のノイマン条件)
+                        if isinstance(right_neumann, (list, cp.ndarray)) and j < len(right_neumann):
+                            b[base_idx + 2] = right_neumann[j]
+                        else:
+                            b[base_idx + 2] = right_neumann
+                
+                if j == 0:  # 下境界
+                    if self.enable_dirichlet and bottom_dirichlet is not None:
+                        # 4: ψ_y (下境界のディリクレ条件)
+                        if isinstance(bottom_dirichlet, (list, cp.ndarray)) and i < len(bottom_dirichlet):
+                            b[base_idx + 4] = bottom_dirichlet[i]
+                        else:
+                            b[base_idx + 4] = bottom_dirichlet
+                    
+                    if self.enable_neumann and bottom_neumann is not None:
+                        # 5: ψ_yy (下境界のノイマン条件)
+                        if isinstance(bottom_neumann, (list, cp.ndarray)) and i < len(bottom_neumann):
+                            b[base_idx + 5] = bottom_neumann[i]
+                        else:
+                            b[base_idx + 5] = bottom_neumann
+                
+                elif j == ny - 1:  # 上境界
+                    if self.enable_dirichlet and top_dirichlet is not None:
+                        # 4: ψ_y (上境界のディリクレ条件)
+                        if isinstance(top_dirichlet, (list, cp.ndarray)) and i < len(top_dirichlet):
+                            b[base_idx + 4] = top_dirichlet[i]
+                        else:
+                            b[base_idx + 4] = top_dirichlet
+                    
+                    if self.enable_neumann and top_neumann is not None:
+                        # 5: ψ_yy (上境界のノイマン条件)
+                        if isinstance(top_neumann, (list, cp.ndarray)) and i < len(top_neumann):
+                            b[base_idx + 5] = top_neumann[i]
+                        else:
+                            b[base_idx + 5] = top_neumann
+                
+                # 残りの補助方程式の右辺値はデフォルト0
+        
+        # 境界条件の設定を出力
+        if self.enable_dirichlet:
+            print(f"[2Dソルバー] ディリクレ境界条件: 左={left_dirichlet is not None}, 右={right_dirichlet is not None}, "
+                 f"下={bottom_dirichlet is not None}, 上={top_dirichlet is not None}")
+        else:
+            print("[2Dソルバー] ディリクレ境界条件は無効")
+        
+        if self.enable_neumann:
+            print(f"[2Dソルバー] ノイマン境界条件: 左={left_neumann is not None}, 右={right_neumann is not None}, "
+                 f"下={bottom_neumann is not None}, 上={top_neumann is not None}")
+        else:
+            print("[2Dソルバー] ノイマン境界条件は無効")
+        
         return b
 
     def _extract_solution(self, sol):
