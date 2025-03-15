@@ -13,8 +13,7 @@ from equation.poisson import PoissonEquation, PoissonEquation2D
 from equation.original import OriginalEquation, OriginalEquation2D
 from equation.boundary import (
     DirichletBoundaryEquation, NeumannBoundaryEquation,
-    DirichletXBoundaryEquation2D, DirichletYBoundaryEquation2D,
-    NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
+    DirichletBoundaryEquation2D, NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
 )
 from equation.compact_internal import (
     Internal1stDerivativeEquation,
@@ -32,6 +31,15 @@ from equation.compact_right_boundary import (
     RightBoundary3rdDerivativeEquation
 )
 from equation.equation_converter import Equation1Dto2DConverter
+
+# ヘルパー関数をインポート
+from equation_helpers import (
+    setup_region_equations,
+    setup_derivative_equations_1d,
+    setup_derivative_equations_2d,
+    setup_poisson_equations_1d,
+    setup_poisson_equations_2d
+)
 
 
 class EquationSet(ABC):
@@ -96,6 +104,10 @@ class EquationSet(ABC):
         all_sets = {
             "poisson": {"1d": PoissonEquationSet1D, "2d": PoissonEquationSet2D},
             "derivative": {"1d": DerivativeEquationSet1D, "2d": DerivativeEquationSet2D},
+            "poisson_dn": {"1d": PoissonEquationSet1D_DN, "2d": PoissonEquationSet2D_DN},
+            "poisson_d": {"1d": PoissonEquationSet1D_D, "2d": PoissonEquationSet2D_D},
+            "poisson_n": {"1d": PoissonEquationSet1D_N, "2d": PoissonEquationSet2D_N},
+            "poisson_none": {"1d": PoissonEquationSet1D_NONE, "2d": PoissonEquationSet2D_NONE},
         }
         
         if dimension == 1:
@@ -226,15 +238,45 @@ class DimensionalEquationSetWrapper(EquationSet):
 # ===== 1D 方程式セット =====
 
 class PoissonEquationSet1D(EquationSet):
-    """1次元ポアソン方程式のための方程式セット"""
+    """1次元ポアソン方程式のための統一された方程式セット"""
 
-    def setup_equations(self, system, grid):
+    def __init__(self, boundary_type='DN', merge_derivatives=False):
         """
-        ポアソン方程式システムを設定
+        初期化
+        
+        Args:
+            boundary_type: 境界条件のタイプ
+                'DN' - ディリクレとノイマン両方
+                'D'  - ディリクレのみ
+                'N'  - ノイマンのみ
+                'none' - 境界条件なし
+            merge_derivatives: 高階微分方程式を結合するか
+        """
+        super().__init__()
+        self.boundary_type = boundary_type
+        self.merge_derivatives = merge_derivatives
+        
+        # 境界条件の設定
+        if boundary_type == 'DN':
+            self.use_dirichlet = True
+            self.use_neumann = True
+        elif boundary_type == 'D':
+            self.use_dirichlet = True
+            self.use_neumann = False
+        elif boundary_type == 'N':
+            self.use_dirichlet = False
+            self.use_neumann = True
+        else:  # 'none'
+            self.use_dirichlet = False
+            self.use_neumann = False
+    
+    def setup_equations(self, system, grid, test_func=None):
+        """
+        1次元ポアソン方程式システムを設定
         
         Args:
             system: 方程式システム
-            grid: Grid オブジェクト
+            grid: Grid オブジェクト (1D)
             test_func: テスト関数（オプション）
             
         Returns:
@@ -242,53 +284,41 @@ class PoissonEquationSet1D(EquationSet):
         """
         if grid.is_2d:
             raise ValueError("1D方程式セットが2Dグリッドで使用されました")
-            
-        # ポアソン方程式本体 (psi''(x) = f(x))
-        system.add_equation(PoissonEquation(grid=grid))
-
-        # 内部点の補助方程式
-        system.add_interior_equation(Internal1stDerivativeEquation(grid))
-        system.add_interior_equation(Internal2ndDerivativeEquation(grid))
-        system.add_interior_equation(Internal3rdDerivativeEquation(grid))
-
-        # 境界条件設定 - 常に両方のタイプの方程式を追加
-        # ディリクレ境界条件 (値固定)
-        dirichlet_left = DirichletBoundaryEquation(grid=grid)
-        dirichlet_right = DirichletBoundaryEquation(grid=grid)
-        system.add_left_boundary_equation(dirichlet_left)
-        system.add_right_boundary_equation(dirichlet_right)
-
-        # ノイマン境界条件 (導関数固定)
-        neumann_left = NeumannBoundaryEquation(grid=grid)
-        neumann_right = NeumannBoundaryEquation(grid=grid)
-        system.add_left_boundary_equation(neumann_left)
-        system.add_right_boundary_equation(neumann_right)
-                        
-        # 3階導関数補助方程式
-        system.add_left_boundary_equation(
-            LeftBoundary1stDerivativeEquation(grid)
-            + LeftBoundary2ndDerivativeEquation(grid)
-            + LeftBoundary3rdDerivativeEquation(grid)
-            )
-        system.add_right_boundary_equation(
-            RightBoundary1stDerivativeEquation(grid)
-            + RightBoundary2ndDerivativeEquation(grid)
-            + RightBoundary3rdDerivativeEquation(grid)
-            )
-
+        
+        # 統一されたヘルパー関数を使用して方程式を設定
+        setup_poisson_equations_1d(
+            system, grid, 
+            use_dirichlet=self.enable_dirichlet, 
+            use_neumann=self.enable_neumann,
+            merge_derivatives=self.merge_derivatives
+        )
+        
         return self.enable_dirichlet, self.enable_neumann
 
 
 class DerivativeEquationSet1D(EquationSet):
-    """1次元高階微分のための方程式セット"""
+    """1次元高階微分のための統一された方程式セット"""
 
-    def setup_equations(self, system, grid):
+    def __init__(self, merge_derivatives=False):
         """
-        導関数計算用の方程式システムを設定
+        初期化
+        
+        Args:
+            merge_derivatives: 高階微分方程式を結合するか
+        """
+        super().__init__()
+        self.merge_derivatives = merge_derivatives
+        # 微分方程式セットでは境界条件は無効
+        self.enable_dirichlet = False
+        self.enable_neumann = False
+    
+    def setup_equations(self, system, grid, test_func=None):
+        """
+        1次元導関数計算用の方程式システムを設定
         
         Args:
             system: 方程式システム
-            grid: Grid オブジェクト
+            grid: Grid オブジェクト (1D)
             test_func: テスト関数（オプション）
             
         Returns:
@@ -296,35 +326,79 @@ class DerivativeEquationSet1D(EquationSet):
         """
         if grid.is_2d:
             raise ValueError("1D方程式セットが2Dグリッドで使用されました")
-            
-        # 元の関数を使用する方程式
-        system.add_equation(OriginalEquation(grid=grid))
-
-        # 内部点の補助方程式
-        system.add_interior_equation(Internal1stDerivativeEquation(grid))
-        system.add_interior_equation(Internal2ndDerivativeEquation(grid))
-        system.add_interior_equation(Internal3rdDerivativeEquation(grid))
-
-        # 左境界点の補助方程式
-        system.add_left_boundary_equation(LeftBoundary1stDerivativeEquation(grid))
-        system.add_left_boundary_equation(LeftBoundary2ndDerivativeEquation(grid))
-        system.add_left_boundary_equation(LeftBoundary3rdDerivativeEquation(grid))
-
-        # 右境界点の補助方程式
-        system.add_right_boundary_equation(RightBoundary1stDerivativeEquation(grid))
-        system.add_right_boundary_equation(RightBoundary2ndDerivativeEquation(grid))
-        system.add_right_boundary_equation(RightBoundary3rdDerivativeEquation(grid))
-
+        
+        # 統一されたヘルパー関数を使用して方程式を設定
+        setup_derivative_equations_1d(
+            system, grid, 
+            merge_derivatives=self.merge_derivatives
+        )
+        
         # 微分方程式セットでは境界条件は常に無効（既に導関数計算に制約式を使用）
         return False, False
+
+
+# 特定の境界条件の組み合わせ用のクラス (1D)
+class PoissonEquationSet1D_DN(PoissonEquationSet1D):
+    """ディリクレ・ノイマン混合境界条件の1Dポアソン方程式セット"""
+    
+    def __init__(self):
+        super().__init__('DN', False)
+
+class PoissonEquationSet1D_D(PoissonEquationSet1D):
+    """ディリクレ境界条件のみの1Dポアソン方程式セット"""
+    
+    def __init__(self):
+        super().__init__('D', True)
+
+class PoissonEquationSet1D_N(PoissonEquationSet1D):
+    """ノイマン境界条件のみの1Dポアソン方程式セット"""
+    
+    def __init__(self):
+        super().__init__('N', True)
+
+class PoissonEquationSet1D_NONE(PoissonEquationSet1D):
+    """境界条件なしの1Dポアソン方程式セット"""
+    
+    def __init__(self):
+        super().__init__('none', False)
 
 
 # ===== 2D 方程式セット =====
 
 class PoissonEquationSet2D(EquationSet):
-    """2次元ポアソン方程式のための方程式セット"""
+    """2次元ポアソン方程式のための統一された方程式セット"""
 
-    def setup_equations(self, system, grid):
+    def __init__(self, boundary_type='DN', merge_derivatives=False):
+        """
+        初期化
+        
+        Args:
+            boundary_type: 境界条件のタイプ
+                'DN' - ディリクレとノイマン両方
+                'D'  - ディリクレのみ
+                'N'  - ノイマンのみ
+                'none' - 境界条件なし
+            merge_derivatives: 高階微分方程式を結合するか
+        """
+        super().__init__()
+        self.boundary_type = boundary_type
+        self.merge_derivatives = merge_derivatives
+        
+        # 境界条件の設定
+        if boundary_type == 'DN':
+            self.enable_dirichlet = True
+            self.enable_neumann = True
+        elif boundary_type == 'D':
+            self.enable_dirichlet = True
+            self.enable_neumann = False
+        elif boundary_type == 'N':
+            self.enable_dirichlet = False
+            self.enable_neumann = True
+        else:  # 'none'
+            self.enable_dirichlet = False
+            self.enable_neumann = False
+    
+    def setup_equations(self, system, grid, test_func=None):
         """
         2次元ポアソン方程式システムを設定
         
@@ -338,57 +412,37 @@ class PoissonEquationSet2D(EquationSet):
         """
         if not grid.is_2d:
             raise ValueError("2D方程式セットが1Dグリッドで使用されました")
-            
-        # 変換器を作成
-        converter = Equation1Dto2DConverter
         
-        # ポアソン方程式: Δψ = f(x,y)
-        system.add_equation(PoissonEquation2D(grid=grid))
-
-        # 内部点の方程式 - 1次元方程式を各方向に拡張
-        # X方向
-        system.add_interior_x_equation(converter.to_x(Internal1stDerivativeEquation(), grid=grid))
-        system.add_interior_x_equation(converter.to_x(Internal2ndDerivativeEquation(), grid=grid))
-        system.add_interior_x_equation(converter.to_x(Internal3rdDerivativeEquation(), grid=grid))
-        
-        # Y方向
-        system.add_interior_y_equation(converter.to_y(Internal1stDerivativeEquation(), grid=grid))
-        system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation(), grid=grid))
-        system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation(), grid=grid))
-        
-        # 境界点の方程式 - ディリクレ境界条件
-        # 左右境界 (i=0, i=nx-1)
-        system.add_left_boundary_equation(DirichletXBoundaryEquation2D(grid=grid))
-        system.add_right_boundary_equation(DirichletXBoundaryEquation2D(grid=grid))
-        # 下上境界 (j=0, j=ny-1)
-        system.add_bottom_boundary_equation(DirichletYBoundaryEquation2D(grid=grid))
-        system.add_top_boundary_equation(DirichletYBoundaryEquation2D(grid=grid))
-        
-        # 境界点の方程式 - ノイマン境界条件
-        # 左右境界 (i=0, i=nx-1)
-        system.add_left_boundary_equation(NeumannXBoundaryEquation2D(grid=grid))
-        system.add_right_boundary_equation(NeumannXBoundaryEquation2D(grid=grid))
-        # 下上境界 (j=0, j=ny-1)
-        system.add_bottom_boundary_equation(NeumannYBoundaryEquation2D(grid=grid))
-        system.add_top_boundary_equation(NeumannYBoundaryEquation2D(grid=grid))
-        
-        # 左右境界の補助方程式
-        system.add_left_boundary_equation(converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid))
-        system.add_right_boundary_equation(converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid))
-                
-        # 上下境界の補助方程式
-        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid))
-        system.add_top_boundary_equation(converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid))
+        # 統一されたヘルパー関数を使用して方程式を設定
+        setup_poisson_equations_2d(
+            system, grid, 
+            use_dirichlet=self.enable_dirichlet, 
+            use_neumann=self.enable_neumann,
+            merge_derivatives=self.merge_derivatives
+        )
         
         return self.enable_dirichlet, self.enable_neumann
 
 
 class DerivativeEquationSet2D(EquationSet):
-    """2次元高階微分のための方程式セット"""
+    """2次元高階微分のための統一された方程式セット"""
 
-    def setup_equations(self, system, grid):
+    def __init__(self, merge_derivatives=False):
         """
-        2次元高階微分方程式システムを設定
+        初期化
+        
+        Args:
+            merge_derivatives: 高階微分方程式を結合するか
+        """
+        super().__init__()
+        self.merge_derivatives = merge_derivatives
+        # 微分方程式セットでは境界条件は無効
+        self.enable_dirichlet = False
+        self.enable_neumann = False
+    
+    def setup_equations(self, system, grid, test_func=None):
+        """
+        2次元導関数計算用の方程式システムを設定
         
         Args:
             system: 方程式システム
@@ -400,44 +454,95 @@ class DerivativeEquationSet2D(EquationSet):
         """
         if not grid.is_2d:
             raise ValueError("2D方程式セットが1Dグリッドで使用されました")
-            
-        # 変換器を作成
-        converter = Equation1Dto2DConverter
         
-        # 関数値
-        system.add_equation(OriginalEquation2D(grid=grid))
+        # 統一されたヘルパー関数を使用して方程式を設定
+        setup_derivative_equations_2d(
+            system, grid, 
+            merge_derivatives=self.merge_derivatives
+        )
         
-        # 内部点の方程式 - 1次元方程式を各方向に拡張
-        # X方向
-        system.add_interior_x_equation(converter.to_x(Internal1stDerivativeEquation(), grid=grid))
-        system.add_interior_x_equation(converter.to_x(Internal2ndDerivativeEquation(), grid=grid))
-        system.add_interior_x_equation(converter.to_x(Internal3rdDerivativeEquation(), grid=grid))
-        
-        # Y方向
-        system.add_interior_y_equation(converter.to_y(Internal1stDerivativeEquation(), grid=grid))
-        system.add_interior_y_equation(converter.to_y(Internal2ndDerivativeEquation(), grid=grid))
-        system.add_interior_y_equation(converter.to_y(Internal3rdDerivativeEquation(), grid=grid))
-        
-        # 境界点の方程式 - 1次元方程式を各方向に拡張
-        # 左境界 (i=0)
-        system.add_left_boundary_equation(converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid))
-        system.add_left_boundary_equation(converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid))
-        system.add_left_boundary_equation(converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid))
-        
-        # 右境界 (i=nx-1)
-        system.add_right_boundary_equation(converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid))
-        system.add_right_boundary_equation(converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid))
-        system.add_right_boundary_equation(converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid))
-        
-        # 下境界 (j=0)
-        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid))
-        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid))
-        system.add_bottom_boundary_equation(converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid))
-                
-        # 上境界 (j=ny-1)
-        system.add_top_boundary_equation(converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid))
-        system.add_top_boundary_equation(converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid))
-        system.add_top_boundary_equation(converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid))
-
         # 微分方程式セットでは境界条件は常に無効（既に導関数計算に制約式を使用）
         return False, False
+
+
+# 特定の境界条件の組み合わせ用のクラス (2D)
+class PoissonEquationSet2D_DN(PoissonEquationSet2D):
+    """ディリクレ・ノイマン混合境界条件の2Dポアソン方程式セット"""
+    
+    def __init__(self):
+        super().__init__('DN', False)
+
+class PoissonEquationSet2D_D(PoissonEquationSet2D):
+    """ディリクレ境界条件のみの2Dポアソン方程式セット"""
+    
+    def __init__(self):
+        super().__init__('D', True)
+
+class PoissonEquationSet2D_N(PoissonEquationSet2D):
+    """ノイマン境界条件のみの2Dポアソン方程式セット"""
+    
+    def __init__(self):
+        super().__init__('N', True)
+
+class PoissonEquationSet2D_NONE(PoissonEquationSet2D):
+    """境界条件なしの2Dポアソン方程式セット"""
+    
+    def __init__(self):
+        super().__init__('none', False)
+
+
+# ユーティリティ関数
+def create_poisson_equation_set(boundary_type='DN', merge_derivatives=False, dimension=None):
+    """
+    ポアソン方程式セットを作成するファクトリーメソッド
+    
+    Args:
+        boundary_type: 境界条件タイプ ('DN', 'D', 'N', 'none')
+        merge_derivatives: 高階微分方程式を結合するか
+        dimension: 次元 (1または2、Noneの場合はGridの次元から判断)
+    
+    Returns:
+        PoissonEquationSet インスタンス
+    """
+    if boundary_type not in ['DN', 'D', 'N', 'none']:
+        print(f"警告: 不明な境界条件タイプ '{boundary_type}' です。'DN'を使用します。")
+        boundary_type = 'DN'
+    
+    if dimension == 1:
+        return PoissonEquationSet1D(boundary_type, merge_derivatives)
+    elif dimension == 2:
+        return PoissonEquationSet2D(boundary_type, merge_derivatives)
+    else:
+        # 次元が指定されていない場合はグリッドの次元から判断できるようにラッパーを返す
+        return DimensionalEquationSetWrapper(
+            "poisson",
+            {
+                "1d": lambda: PoissonEquationSet1D(boundary_type, merge_derivatives),
+                "2d": lambda: PoissonEquationSet2D(boundary_type, merge_derivatives)
+            }
+        )
+
+def create_derivative_equation_set(merge_derivatives=False, dimension=None):
+    """
+    導関数方程式セットを作成するファクトリーメソッド
+    
+    Args:
+        merge_derivatives: 高階微分方程式を結合するか
+        dimension: 次元 (1または2、Noneの場合はGridの次元から判断)
+    
+    Returns:
+        DerivativeEquationSet インスタンス
+    """
+    if dimension == 1:
+        return DerivativeEquationSet1D(merge_derivatives)
+    elif dimension == 2:
+        return DerivativeEquationSet2D(merge_derivatives)
+    else:
+        # 次元が指定されていない場合はグリッドの次元から判断できるようにラッパーを返す
+        return DimensionalEquationSetWrapper(
+            "derivative",
+            {
+                "1d": lambda: DerivativeEquationSet1D(merge_derivatives),
+                "2d": lambda: DerivativeEquationSet2D(merge_derivatives)
+            }
+        )
