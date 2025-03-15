@@ -5,6 +5,7 @@ CCD Matrix Structure Verification Tool
 """
 
 import os
+import argparse
 from typing import Dict, Tuple, Optional, Any, Union, List
 
 import cupy as cp
@@ -16,308 +17,427 @@ from grid import Grid
 from equation_system import EquationSystem
 from test_functions import TestFunctionFactory
 from equation_sets import EquationSet
-from solver import CCDSolver1D, CCDSolver2D
+from tester import CCDTester1D, CCDTester2D
 from scaling import plugin_manager
 
 
-def visualize_system(A: Any, b: Any, x: Any, 
-                     title: str, output_path: str) -> str:
-    """
-    システム Ax = b を可視化
+class CCDVerifier:
+    """CCDメソッドの行列構造を検証・可視化するクラス"""
     
-    Args:
-        A: システム行列
-        b: 右辺ベクトル
-        x: 解ベクトル
-        title: 図のタイトル
-        output_path: 出力ファイルのパス
+    def __init__(self, output_dir="verify_results"):
+        """
+        初期化
         
-    Returns:
-        生成されたファイルのパス
-    """
-    # CuPy/SciPy配列をNumPy配列に変換
-    def to_numpy(arr):
-        if hasattr(arr, 'toarray'):
-            return arr.toarray().get() if hasattr(arr, 'get') else arr.toarray()
-        elif hasattr(arr, 'get'):
-            return arr.get()
-        return arr
-
-    # 行列とベクトルを変換・整形
-    A_np = to_numpy(A)
-    b_np = to_numpy(b).reshape(-1, 1)
-    x_np = to_numpy(x).reshape(-1, 1) if x is not None else None
+        Args:
+            output_dir: 出力ディレクトリパス（デフォルト: "verify_results"）
+        """
+        self.output_dir = output_dir
+        os.makedirs(self.output_dir, exist_ok=True)
     
-    # A、x、bを結合
-    if x_np is not None:
-        combined = np.hstack([A_np, x_np, b_np])
-        column_labels = ["A"] * A_np.shape[1] + ["x"] + ["b"]
-    else:
-        combined = np.hstack([A_np, b_np])
-        column_labels = ["A"] * A_np.shape[1] + ["b"]
+    def generate_filename(self, title, scaling_method=None):
+        """ファイル名を生成"""
+        scaling_suffix = f"_{scaling_method.lower()}" if scaling_method else ""
+        return os.path.join(self.output_dir, f"{title}{scaling_suffix}_matrix.png")
     
-    # 可視化用の設定
-    abs_combined = np.abs(combined)
-    non_zero = abs_combined[abs_combined > 0]
-    
-    if len(non_zero) == 0:
-        print(f"警告: システムに非ゼロの要素がありません")
-        return ""
-    
-    # 対数スケールで表示
-    plt.figure(figsize=(12, 8))
-    im = plt.imshow(
-        abs_combined, 
-        norm=LogNorm(vmin=non_zero.min(), vmax=abs_combined.max()),
-        cmap='viridis', 
-        aspect='auto', 
-        interpolation='nearest'
-    )
-    
-    plt.title(f"System Values (Ax = b): {title}")
-    plt.xlabel("Column Index")
-    plt.ylabel("Row Index")
-    plt.colorbar(im, label='Absolute Value (Log Scale)')
-    
-    # 保存して後片付け
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    return output_path
-
-
-def setup_solver(equation_set: EquationSet, grid: Grid, 
-                scaling_method: Optional[str] = None) -> Tuple[Any, Any]:
-    """
-    ソルバーのセットアップと行列Aの取得
-    
-    Args:
-        equation_set: 方程式セット
-        grid: グリッド
-        scaling_method: スケーリング手法
+    def verify_equation_set(self, equation_set_name: str, dimension: int, 
+                           grid_size: int, scaling_method: Optional[str] = None,
+                           solver_method: str = "direct") -> Dict:
+        """
+        方程式セットを検証
         
-    Returns:
-        (ソルバーインスタンス, 行列A)
-    """
-    # グリッド次元に応じたソルバーを作成
-    solver_class = CCDSolver2D if grid.is_2d else CCDSolver1D
-    solver = solver_class(equation_set, grid)
-    
-    # スケーリング設定
-    if scaling_method:
-        solver.scaling_method = scaling_method
-    
-    return solver, solver.matrix_A
-
-
-def build_rhs_vector(solver: Union[CCDSolver1D, CCDSolver2D], 
-                     grid: Grid, test_func) -> cp.ndarray:
-    """
-    右辺ベクトルの構築
-    
-    Args:
-        solver: ソルバーインスタンス
-        grid: グリッド
-        test_func: テスト関数
+        Args:
+            equation_set_name: 方程式セット名
+            dimension: 次元（1または2）
+            grid_size: グリッドサイズ
+            scaling_method: スケーリング手法名（オプション）
+            solver_method: ソルバー手法名
+            
+        Returns:
+            検証結果を含む辞書
+        """
+        # グリッド作成
+        if dimension == 1:
+            grid = Grid(grid_size, x_range=(-1.0, 1.0))
+            test_func = TestFunctionFactory.create_standard_1d_functions()[3]  # Sine
+        else:
+            grid = Grid(grid_size, grid_size, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
+            test_func = TestFunctionFactory.create_standard_2d_functions()[0]  # Sine2D
         
-    Returns:
-        右辺ベクトル
-    """
-    if grid.is_2d:
-        # 2Dケース
-        nx, ny = grid.nx_points, grid.ny_points
-        x_min, x_max = grid.x_min, grid.x_max
-        y_min, y_max = grid.y_min, grid.y_max
+        # 方程式セット作成
+        equation_set = EquationSet.create(equation_set_name, dimension=dimension)
         
-        # ソース項
-        f_values = cp.zeros((nx, ny))
-        for i in range(nx):
-            for j in range(ny):
-                x, y = grid.get_point(i, j)
-                f_values[i, j] = test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
+        # テスター作成
+        tester_class = CCDTester1D if dimension == 1 else CCDTester2D
+        tester = tester_class(grid)
         
-        # 境界値
-        boundary = {
-            'left_dirichlet': cp.array([test_func.f(x_min, y) for y in grid.y]),
-            'right_dirichlet': cp.array([test_func.f(x_max, y) for y in grid.y]),
-            'bottom_dirichlet': cp.array([test_func.f(x, y_min) for x in grid.x]),
-            'top_dirichlet': cp.array([test_func.f(x, y_max) for x in grid.x]),
-            'left_neumann': cp.array([test_func.df_dx(x_min, y) for y in grid.y]),
-            'right_neumann': cp.array([test_func.df_dx(x_max, y) for y in grid.y]),
-            'bottom_neumann': cp.array([test_func.df_dy(x, y_min) for x in grid.x]),
-            'top_neumann': cp.array([test_func.df_dy(x, y_max) for x in grid.x])
+        # 重要: テスターにソルバーオプションを設定
+        solver_options = {
+            "tol": 1e-10,
+            "maxiter": 1000,
+            "analyze_matrix": True
         }
+        tester.set_solver_options(solver_method, solver_options, analyze_matrix=True)
+        tester.set_equation_set(equation_set_name)
         
-        return solver._build_rhs_vector(f_values=f_values, **boundary)
-    else:
-        # 1Dケース
-        x_min, x_max = grid.x_min, grid.x_max
+        if scaling_method:
+            tester.scaling_method = scaling_method
         
-        # ソース項とソリューション
-        f_values = cp.array([test_func.d2f(x) for x in grid.x])
+        # ソルバーの初期化を確実にするためにダミーテストを実行
+        # これにより tester.solver が確実に初期化される
+        dummy_result = tester.run_test_with_options(test_func)
         
-        # 境界値
-        boundary = {
-            'left_dirichlet': test_func.f(x_min),
-            'right_dirichlet': test_func.f(x_max),
-            'left_neumann': test_func.df(x_min),
-            'right_neumann': test_func.df(x_max)
-        }
-        
-        return solver._build_rhs_vector(f_values=f_values, **boundary)
-
-
-def analyze_system(equation_set: EquationSet, grid: Grid, name: str,
-                  test_func, scaling_method: Optional[str] = None,
-                  output_dir: str = "results") -> None:
-    """
-    行列システムを分析・可視化
-    
-    Args:
-        equation_set: 方程式セット
-        grid: グリッド
-        name: 識別名
-        test_func: テスト関数
-        scaling_method: スケーリング手法
-        output_dir: 出力ディレクトリ
-    """
-    try:
-        # ソルバーのセットアップ
-        solver, A = setup_solver(equation_set, grid, scaling_method)
+        # 行列分析
+        A = tester.solver.matrix_A
         
         # 右辺ベクトル構築
-        b = build_rhs_vector(solver, grid, test_func)
+        b = self._build_rhs_vector(tester.solver, grid, test_func)
         
-        # システム分析
-        total_size = A.shape[0]
-        nnz = A.nnz if hasattr(A, 'nnz') else np.count_nonzero(A)
-        sparsity = 1.0 - (nnz / (total_size * total_size))
-        
-        grid_info = f"{grid.nx_points}x{grid.ny_points}" if grid.is_2d else f"{grid.n_points}"
-        
-        print(f"\n{name} 行列分析:")
-        print(f"  グリッド: {grid_info}")
-        print(f"  行列サイズ: {total_size}, 非ゼロ要素: {nnz}, 疎性率: {sparsity:.6f}")
-        
-        # Ax=bを解いてxを計算
-        print("  線形方程式を解いています...")
-        x = None
-        
-        # スケーリングが適用されている場合
-        A_vis = A
-        b_vis = b
-        
-        if scaling_method is not None:
-            print(f"  スケーリング: {scaling_method}")
-            
-            # スケーリングを試みる
-            try:
-                scaler = plugin_manager.get_plugin(scaling_method)
-                if scaler:
-                    A_vis, b_vis, scaling_info = scaler.scale(A, b)
-                    
-                    # 線形方程式を解く
-                    try:
-                        x_vis = solver.linear_solver.solve(A_vis, b_vis)
-                        # スケーリングを元に戻す
-                        x = scaler.unscale(x_vis, scaling_info)
-                    except Exception as e:
-                        print(f"  線形方程式の解法に失敗しました: {e}")
-            except Exception as e:
-                print(f"  スケーリングの適用に失敗しました: {e}")
-        else:
-            # スケーリングなしで解く
-            try:
-                x = solver.linear_solver.solve(A, b)
-            except Exception as e:
-                print(f"  線形方程式の解法に失敗しました: {e}")
-        
-        if x is not None:
-            print("  線形方程式の解を計算しました")
-        
-        # 可視化用ファイル名
-        prefix = f"{name.lower()}_{grid_info}"
+        # スケーリング適用（有効な場合）
         if scaling_method:
-            prefix += f"_{scaling_method.lower()}"
+            A_scaled, b_scaled, scaling_info, scaler = tester.solver._apply_scaling(A, b)
+        else:
+            A_scaled, b_scaled = A, b
         
-        # システム可視化
-        dimension = "2D" if grid.is_2d else "1D"
-        title = f"{name} {dimension} System"
-        output_path = os.path.join(output_dir, f"{prefix}_system_values.png")
+        # 系の可視化
+        title = f"{equation_set_name.capitalize()}{dimension}D_{test_func.name}"
+        output_path = self.generate_filename(title, scaling_method)
         
-        # 可視化（これでA, x, bが表示される）
-        visualize_system(A_vis, b_vis, x, title, output_path)
+        self.visualize_system(A_scaled, b_scaled, None, title, output_path)
         
-    except Exception as e:
-        print(f"行列分析でエラーが発生しました: {e}")
-        import traceback
-        traceback.print_exc()
+        # 結果を返す
+        sparsity = None
+        if tester.solver.sparsity_info:
+            sparsity = tester.solver.sparsity_info.get("sparsity")
+        
+        return {
+            "equation_set": equation_set_name,
+            "dimension": dimension,
+            "grid_size": grid_size,
+            "matrix_size": A.shape[0],
+            "non_zeros": A.nnz if hasattr(A, "nnz") else np.count_nonzero(A),
+            "sparsity": sparsity,
+            "scaling_method": scaling_method,
+            "output_path": output_path
+        }
+    
+    def _build_rhs_vector(self, solver, grid, test_func):
+        """
+        右辺ベクトルの構築
+        
+        Args:
+            solver: ソルバーインスタンス
+            grid: グリッド
+            test_func: テスト関数
+            
+        Returns:
+            右辺ベクトル
+        """
+        if grid.is_2d:
+            # 2Dケース
+            nx, ny = grid.nx_points, grid.ny_points
+            x_min, x_max = grid.x_min, grid.x_max
+            y_min, y_max = grid.y_min, grid.y_max
+            
+            # ソース項
+            f_values = cp.zeros((nx, ny))
+            for i in range(nx):
+                for j in range(ny):
+                    x, y = grid.get_point(i, j)
+                    f_values[i, j] = test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
+            
+            # 境界値
+            boundary = {
+                'left_dirichlet': cp.array([test_func.f(x_min, y) for y in grid.y]),
+                'right_dirichlet': cp.array([test_func.f(x_max, y) for y in grid.y]),
+                'bottom_dirichlet': cp.array([test_func.f(x, y_min) for x in grid.x]),
+                'top_dirichlet': cp.array([test_func.f(x, y_max) for x in grid.x]),
+                'left_neumann': cp.array([test_func.df_dx(x_min, y) for y in grid.y]),
+                'right_neumann': cp.array([test_func.df_dx(x_max, y) for y in grid.y]),
+                'bottom_neumann': cp.array([test_func.df_dy(x, y_min) for x in grid.x]),
+                'top_neumann': cp.array([test_func.df_dy(x, y_max) for x in grid.x])
+            }
+            
+            return solver._build_rhs_vector(f_values=f_values, **boundary)
+        else:
+            # 1Dケース
+            x_min, x_max = grid.x_min, grid.x_max
+            
+            # ソース項とソリューション
+            f_values = cp.array([test_func.d2f(x) for x in grid.x])
+            
+            # 境界値
+            boundary = {
+                'left_dirichlet': test_func.f(x_min),
+                'right_dirichlet': test_func.f(x_max),
+                'left_neumann': test_func.df(x_min),
+                'right_neumann': test_func.df(x_max)
+            }
+            
+            return solver._build_rhs_vector(f_values=f_values, **boundary)
+    
+    def visualize_system(self, A: Any, b: Any, x: Any, 
+                         title: str, output_path: str) -> str:
+        """
+        システム Ax = b を可視化
+        
+        Args:
+            A: システム行列
+            b: 右辺ベクトル
+            x: 解ベクトル
+            title: 図のタイトル
+            output_path: 出力ファイルのパス
+            
+        Returns:
+            生成されたファイルのパス
+        """
+        # CuPy/SciPy配列をNumPy配列に変換
+        def to_numpy(arr):
+            if hasattr(arr, 'toarray'):
+                return arr.toarray().get() if hasattr(arr, 'get') else arr.toarray()
+            elif hasattr(arr, 'get'):
+                return arr.get()
+            return arr
+
+        # 行列とベクトルを変換・整形
+        A_np = to_numpy(A)
+        b_np = to_numpy(b).reshape(-1, 1)
+        x_np = to_numpy(x).reshape(-1, 1) if x is not None else None
+        
+        # A、x、bを結合
+        if x_np is not None:
+            combined = np.hstack([A_np, x_np, b_np])
+        else:
+            combined = np.hstack([A_np, b_np])
+        
+        # 可視化用の設定
+        abs_combined = np.abs(combined)
+        non_zero = abs_combined[abs_combined > 0]
+        
+        if len(non_zero) == 0:
+            print(f"警告: システムに非ゼロの要素がありません")
+            return ""
+        
+        # 対数スケールで表示
+        plt.figure(figsize=(12, 8))
+        plt.imshow(
+            abs_combined, 
+            norm=LogNorm(vmin=non_zero.min(), vmax=abs_combined.max()),
+            cmap='viridis', 
+            aspect='auto', 
+            interpolation='nearest'
+        )
+        
+        plt.title(f"System Values (Ax = b): {title}")
+        plt.xlabel("Column Index")
+        plt.ylabel("Row Index")
+        plt.colorbar(label='Absolute Value (Log Scale)')
+        
+        # 保存して後片付け
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        return output_path
+    
+    def run_all_verifications(self, scaling_methods=None, solver_method="direct"):
+        """
+        すべての検証を実行
+        
+        Args:
+            scaling_methods: 検証するスケーリング手法のリスト
+            solver_method: ソルバー手法
+            
+        Returns:
+            検証結果のリスト
+        """
+        equation_set_types = ["poisson", "derivative"]
+        dimensions = [1, 2]
+        grid_sizes = [10, 20]
+        
+        results = []
+        
+        for eq_type in equation_set_types:
+            for dim in dimensions:
+                for size in grid_sizes:
+                    # スケーリングなし検証
+                    result = self.verify_equation_set(
+                        eq_type, dim, size, 
+                        solver_method=solver_method
+                    )
+                    results.append(result)
+                    
+                    # スケーリング有り検証
+                    if scaling_methods:
+                        for scaling in scaling_methods:
+                            result = self.verify_equation_set(
+                                eq_type, dim, size, scaling,
+                                solver_method=solver_method
+                            )
+                            results.append(result)
+        
+        return results
+    
+    def summarize_results(self, results):
+        """
+        検証結果の要約表示
+        
+        Args:
+            results: 検証結果のリスト
+        """
+        print("\n検証結果のまとめ:")
+        print("{:<15} {:<5} {:<8} {:<15} {:<10} {:<10}".format(
+            "方程式セット", "次元", "グリッド", "スケーリング", "行列サイズ", "疎性率"
+        ))
+        print("-" * 70)
+        
+        for result in results:
+            equation_set = result["equation_set"]
+            dimension = result["dimension"]
+            grid_size = result["grid_size"]
+            scaling = result.get("scaling_method", "なし")
+            matrix_size = result["matrix_size"]
+            sparsity = result.get("sparsity", "N/A")
+            sparsity_str = f"{sparsity:.4f}" if isinstance(sparsity, (int, float)) else "N/A"
+            
+            print("{:<15} {:<5d} {:<8d} {:<15} {:<10d} {:<10}".format(
+                equation_set, dimension, grid_size, str(scaling), matrix_size, sparsity_str
+            ))
 
 
-def run_verification(dimension: int, output_dir: str = "results") -> None:
+def run_verification(equation_set_name="poisson", dimension=1, grid_size=10, 
+                    scaling_method=None, output_dir="verify_results", solver_method="direct"):
     """
-    指定次元での検証を実行
+    検証処理のエントリポイント
     
     Args:
+        equation_set_name: 方程式セット名
         dimension: 次元（1または2）
+        grid_size: グリッドサイズ
+        scaling_method: スケーリング手法名
         output_dir: 出力ディレクトリ
-    """
-    equation_set_types = ["poisson", "derivative"]
-    
-    for eq_type in equation_set_types:
-        print(f"\n--- {dimension}次元 {eq_type.capitalize()} 方程式システムの検証 ---")
+        solver_method: ソルバー手法
         
-        try:
-            # グリッドと関数のセットアップ
-            if dimension == 1:
-                grid = Grid(16, x_range=(-1.0, 1.0))
-                test_func = TestFunctionFactory.create_standard_1d_functions()[3]  # Sine
-            else:
-                grid = Grid(5, 5, x_range=(-1.0, 1.0), y_range=(-1.0, 1.0))
-                test_func = TestFunctionFactory.create_standard_2d_functions()[0]  # Sine2D
-            
-            # 方程式セット作成
-            equation_set = EquationSet.create(eq_type, dimension=dimension)
-            
-            # スケーリングなしでの分析
-            analyze_system(
-                equation_set, 
-                grid, 
-                f"{eq_type.capitalize()}{dimension}D_{test_func.name}",
-                test_func,
-                output_dir=output_dir
-            )
-            
-            # SymmetricScalingでの分析
-            analyze_system(
-                equation_set, 
-                grid, 
-                f"{eq_type.capitalize()}{dimension}D_{test_func.name}", 
-                test_func,
-                scaling_method="SymmetricScaling",
-                output_dir=output_dir
-            )
-            
-        except Exception as e:
-            print(f"{dimension}D {eq_type} 検証でエラーが発生しました: {e}")
-            import traceback
-            traceback.print_exc()
+    Returns:
+        検証結果
+    """
+    verifier = CCDVerifier(output_dir=output_dir)
+    
+    result = verifier.verify_equation_set(
+        equation_set_name, dimension, grid_size, scaling_method,
+        solver_method=solver_method
+    )
+    
+    # 結果表示
+    dimension = result["dimension"]
+    eqs = result["equation_set"]
+    size = result["grid_size"]
+    matrix_size = result["matrix_size"]
+    scaling = result.get("scaling_method", "なし")
+    sparsity = result.get("sparsity", "N/A")
+    sparsity_str = f"{sparsity:.4f}" if isinstance(sparsity, (int, float)) else "N/A"
+    output_path = result.get("output_path", "")
+    
+    print(f"\n{dimension}D {eqs} 方程式の行列検証結果:")
+    print(f"  グリッドサイズ: {size}")
+    print(f"  スケーリング: {scaling}")
+    print(f"  行列サイズ: {matrix_size}")
+    print(f"  疎性率: {sparsity_str}")
+    print(f"  可視化結果: {output_path}")
+    
+    return result
 
 
-def main(output_dir: str = "results") -> None:
-    """メイン実行関数"""
+def run_all_verifications(output_dir="verify_results", scaling_methods=None, solver_method="direct"):
+    """
+    すべての検証を実行するエントリポイント
+    
+    Args:
+        output_dir: 出力ディレクトリ
+        scaling_methods: スケーリング手法名のリスト
+        solver_method: ソルバー手法
+        
+    Returns:
+        検証結果のリスト
+    """
     print("==== CCD行列構造検証ツール ====")
     
-    # 出力ディレクトリ作成
-    os.makedirs(output_dir, exist_ok=True)
+    verifier = CCDVerifier(output_dir=output_dir)
+    
+    # デフォルトのスケーリング手法
+    if scaling_methods is None:
+        scaling_methods = ["SymmetricScaling"]
     
     # 検証実行
-    run_verification(1, output_dir)
-    run_verification(2, output_dir)
+    results = verifier.run_all_verifications(scaling_methods, solver_method)
+    
+    # 結果表示
+    verifier.summarize_results(results)
     
     print(f"\n検証が完了しました。結果は {output_dir} に保存されています。")
+    
+    return results
+
+
+def parse_args():
+    """コマンドライン引数の解析"""
+    parser = argparse.ArgumentParser(description="CCD行列構造検証ツール")
+    
+    # 基本設定
+    parser.add_argument("--dim", type=int, choices=[1, 2], default=1, help="次元 (1 or 2)")
+    parser.add_argument("-e", "--equation", type=str, default="poisson", help="方程式セット名")
+    parser.add_argument("-o", "--out", type=str, default="verify_results", help="出力ディレクトリ")
+    
+    # グリッド設定
+    parser.add_argument("--grid-size", type=int, default=10, help="検証用グリッドサイズ")
+    
+    # ソルバー設定
+    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'minres', 'lsmr'], 
+                       default='direct', help="ソルバー手法")
+    
+    # スケーリング設定
+    parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法")
+    parser.add_argument("--list-scaling", action="store_true", help="スケーリング手法一覧を表示")
+    
+    # 検証モード
+    parser.add_argument("--all", action="store_true", help="全方程式・次元・スケーリング手法で検証実行")
+    
+    return parser.parse_args()
+
+
+def list_scaling_methods():
+    """利用可能なスケーリング手法一覧表示"""
+    plugins = plugin_manager.get_available_plugins()
+    print("\n利用可能なスケーリング手法:")
+    for name in plugins:
+        print(f"- {name}")
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    
+    # 出力ディレクトリ作成
+    os.makedirs(args.out, exist_ok=True)
+    
+    # スケーリング手法一覧表示
+    if args.list_scaling:
+        list_scaling_methods()
+        exit(0)
+    
+    if args.all:
+        # すべての検証実行
+        scaling_methods = [args.scaling] if args.scaling else None
+        run_all_verifications(
+            output_dir=args.out, 
+            scaling_methods=scaling_methods,
+            solver_method=args.solver
+        )
+    else:
+        # 単一検証実行
+        run_verification(
+            equation_set_name=args.equation,
+            dimension=args.dim,
+            grid_size=args.grid_size,
+            scaling_method=args.scaling,
+            output_dir=args.out,
+            solver_method=args.solver
+        )

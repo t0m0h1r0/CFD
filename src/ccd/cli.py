@@ -31,8 +31,6 @@ def parse_args():
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法")
     parser.add_argument("--analyze", action="store_true", help="行列を分析する")
     parser.add_argument("--monitor", action="store_true", help="収束過程をモニタリングする")
-    parser.add_argument("--maxiter", type=int, default=1000, help="反復解法の最大反復回数")
-    parser.add_argument("--tol", type=float, default=1e-10, help="反復解法の収束許容誤差")
     
     # テストモード
     parser.add_argument("--list", action="store_true", help="利用可能な関数一覧を表示")
@@ -40,6 +38,11 @@ def parse_args():
     parser.add_argument("--converge", action="store_true", help="格子収束テスト実行")
     parser.add_argument("--all", action="store_true", help="全関数でテスト実行")
     parser.add_argument("--compare-scaling", action="store_true", help="スケーリング手法比較")
+    
+    # 検証モード (新規追加)
+    parser.add_argument("--verify", action="store_true", help="行列構造検証実行")
+    parser.add_argument("--verify-grid-size", type=int, default=10, help="検証用グリッドサイズ")
+    parser.add_argument("--verify-all", action="store_true", help="全方程式・次元・スケーリング手法で検証実行")
     
     return parser.parse_args()
 
@@ -55,8 +58,8 @@ def create_tester(args):
     
     # テスター設定
     solver_options = {
-        "tol": args.tol, 
-        "maxiter": args.maxiter,
+        "tol": 1e-10, 
+        "maxiter": 1000,
         "monitor_convergence": args.monitor,
         "output_dir": args.out,
         "prefix": args.prefix
@@ -147,12 +150,8 @@ def test_all_functions(args):
                 result["exact"], result["errors"], prefix=args.prefix
             )
     
-    # 全関数の誤差比較グラフ
-    if args.dim == 1:
-        visualizer.compare_all_functions_errors(results, prefix=args.prefix)
-    else:
-        visualizer.compare_all_functions_errors(results, grid_size=args.nx, prefix=args.prefix)
-
+    # 全関数比較
+    visualizer.compare_all_functions_errors(results, grid_size=args.nx, prefix=args.prefix)
 
 def run_single_test(args):
     """単一関数テスト実行"""
@@ -160,17 +159,12 @@ def run_single_test(args):
     test_func = tester.get_test_function(args.func)
     
     print(f"\n{test_func.name}関数でテスト実行中...")
-    if args.solver != 'direct':
-        print(f"最大反復回数: {args.maxiter}  収束許容誤差: {args.tol}")
-    
     start_time = time.time()
     result = tester.run_test_with_options(test_func)
     elapsed = time.time() - start_time
     
     # 結果表示
     print(f"\n実行時間: {elapsed:.4f}秒")
-    if args.solver != 'direct' and hasattr(tester.solver, 'last_iterations'):
-        print(f"反復回数: {tester.solver.last_iterations}")
     
     # 可視化
     if args.dim == 1:
@@ -184,6 +178,32 @@ def run_single_test(args):
         visualizer.visualize_solution(
             tester.grid, test_func.name, result["numerical"],
             result["exact"], result["errors"], prefix=args.prefix
+        )
+
+def run_verification(args):
+    """行列構造検証の実行"""
+    from verify import run_verification, run_all_verifications
+    
+    # verify用の出力ディレクトリ
+    verify_dir = os.path.join(args.out, "verify")
+    os.makedirs(verify_dir, exist_ok=True)
+    
+    if args.verify_all:
+        print("\nすべての方程式・次元・スケーリング手法で行列構造検証を実行します...")
+        run_all_verifications(
+            output_dir=verify_dir, 
+            scaling_methods=[args.scaling] if args.scaling else None,
+            solver_method=args.solver
+        )
+    else:
+        print(f"\n{args.equation}方程式の{args.dim}D行列構造検証を実行します...")
+        run_verification(
+            equation_set_name=args.equation,
+            dimension=args.dim,
+            grid_size=args.verify_grid_size,
+            scaling_method=args.scaling,
+            output_dir=verify_dir,
+            solver_method=args.solver
         )
 
 def run_cli():
@@ -201,7 +221,9 @@ def run_cli():
         return
     
     # テストモード選択実行
-    if args.compare_scaling:
+    if args.verify or args.verify_all:
+        run_verification(args)
+    elif args.compare_scaling:
         compare_scaling(args)
     elif args.converge:
         run_convergence_test(args)
