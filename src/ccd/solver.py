@@ -75,17 +75,15 @@ class LinearSystemSolver:
                 x, info = splinalg.gmres(A_scaled, b_scaled, tol=tol, maxiter=maxiter, 
                                         restart=restart, callback=callback)
                 iterations = info
-            elif self.method in ["cg", "cgs", "minres"]:
+            elif self.method in ["cg", "cgs", "minres", "lsmr"]:
                 tol = self.options.get("tol", 1e-10)
                 maxiter = self.options.get("maxiter", 1000)
                 solver_func = getattr(splinalg, self.method)
                 x, info = solver_func(A_scaled, b_scaled, tol=tol, maxiter=maxiter, callback=callback)
                 iterations = info
-            elif self.method in ["lsqr", "lsmr"]:
-                tol = self.options.get("tol", 1e-10)
-                maxiter = self.options.get("maxiter", 1000)
+            elif self.method in ["lsqr"]:
                 solver_func = getattr(splinalg, self.method)
-                x = solver_func(A_scaled, b_scaled, atol=tol, btol=tol, iter_lim=maxiter)[0]
+                x = solver_func(A_scaled, b_scaled)[0]
                 iterations = None
             else:
                 print(f"未知の解法 {self.method}。直接解法を使用します。")
