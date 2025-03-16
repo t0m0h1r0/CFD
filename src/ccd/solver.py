@@ -38,6 +38,7 @@ class LinearSystemSolver:
         self.scaling_method = scaling_method
         self.last_iterations = None
         self.monitor_convergence = self.options.get("monitor_convergence", False)
+        self.force_cpu = self.options.get("force_cpu", False)
     
 
     # Add these helper methods to the LinearSystemSolver class
@@ -140,34 +141,41 @@ class LinearSystemSolver:
         else:
             callback = None
         
-        # GPU で計算を試行
-        try:
-            x, iterations = self._solve_with_gpu(A_scaled, b_scaled, callback)
-        except Exception as e:
-            error_msg = str(e)
-            # GPU メモリ不足の場合
-            if "CUSOLVER_STATUS_ALLOC_FAILED" in error_msg or "CUDA" in error_msg or "GPU" in error_msg or "cuSOLVER" in error_msg:
-                print(f"GPU メモリ不足のエラー: {e}")
-                print("CPU (SciPy) に切り替えて計算を実行します...")
-                x, iterations = self._solve_with_cpu(A_scaled, b_scaled)
-                print("CPU (SciPy) での計算が完了しました。")
-            else:
-                # その他のエラーの場合は、まず CuPy の直接解法を試す
-                print(f"解法エラー: {e}。直接解法にフォールバックします。")
-                try:
-                    x = splinalg.spsolve(A_scaled, b_scaled)
-                    iterations = None
-                except Exception as e2:
-                    # それでもダメなら SciPy を使用
-                    print(f"CuPy の直接解法でもエラー: {e2}。SciPy に切り替えます。")
+        # CPU計算を強制するオプションをチェック
+        if self.force_cpu:
+            print("CPU (SciPy) で計算を実行します...")
+            x, iterations = self._solve_with_cpu(A_scaled, b_scaled)
+            print("CPU (SciPy) での計算が完了しました。")
+        else:
+            # GPU で計算を試行
+            try:
+                x, iterations = self._solve_with_gpu(A_scaled, b_scaled, callback)
+            except Exception as e:
+                error_msg = str(e)
+                # GPU メモリ不足の場合
+                if "CUSOLVER_STATUS_ALLOC_FAILED" in error_msg or "CUDA" in error_msg or "GPU" in error_msg or "cuSOLVER" in error_msg:
+                    print(f"GPU メモリ不足のエラー: {e}")
+                    print("CPU (SciPy) に切り替えて計算を実行します...")
                     x, iterations = self._solve_with_cpu(A_scaled, b_scaled)
                     print("CPU (SciPy) での計算が完了しました。")
+                else:
+                    # その他のエラーの場合は、まず CuPy の直接解法を試す
+                    print(f"解法エラー: {e}。直接解法にフォールバックします。")
+                    try:
+                        x = splinalg.spsolve(A_scaled, b_scaled)
+                        iterations = None
+                    except Exception as e2:
+                        # それでもダメなら SciPy を使用
+                        print(f"CuPy の直接解法でもエラー: {e2}。SciPy に切り替えます。")
+                        x, iterations = self._solve_with_cpu(A_scaled, b_scaled)
+                        print("CPU (SciPy) での計算が完了しました。")
         
         elapsed = time.time() - start_time
         self.last_iterations = iterations
         
         # 実行情報表示
-        print(f"解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
+        compute_device = "CPU (SciPy)" if self.force_cpu else "GPU (CuPy)"
+        print(f"解法実行: {self.method}, 計算デバイス: {compute_device}, 経過時間: {elapsed:.4f}秒")
         if iterations:
             print(f"反復回数: {iterations}")
         

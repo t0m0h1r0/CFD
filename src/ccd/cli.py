@@ -31,6 +31,7 @@ def parse_args():
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法")
     parser.add_argument("--analyze", action="store_true", help="行列を分析する")
     parser.add_argument("--monitor", action="store_true", help="収束過程をモニタリングする")
+    parser.add_argument("--force-cpu", action="store_true", help="SciPyを使用したCPU計算を強制する")
     
     # テストモード
     parser.add_argument("--list", action="store_true", help="利用可能な関数一覧を表示")
@@ -61,7 +62,8 @@ def create_tester(args):
         "maxiter": 1000,
         "monitor_convergence": args.monitor,
         "output_dir": args.out,
-        "prefix": args.prefix
+        "prefix": args.prefix,
+        "force_cpu": args.force_cpu  # 新しいオプションを追加
     }
     tester.set_solver_options(args.solver, solver_options, args.analyze)
     tester.scaling_method = args.scaling
