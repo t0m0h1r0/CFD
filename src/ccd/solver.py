@@ -16,6 +16,10 @@ from abc import ABC, abstractmethod
 from equation_system import EquationSystem
 from scaling import plugin_manager
 
+# Add these imports at the top of the file
+import numpy as np
+import scipy.sparse as sp_cpu
+import scipy.sparse.linalg as splinalg_cpu
 
 class LinearSystemSolver:
     """線形方程式系 Ax=b を解くためのクラス"""
@@ -35,6 +39,79 @@ class LinearSystemSolver:
         self.last_iterations = None
         self.monitor_convergence = self.options.get("monitor_convergence", False)
     
+
+    # Add these helper methods to the LinearSystemSolver class
+    def _solve_with_gpu(self, A, b, callback=None):
+        """GPU (CuPy) を使用して線形方程式系を解く"""
+        if self.method == "direct":
+            x = splinalg.spsolve(A, b)
+            iterations = None
+        elif self.method == "gmres":
+            tol = self.options.get("tol", 1e-10)
+            maxiter = self.options.get("maxiter", 1000)
+            restart = self.options.get("restart", 100)
+            x0 = cp.ones_like(b)
+            x, iterations = splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
+                                    restart=restart, callback=callback)
+        elif self.method in ["cg", "cgs", "minres"]:
+            tol = self.options.get("tol", 1e-10)
+            maxiter = self.options.get("maxiter", 1000)
+            solver_func = getattr(splinalg, self.method)
+            x0 = cp.ones_like(b)
+            x, iterations = solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
+        elif self.method in ["lsqr", "lsmr"]:
+            solver_func = getattr(splinalg, self.method)
+            maxiter = self.options.get("maxiter", 1000)
+            if self.method == "lsmr":
+                x0 = cp.ones_like(b)
+                x = solver_func(A, b, x0=x0, maxiter=maxiter)[0]
+            else:
+                x = solver_func(A, b)[0]
+            iterations = None
+        else:
+            print(f"未知の解法 {self.method}。直接解法を使用します。")
+            x = splinalg.spsolve(A, b)
+            iterations = None
+        
+        return x, iterations
+
+    def _solve_with_cpu(self, A, b):
+        """CPU (SciPy) を使用して線形方程式系を解く"""
+        # CuPy 配列を NumPy 配列に変換
+        A_cpu = A.get() if hasattr(A, 'get') else A
+        b_cpu = b.get() if hasattr(b, 'get') else b
+        
+        # CSR 形式の行列に変換 (必要な場合)
+        if not isinstance(A_cpu, sp_cpu.csr_matrix):
+            A_cpu = sp_cpu.csr_matrix(A_cpu)
+        
+        # CPU (SciPy) での解法
+        if self.method == "direct" or self.method not in ["gmres", "cg", "cgs", "minres", "lsqr", "lsmr"]:
+            x_cpu = splinalg_cpu.spsolve(A_cpu, b_cpu)
+            iterations = None
+        elif self.method == "gmres":
+            tol = self.options.get("tol", 1e-10)
+            maxiter = self.options.get("maxiter", 1000)
+            restart = self.options.get("restart", 100)
+            x0_cpu = np.ones_like(b_cpu)
+            x_cpu, iterations = splinalg_cpu.gmres(A_cpu, b_cpu, x0=x0_cpu, tol=tol, maxiter=maxiter, restart=restart)
+        elif self.method in ["cg", "cgs", "minres"]:
+            tol = self.options.get("tol", 1e-10)
+            maxiter = self.options.get("maxiter", 1000)
+            solver_func = getattr(splinalg_cpu, self.method)
+            x0_cpu = np.ones_like(b_cpu)
+            x_cpu, iterations = solver_func(A_cpu, b_cpu, x0=x0_cpu, tol=tol, maxiter=maxiter)
+        elif self.method in ["lsqr", "lsmr"]:
+            maxiter = self.options.get("maxiter", 1000)
+            solver_func = getattr(splinalg_cpu, self.method)
+            x_cpu = solver_func(A_cpu, b_cpu)[0]
+            iterations = None
+        
+        # NumPy 配列を CuPy 配列に変換
+        x = cp.array(x_cpu)
+        return x, iterations
+
+    # Replace the existing solve method with this new version
     def solve(self, A, b):
         """
         線形方程式系を解く
@@ -63,45 +140,29 @@ class LinearSystemSolver:
         else:
             callback = None
         
-        # ソルバー選択
+        # GPU で計算を試行
         try:
-            if self.method == "direct":
-                x = splinalg.spsolve(A_scaled, b_scaled)
-                iterations = None
-            elif self.method == "gmres":
-                tol = self.options.get("tol", 1e-10)
-                maxiter = self.options.get("maxiter", 1000)
-                restart = self.options.get("restart", 100)
-                x0 = cp.ones_like(b)
-                x, info = splinalg.gmres(A_scaled, b_scaled, x0=x0, tol=tol, maxiter=maxiter, 
-                                        restart=restart, callback=callback)
-                iterations = info
-            elif self.method in ["cg", "cgs", "minres"]:
-                tol = self.options.get("tol", 1e-10)
-                maxiter = self.options.get("maxiter", 1000)
-                solver_func = getattr(splinalg, self.method)
-                x0 = cp.ones_like(b)
-                x, info = solver_func(A_scaled, b_scaled, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
-                iterations = info
-            elif self.method in ["lsqr"]:
-                solver_func = getattr(splinalg, self.method)
-                x = solver_func(A_scaled, b_scaled)[0]
-                iterations = None
-            elif self.method in ["lsmr"]:
-                maxiter = self.options.get("maxiter", 1000)
-                solver_func = getattr(splinalg, self.method)
-                x0 = cp.ones_like(b)
-                x = solver_func(A_scaled, b_scaled, x0=x0, maxiter=maxiter)[0]
-                iterations = None
-            else:
-                print(f"未知の解法 {self.method}。直接解法を使用します。")
-                x = splinalg.spsolve(A_scaled, b_scaled)
-                iterations = None
+            x, iterations = self._solve_with_gpu(A_scaled, b_scaled, callback)
         except Exception as e:
-            print(f"解法エラー: {e}。直接解法にフォールバックします。")
-            x = splinalg.spsolve(A_scaled, b_scaled)
-            iterations = None
-            
+            error_msg = str(e)
+            # GPU メモリ不足の場合
+            if "CUSOLVER_STATUS_ALLOC_FAILED" in error_msg or "CUDA" in error_msg or "GPU" in error_msg or "cuSOLVER" in error_msg:
+                print(f"GPU メモリ不足のエラー: {e}")
+                print("CPU (SciPy) に切り替えて計算を実行します...")
+                x, iterations = self._solve_with_cpu(A_scaled, b_scaled)
+                print("CPU (SciPy) での計算が完了しました。")
+            else:
+                # その他のエラーの場合は、まず CuPy の直接解法を試す
+                print(f"解法エラー: {e}。直接解法にフォールバックします。")
+                try:
+                    x = splinalg.spsolve(A_scaled, b_scaled)
+                    iterations = None
+                except Exception as e2:
+                    # それでもダメなら SciPy を使用
+                    print(f"CuPy の直接解法でもエラー: {e2}。SciPy に切り替えます。")
+                    x, iterations = self._solve_with_cpu(A_scaled, b_scaled)
+                    print("CPU (SciPy) での計算が完了しました。")
+        
         elapsed = time.time() - start_time
         self.last_iterations = iterations
         
