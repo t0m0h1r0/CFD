@@ -1,4 +1,4 @@
-import cupy as cp
+import numpy as np
 from .base1d import Equation
 from .base2d import Equation2D
 
@@ -24,7 +24,7 @@ class DirichletBoundaryEquation(Equation):
         Returns:
             ステンシル係数の辞書
         """
-        return {0: cp.array([1, 0, 0, 0])}
+        return {0: np.array([1, 0, 0, 0])}
 
     def is_valid_at(self, i=None):
         """
@@ -68,7 +68,7 @@ class NeumannBoundaryEquation(Equation):
         Returns:
             ステンシル係数の辞書
         """
-        return {0: cp.array([0, 1, 0, 0])}
+        return {0: np.array([0, 1, 0, 0])}
 
     def is_valid_at(self, i=None):
         """
@@ -117,7 +117,7 @@ class DirichletBoundaryEquation2D(Equation2D):
             ステンシル係数の辞書
         """
         # ψ (インデックス0) に制約を設定
-        coeffs = {(0, 0): cp.array([1, 0, 0, 0, 0, 0, 0])}
+        coeffs = {(0, 0): np.array([1, 0, 0, 0, 0, 0, 0])}
         return coeffs
         
     def is_valid_at(self, i=None, j=None):
@@ -166,7 +166,7 @@ class NeumannXBoundaryEquation2D(Equation2D):
             ステンシル係数の辞書
         """
         # ψ_x (インデックス1) に制約を設定
-        coeffs = {(0, 0): cp.array([0, 1, 0, 0, 0, 0, 0])}
+        coeffs = {(0, 0): np.array([0, 1, 0, 0, 0, 0, 0])}
         return coeffs
         
     def is_valid_at(self, i=None, j=None):
@@ -214,7 +214,7 @@ class NeumannYBoundaryEquation2D(Equation2D):
             ステンシル係数の辞書
         """
         # ψ_y (インデックス4) に制約を設定
-        coeffs = {(0, 0): cp.array([0, 0, 0, 0, 1, 0, 0])}
+        coeffs = {(0, 0): np.array([0, 0, 0, 0, 1, 0, 0])}
         return coeffs
         
     def is_valid_at(self, i=None, j=None):

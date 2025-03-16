@@ -113,17 +113,51 @@ class LinearSystemSolver:
             maxiter = self.options.get("maxiter", 1000)
             restart = self.options.get("restart", 100)
             x0 = np.ones_like(b)
-            x, iterations = splinalg_cpu.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
-        elif self.method in ["cg", "cgs", "minres"]:
+            
+            # SciPyバージョンに対応するAPI呼び出し
+            try:
+                # 標準のパラメータで試行
+                x, iterations = splinalg_cpu.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
+            except TypeError:
+                # パラメータ互換性問題の場合、最小限のパラメータで再試行
+                print("警告: SciPyとCuPyのAPI互換性問題を検出しました。最小限のパラメータで再試行します。")
+                x, iterations = splinalg_cpu.gmres(A, b, restart=restart)
+        elif self.method in ["cg", "cgs"]:
             tol = self.options.get("tol", 1e-10)
             maxiter = self.options.get("maxiter", 1000)
             solver_func = getattr(splinalg_cpu, self.method)
             x0 = np.ones_like(b)
-            x, iterations = solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter)
+            
+            # SciPyバージョンに対応するAPI呼び出し
+            try:
+                x, iterations = solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter)
+            except TypeError:
+                # パラメータ互換性問題の場合、最小限のパラメータで再試行
+                print("警告: SciPyとCuPyのAPI互換性問題を検出しました。最小限のパラメータで再試行します。")
+                x, iterations = solver_func(A, b)
+        elif self.method == "minres":
+            tol = self.options.get("tol", 1e-10)
+            maxiter = self.options.get("maxiter", 1000)
+            x0 = np.ones_like(b)
+            
+            # SciPyバージョンに対応するAPI呼び出し
+            try:
+                x, iterations = splinalg_cpu.minres(A, b, x0=x0, tol=tol, maxiter=maxiter)
+            except TypeError:
+                # パラメータ互換性問題の場合、最小限のパラメータで再試行
+                print("警告: SciPyとCuPyのAPI互換性問題を検出しました。最小限のパラメータで再試行します。")
+                x, iterations = splinalg_cpu.minres(A, b)
         elif self.method in ["lsqr", "lsmr"]:
             maxiter = self.options.get("maxiter", 1000)
             solver_func = getattr(splinalg_cpu, self.method)
-            x = solver_func(A, b)[0]
+            
+            # SciPyバージョンに対応するAPI呼び出し
+            try:
+                x = solver_func(A, b, iter_lim=maxiter)[0]
+            except TypeError:
+                # パラメータ互換性問題の場合、最小限のパラメータで再試行
+                print("警告: SciPyとCuPyのAPI互換性問題を検出しました。最小限のパラメータで再試行します。")
+                x = solver_func(A, b)[0]
             iterations = None
         
         return x, iterations

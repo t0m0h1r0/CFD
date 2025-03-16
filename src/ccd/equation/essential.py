@@ -1,4 +1,4 @@
-import cupy as cp
+import numpy as cp
 from .base1d import Equation
 
 class EssentialEquation(Equation):

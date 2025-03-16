@@ -1,4 +1,4 @@
-import cupy as cp
+import numpy as cp
 from equation.base2d import Equation2D
 
 class Equation1Dto2DConverter:

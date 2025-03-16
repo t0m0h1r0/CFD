@@ -1,4 +1,4 @@
-import cupy as cp
+import numpy as np
 from .base1d import Equation
 
 class Internal1stDerivativeEquation(Equation):
@@ -28,9 +28,9 @@ class Internal1stDerivativeEquation(Equation):
             
         h = self.grid.get_spacing()
         coeffs = {
-            -1: cp.array([35/32, 19/32, 1/8, 1/96]) * cp.array([h**-1, h**0, h**1, h**2]),
-            0: cp.array([0, 1, 0, 0]) * cp.array([h**-1, h**0, h**1, h**2]),
-            1: cp.array([-35/32, 19/32, -1/8, 1/96]) * cp.array([h**-1, h**0, h**1, h**2])
+            -1: np.array([35/32, 19/32, 1/8, 1/96]) * np.array([h**-1, h**0, h**1, h**2]),
+            0: np.array([0, 1, 0, 0]) * np.array([h**-1, h**0, h**1, h**2]),
+            1: np.array([-35/32, 19/32, -1/8, 1/96]) * np.array([h**-1, h**0, h**1, h**2])
         }
         return coeffs
 
@@ -81,9 +81,9 @@ class Internal2ndDerivativeEquation(Equation):
             
         h = self.grid.get_spacing()
         coeffs = {
-            -1: cp.array([-4, -29/16, -5/16, -1/48]) * cp.array([h**-2, h**-1, h**0, h**1]),
-            0: cp.array([8, 0, 1, 0]) * cp.array([h**-2, h**-1, h**0, h**1]),
-            1: cp.array([-4, 29/16, -5/16, 1/48]) * cp.array([h**-2, h**-1, h**0, h**1])
+            -1: np.array([-4, -29/16, -5/16, -1/48]) * np.array([h**-2, h**-1, h**0, h**1]),
+            0: np.array([8, 0, 1, 0]) * np.array([h**-2, h**-1, h**0, h**1]),
+            1: np.array([-4, 29/16, -5/16, 1/48]) * np.array([h**-2, h**-1, h**0, h**1])
         }
         return coeffs
 
@@ -146,9 +146,9 @@ class Internal3rdDerivativeEquation(Equation):
             
         h = self.grid.get_spacing()
         coeffs = {
-            -1: cp.array([-105/16, -105/16, -15/8, -3/16]) * cp.array([h**-3, h**-2, h**-1, h**0]),
-            0: cp.array([0, 0, 0, 1]) * cp.array([h**-3, h**-2, h**-1, h**0]),
-            1: cp.array([105/16, -105/16, 15/8, -3/16]) * cp.array([h**-3, h**-2, h**-1, h**0])
+            -1: np.array([-105/16, -105/16, -15/8, -3/16]) * np.array([h**-3, h**-2, h**-1, h**0]),
+            0: np.array([0, 0, 0, 1]) * np.array([h**-3, h**-2, h**-1, h**0]),
+            1: np.array([105/16, -105/16, 15/8, -3/16]) * np.array([h**-3, h**-2, h**-1, h**0])
         }
         return coeffs
 

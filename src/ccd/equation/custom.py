@@ -1,5 +1,5 @@
 # equation/custom.py
-import cupy as cp
+import numpy as cp
 from typing import Callable
 from .base1d import Equation
 
