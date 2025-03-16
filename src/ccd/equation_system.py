@@ -6,9 +6,9 @@
 行列を構築するための機能を提供します。
 """
 
-import cupy as cp
-import cupyx.scipy.sparse as sp
-from typing import Dict, List, Tuple, Any
+import numpy as np
+import scipy.sparse as sp_cpu
+from typing import Dict, List, Any
 
 class EquationSystem:
     """1D/2D両対応の方程式システムを管理するクラス"""
@@ -85,7 +85,7 @@ class EquationSystem:
         行列システムを構築
         
         Returns:
-            システム行列 (CSR形式)
+            システム行列 (CSR形式、CPU)
         """
         # 簡易的な検証
         self._validate_equations()
@@ -199,13 +199,27 @@ class EquationSystem:
         # それ以外は補助方程式
         return "auxiliary"
     
+    def _to_numpy(self, value):
+        """
+        CuPy配列をNumPy配列に変換する (必要な場合のみ)
+        
+        Args:
+            value: 変換する値
+            
+        Returns:
+            NumPy配列またはスカラー
+        """
+        if hasattr(value, 'get'):
+            return value.get()
+        return value
+    
     def _build_1d_matrix(self):
-        """1D用の行列システムを構築"""
+        """1D用の行列システムを構築 (CPU版)"""
         n = self.grid.n_points
         var_per_point = 4  # 1点あたりの変数数 [ψ, ψ', ψ'', ψ''']
         system_size = n * var_per_point
         
-        # 行列要素の蓄積用
+        # 行列要素の蓄積用 (CPU処理)
         data = []
         row_indices = []
         col_indices = []
@@ -271,23 +285,24 @@ class EquationSystem:
                             if coeff != 0.0:  # 非ゼロ要素のみ追加
                                 row_indices.append(row)
                                 col_indices.append(col_base + k)
-                                data.append(float(coeff))
+                                # CuPy配列があればNumPyに変換
+                                data.append(float(self._to_numpy(coeff)))
         
-        # CSR形式の疎行列を構築
-        A = sp.csr_matrix(
-            (cp.array(data), (cp.array(row_indices), cp.array(col_indices))), 
+        # SciPyを使用してCSR行列を構築
+        A = sp_cpu.csr_matrix(
+            (np.array(data), (np.array(row_indices), np.array(col_indices))), 
             shape=(system_size, system_size)
         )
         
         return A
     
     def _build_2d_matrix(self):
-        """2D用の行列システムを構築"""
+        """2D用の行列システムを構築 (CPU版)"""
         nx, ny = self.grid.nx_points, self.grid.ny_points
         var_per_point = 7  # 1点あたりの変数数 [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy]
         system_size = nx * ny * var_per_point
         
-        # 行列要素の蓄積用
+        # 行列要素の蓄積用 (CPU処理)
         data = []
         row_indices = []
         col_indices = []
@@ -339,11 +354,12 @@ class EquationSystem:
                                 if coeff != 0.0:  # 非ゼロ要素のみ追加
                                     row_indices.append(row)
                                     col_indices.append(col_base + k)
-                                    data.append(float(coeff))
+                                    # CuPy配列があればNumPyに変換
+                                    data.append(float(self._to_numpy(coeff)))
         
-        # CSR形式の疎行列を構築
-        A = sp.csr_matrix(
-            (cp.array(data), (cp.array(row_indices), cp.array(col_indices))), 
+        # SciPyを使用してCSR行列を構築
+        A = sp_cpu.csr_matrix(
+            (np.array(data), (np.array(row_indices), np.array(col_indices))), 
             shape=(system_size, system_size)
         )
         

@@ -5,7 +5,7 @@ from matplotlib.colors import LogNorm
 
 
 class MatrixVisualizer:
-    """行列システム Ax = b の可視化を担当するクラス"""
+    """行列システム Ax = b の可視化を担当するクラス (CPU最適化版)"""
     
     def __init__(self, output_dir="results"):
         """
@@ -22,10 +22,10 @@ class MatrixVisualizer:
         行列システムを可視化して結果のファイルパスを返す
         
         Args:
-            A: システム行列
-            b: 右辺ベクトル
-            x: 解ベクトル
-            exact_x: 厳密解ベクトル
+            A: システム行列 (CPU/SciPy形式)
+            b: 右辺ベクトル (CPU/NumPy形式)
+            x: 解ベクトル (CPU/NumPy形式)
+            exact_x: 厳密解ベクトル (CPU/NumPy形式)
             title: タイトル
             dimension: 次元 (1または2)
             scaling: スケーリング手法名 (optional)
@@ -40,9 +40,10 @@ class MatrixVisualizer:
         # データ変換
         def to_numpy(arr):
             if arr is None: return None
-            if hasattr(arr, 'toarray'): return arr.toarray().get() if hasattr(arr, 'get') else arr.toarray()
+            if hasattr(arr, 'toarray'): return arr.toarray() if not hasattr(arr, 'get') else arr.toarray()
             return arr.get() if hasattr(arr, 'get') else arr
         
+        # 各データをNumPy形式に確実に変換
         A_np = to_numpy(A)
         b_np = to_numpy(b).reshape(-1, 1) if b is not None else None
         x_np = to_numpy(x).reshape(-1, 1) if x is not None else None

@@ -7,6 +7,8 @@
 
 import os
 import time
+import numpy as np
+import scipy.sparse.linalg as splinalg_cpu
 import cupy as cp
 import cupyx.scipy.sparse as sp
 import cupyx.scipy.sparse.linalg as splinalg
@@ -15,11 +17,6 @@ from abc import ABC, abstractmethod
 
 from equation_system import EquationSystem
 from scaling import plugin_manager
-
-# Add these imports at the top of the file
-import numpy as np
-import scipy.sparse as sp_cpu
-import scipy.sparse.linalg as splinalg_cpu
 
 class LinearSystemSolver:
     """線形方程式系 Ax=b を解くためのクラス"""
@@ -38,10 +35,7 @@ class LinearSystemSolver:
         self.scaling_method = scaling_method
         self.last_iterations = None
         self.monitor_convergence = self.options.get("monitor_convergence", False)
-        self.force_cpu = self.options.get("force_cpu", False)
     
-
-    # Add these helper methods to the LinearSystemSolver class
     def _solve_with_gpu(self, A, b, callback=None):
         """GPU (CuPy) を使用して線形方程式系を解く"""
         if self.method == "direct":
@@ -78,110 +72,98 @@ class LinearSystemSolver:
 
     def _solve_with_cpu(self, A, b):
         """CPU (SciPy) を使用して線形方程式系を解く"""
-        # CuPy 配列を NumPy 配列に変換
-        A_cpu = A.get() if hasattr(A, 'get') else A
-        b_cpu = b.get() if hasattr(b, 'get') else b
-        
-        # CSR 形式の行列に変換 (必要な場合)
-        if not isinstance(A_cpu, sp_cpu.csr_matrix):
-            A_cpu = sp_cpu.csr_matrix(A_cpu)
-        
-        # CPU (SciPy) での解法
+        # 既にCPU (NumPy/SciPy) の形式と想定
         if self.method == "direct" or self.method not in ["gmres", "cg", "cgs", "minres", "lsqr", "lsmr"]:
-            x_cpu = splinalg_cpu.spsolve(A_cpu, b_cpu)
+            x = splinalg_cpu.spsolve(A, b)
             iterations = None
         elif self.method == "gmres":
             tol = self.options.get("tol", 1e-10)
             maxiter = self.options.get("maxiter", 1000)
             restart = self.options.get("restart", 100)
-            x0_cpu = np.ones_like(b_cpu)
-            x_cpu, iterations = splinalg_cpu.gmres(A_cpu, b_cpu, x0=x0_cpu, tol=tol, maxiter=maxiter, restart=restart)
+            x0 = np.ones_like(b)
+            x, iterations = splinalg_cpu.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
         elif self.method in ["cg", "cgs", "minres"]:
             tol = self.options.get("tol", 1e-10)
             maxiter = self.options.get("maxiter", 1000)
             solver_func = getattr(splinalg_cpu, self.method)
-            x0_cpu = np.ones_like(b_cpu)
-            x_cpu, iterations = solver_func(A_cpu, b_cpu, x0=x0_cpu, tol=tol, maxiter=maxiter)
+            x0 = np.ones_like(b)
+            x, iterations = solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter)
         elif self.method in ["lsqr", "lsmr"]:
             maxiter = self.options.get("maxiter", 1000)
             solver_func = getattr(splinalg_cpu, self.method)
-            x_cpu = solver_func(A_cpu, b_cpu)[0]
+            x = solver_func(A, b)[0]
             iterations = None
         
-        # NumPy 配列を CuPy 配列に変換
-        x = cp.array(x_cpu)
         return x, iterations
 
-    # Replace the existing solve method with this new version
     def solve(self, A, b):
         """
         線形方程式系を解く
         
         Args:
-            A: システム行列
-            b: 右辺ベクトル
+            A: システム行列 (CPU/SciPy形式)
+            b: 右辺ベクトル (CPU/NumPy形式)
             
         Returns:
-            解ベクトル x
+            解ベクトル x (CPU/NumPy形式)
         """
-        # スケーリングを適用
-        A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A, b)
-        
-        # 方程式を解く
+        # スケーリング実行前のタイミング計測
         start_time = time.time()
         residuals = []
         
-        # モニタリングコールバック
-        if self.monitor_convergence:
-            def callback(xk):
-                residual = cp.linalg.norm(b_scaled - A_scaled @ xk) / cp.linalg.norm(b_scaled)
-                residuals.append(float(residual))
-                if len(residuals) % 10 == 0:
-                    print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
-        else:
-            callback = None
-        
-        # CPU計算を強制するオプションをチェック
-        if self.force_cpu:
-            print("CPU (SciPy) で計算を実行します...")
-            x, iterations = self._solve_with_cpu(A_scaled, b_scaled)
-            print("CPU (SciPy) での計算が完了しました。")
-        else:
+        # CPU -> GPU データ転送
+        try:
+            # GPU処理を試みる
+            A_gpu = sp.csr_matrix(A)
+            b_gpu = cp.array(b)
+            
+            # スケーリングを適用 (GPU上で実行)
+            A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A_gpu, b_gpu)
+            
+            # モニタリングコールバック
+            if self.monitor_convergence:
+                def callback(xk):
+                    residual = cp.linalg.norm(b_scaled - A_scaled @ xk) / cp.linalg.norm(b_scaled)
+                    residuals.append(float(residual))
+                    if len(residuals) % 10 == 0:
+                        print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
+            else:
+                callback = None
+                
             # GPU で計算を試行
-            try:
-                x, iterations = self._solve_with_gpu(A_scaled, b_scaled, callback)
-            except Exception as e:
-                error_msg = str(e)
-                # GPU メモリ不足の場合
-                if "CUSOLVER_STATUS_ALLOC_FAILED" in error_msg or "CUDA" in error_msg or "GPU" in error_msg or "cuSOLVER" in error_msg:
-                    print(f"GPU メモリ不足のエラー: {e}")
-                    print("CPU (SciPy) に切り替えて計算を実行します...")
-                    x, iterations = self._solve_with_cpu(A_scaled, b_scaled)
-                    print("CPU (SciPy) での計算が完了しました。")
-                else:
-                    # その他のエラーの場合は、まず CuPy の直接解法を試す
-                    print(f"解法エラー: {e}。直接解法にフォールバックします。")
-                    try:
-                        x = splinalg.spsolve(A_scaled, b_scaled)
-                        iterations = None
-                    except Exception as e2:
-                        # それでもダメなら SciPy を使用
-                        print(f"CuPy の直接解法でもエラー: {e2}。SciPy に切り替えます。")
-                        x, iterations = self._solve_with_cpu(A_scaled, b_scaled)
-                        print("CPU (SciPy) での計算が完了しました。")
+            x_gpu, iterations = self._solve_with_gpu(A_scaled, b_scaled, callback)
+            
+            # スケーリングを戻す (GPU上で実行)
+            if scaling_info is not None and scaler is not None:
+                x_gpu = scaler.unscale(x_gpu, scaling_info)
+                
+            # 結果をCPUに転送
+            x = x_gpu.get()
+            
+        except Exception as e:
+            # エラーハンドリング: GPU失敗時はCPUにフォールバック
+            error_msg = str(e)
+            if "CUSOLVER_STATUS_ALLOC_FAILED" in error_msg or "CUDA" in error_msg or "GPU" in error_msg:
+                print(f"GPU メモリ不足のエラー: {e}")
+                print("CPU (SciPy) に切り替えて計算を実行します...")
+                x, iterations = self._solve_with_cpu(A, b)  # CPU解法を直接使用
+                print("CPU (SciPy) での計算が完了しました。")
+            else:
+                print(f"解法エラー: {e}。直接解法にフォールバックします。")
+                try:
+                    # CPU版直接解法
+                    x, iterations = self._solve_with_cpu(A, b)
+                except Exception as e2:
+                    print(f"CPU解法でもエラー: {e2}")
+                    raise
         
         elapsed = time.time() - start_time
         self.last_iterations = iterations
         
         # 実行情報表示
-        compute_device = "CPU (SciPy)" if self.force_cpu else "GPU (CuPy)"
-        print(f"解法実行: {self.method}, 計算デバイス: {compute_device}, 経過時間: {elapsed:.4f}秒")
+        print(f"解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
         if iterations:
             print(f"反復回数: {iterations}")
-        
-        # スケーリングを解除
-        if scaling_info is not None and scaler is not None:
-            x = scaler.unscale(x, scaling_info)
             
         # 収束履歴の可視化
         if self.monitor_convergence and residuals:
@@ -194,8 +176,8 @@ class LinearSystemSolver:
         行列と右辺ベクトルにスケーリングを適用
         
         Args:
-            A: システム行列
-            b: 右辺ベクトル
+            A: システム行列 (GPU)
+            b: 右辺ベクトル (GPU)
             
         Returns:
             tuple: (scaled_A, scaled_b, scaling_info, scaler)
@@ -248,7 +230,7 @@ class BaseCCDSolver(ABC):
         self.grid = grid
         self.linear_solver = LinearSystemSolver()
         
-        # システムを初期化し、行列Aを構築
+        # システムを初期化し、行列Aを構築 (CPU処理)
         self.system = EquationSystem(grid)
         self.enable_dirichlet, self.enable_neumann = equation_set.setup_equations(self.system, grid)
         self.matrix_A = self.system.build_matrix_system()
@@ -324,7 +306,7 @@ class BaseCCDSolver(ABC):
         if analyze_before_solve:
             self.analyze_system()
             
-        # 右辺ベクトルbを構築
+        # 右辺ベクトルbを構築 (CPU処理)
         b = self._build_rhs_vector(f_values, **boundary_values)
         
         # 線形システムを解く
@@ -342,6 +324,12 @@ class BaseCCDSolver(ABC):
     def _extract_solution(self, sol):
         """解ベクトルから各成分を抽出（次元による具体実装）"""
         pass
+    
+    def _to_numpy(self, arr):
+        """CuPy配列をNumPy配列に変換する (必要な場合のみ)"""
+        if hasattr(arr, 'get'):
+            return arr.get()
+        return arr
 
 
 class CCDSolver1D(BaseCCDSolver):
@@ -363,7 +351,7 @@ class CCDSolver1D(BaseCCDSolver):
     def _build_rhs_vector(self, f_values=None, left_dirichlet=None, right_dirichlet=None,
                         left_neumann=None, right_neumann=None, **kwargs):
         """
-        1D右辺ベクトルを構築
+        1D右辺ベクトルを構築 (CPU処理)
         
         Args:
             f_values: ソース項の値（全格子点の配列）
@@ -371,11 +359,15 @@ class CCDSolver1D(BaseCCDSolver):
             left_neumann, right_neumann: ノイマン境界値
             
         Returns:
-            右辺ベクトル
+            右辺ベクトル (NumPy配列)
         """
         n = self.grid.n_points
         var_per_point = 4  # [ψ, ψ', ψ'', ψ''']
-        b = cp.zeros(n * var_per_point)
+        b = np.zeros(n * var_per_point)
+        
+        # 入力値を NumPy に変換（必要な場合）
+        if f_values is not None:
+            f_values = self._to_numpy(f_values)
         
         # 境界条件に関する情報を出力
         boundary_info = []
@@ -384,7 +376,7 @@ class CCDSolver1D(BaseCCDSolver):
         if self.enable_neumann:
             boundary_info.append(f"ノイマン境界条件: 左={left_neumann}, 右={right_neumann}")
         if boundary_info:
-            print(f"[1Dソルバー] " + "; ".join(boundary_info))
+            print("[1Dソルバー] " + "; ".join(boundary_info))
         
         # 各格子点に対して処理
         for i in range(n):
@@ -447,7 +439,7 @@ class CCDSolver1D(BaseCCDSolver):
         return None
 
     def _extract_solution(self, sol):
-        """解ベクトルから各成分を抽出"""
+        """解ベクトルから各成分を抽出 (CPU処理)"""
         n = self.grid.n_points
         psi = sol[0::4][:n]
         psi_prime = sol[1::4][:n]
@@ -477,7 +469,7 @@ class CCDSolver2D(BaseCCDSolver):
                         bottom_dirichlet=None, top_dirichlet=None, left_neumann=None, 
                         right_neumann=None, bottom_neumann=None, top_neumann=None, **kwargs):
         """
-        2D右辺ベクトルを構築
+        2D右辺ベクトルを構築 (CPU処理)
         
         Args:
             f_values: ソース項の値 (nx×ny配列)
@@ -485,17 +477,30 @@ class CCDSolver2D(BaseCCDSolver):
             left_neumann, right_neumann, bottom_neumann, top_neumann: 境界導関数
             
         Returns:
-            右辺ベクトル
+            右辺ベクトル (NumPy配列)
         """
         nx, ny = self.grid.nx_points, self.grid.ny_points
         var_per_point = 7  # [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy]
-        b = cp.zeros(nx * ny * var_per_point)
+        b = np.zeros(nx * ny * var_per_point)
+        
+        # 入力値を NumPy に変換（必要な場合）
+        if f_values is not None:
+            f_values = self._to_numpy(f_values)
+            
+        # その他の境界値も同様に変換（必要な場合）
+        boundary_values = {
+            'left_dirichlet': self._to_numpy(left_dirichlet) if left_dirichlet is not None else None,
+            'right_dirichlet': self._to_numpy(right_dirichlet) if right_dirichlet is not None else None,
+            'bottom_dirichlet': self._to_numpy(bottom_dirichlet) if bottom_dirichlet is not None else None,
+            'top_dirichlet': self._to_numpy(top_dirichlet) if top_dirichlet is not None else None,
+            'left_neumann': self._to_numpy(left_neumann) if left_neumann is not None else None,
+            'right_neumann': self._to_numpy(right_neumann) if right_neumann is not None else None,
+            'bottom_neumann': self._to_numpy(bottom_neumann) if bottom_neumann is not None else None,
+            'top_neumann': self._to_numpy(top_neumann) if top_neumann is not None else None
+        }
         
         # 境界条件の状態を出力
-        self._print_boundary_info(
-            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
-            left_neumann, right_neumann, bottom_neumann, top_neumann
-        )
+        self._print_boundary_info(**boundary_values)
         
         # 各格子点に対して処理
         for j in range(ny):
@@ -531,15 +536,16 @@ class CCDSolver2D(BaseCCDSolver):
                 # 境界条件の処理
                 self._apply_boundary_values(
                     b, base_idx, location, assignments,
-                    left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
-                    left_neumann, right_neumann, bottom_neumann, top_neumann,
-                    i, j
+                    **boundary_values,
+                    i=i, j=j
                 )
         
         return b
     
-    def _print_boundary_info(self, left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
-                          left_neumann, right_neumann, bottom_neumann, top_neumann):
+    def _print_boundary_info(self, left_dirichlet=None, right_dirichlet=None, 
+                           bottom_dirichlet=None, top_dirichlet=None,
+                           left_neumann=None, right_neumann=None, 
+                           bottom_neumann=None, top_neumann=None):
         """境界条件の情報を出力"""
         if self.enable_dirichlet:
             print(f"[2Dソルバー] ディリクレ境界条件: "
@@ -561,19 +567,20 @@ class CCDSolver2D(BaseCCDSolver):
         return None
     
     def _apply_boundary_values(self, b, base_idx, location, assignments,
-                            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet,
-                            left_neumann, right_neumann, bottom_neumann, top_neumann,
-                            i, j):
+                            left_dirichlet=None, right_dirichlet=None, 
+                            bottom_dirichlet=None, top_dirichlet=None,
+                            left_neumann=None, right_neumann=None, 
+                            bottom_neumann=None, top_neumann=None,
+                            i=None, j=None):
         """適切な場所に境界値を設定"""
         # インポートは関数内で行い、依存関係をローカルに限定
         from equation.boundary import (
-            DirichletBoundaryEquation, NeumannBoundaryEquation,
             DirichletBoundaryEquation2D, NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
         )
         
         # 境界値の取得
         def get_boundary_value(value, idx):
-            if isinstance(value, (list, cp.ndarray)) and idx < len(value):
+            if isinstance(value, (list, np.ndarray)) and idx < len(value):
                 return value[idx]
             return value
         
@@ -605,18 +612,18 @@ class CCDSolver2D(BaseCCDSolver):
                     b[base_idx + row] = get_boundary_value(top_neumann, i)
 
     def _extract_solution(self, sol):
-        """解ベクトルから各成分を抽出"""
+        """解ベクトルから各成分を抽出 (CPU処理)"""
         nx, ny = self.grid.nx_points, self.grid.ny_points
         n_unknowns = 7  # ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy
         
-        # 解配列を初期化
-        psi = cp.zeros((nx, ny))
-        psi_x = cp.zeros((nx, ny))
-        psi_xx = cp.zeros((nx, ny))
-        psi_xxx = cp.zeros((nx, ny))
-        psi_y = cp.zeros((nx, ny))
-        psi_yy = cp.zeros((nx, ny))
-        psi_yyy = cp.zeros((nx, ny))
+        # 解配列を初期化 (NumPy配列)
+        psi = np.zeros((nx, ny))
+        psi_x = np.zeros((nx, ny))
+        psi_xx = np.zeros((nx, ny))
+        psi_xxx = np.zeros((nx, ny))
+        psi_y = np.zeros((nx, ny))
+        psi_yy = np.zeros((nx, ny))
+        psi_yyy = np.zeros((nx, ny))
         
         # 各グリッド点の値を抽出
         for j in range(ny):

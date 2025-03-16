@@ -19,8 +19,8 @@ class BaseScaling(ABC):
         """行列Aと右辺ベクトルbをスケーリングする
         
         Args:
-            A: システム行列 (スパース)
-            b: 右辺ベクトル
+            A: システム行列 (GPU上のスパース行列)
+            b: 右辺ベクトル (GPU上のベクトル)
             
         Returns:
             tuple: (scaled_A, scaled_b, scale_info)
@@ -35,11 +35,11 @@ class BaseScaling(ABC):
         """スケーリング情報を使用して解ベクトルをアンスケールする
         
         Args:
-            x: 解ベクトル
+            x: 解ベクトル (GPU上)
             scale_info: scaleメソッドから返されたスケーリング情報
             
         Returns:
-            unscaled_x: アンスケールされた解ベクトル
+            unscaled_x: アンスケールされた解ベクトル (GPU上)
         """
         pass
     

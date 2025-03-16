@@ -11,8 +11,8 @@ class SymmetricScaling(BaseScaling):
         対角要素を使ってAを対称的にスケーリング (D^-1/2 * A * D^-1/2)
         
         Args:
-            A: システム行列（スパース）
-            b: 右辺ベクトル
+            A: システム行列（スパース、GPU上）
+            b: 右辺ベクトル（GPU上）
             
         Returns:
             tuple: (scaled_A, scaled_b, scale_info)
@@ -43,11 +43,11 @@ class SymmetricScaling(BaseScaling):
         解ベクトルをアンスケーリング
         
         Args:
-            x: 解ベクトル
+            x: 解ベクトル（GPU上）
             scale_info: D_sqrt_invを含むスケーリング情報
             
         Returns:
-            unscaled_x: アンスケーリングされた解ベクトル
+            unscaled_x: アンスケーリングされた解ベクトル（GPU上）
         """
         D_sqrt_inv = scale_info['D_sqrt_inv']
         unscaled_x = x / D_sqrt_inv

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import os
-import cupy as cp
+import numpy as np
 from grid import Grid
 from solver import CCDSolver1D, CCDSolver2D
 from equation_sets import EquationSet, DerivativeEquationSet1D, DerivativeEquationSet2D
@@ -94,7 +94,7 @@ class CCDTester(ABC):
             test_func = self.get_test_function(test_func)
         
         self._init_solver()
-        A = self.solver.matrix_A
+        A = self.matrix_A
         b = self._build_rhs(test_func)
         
         # スケーリング
@@ -107,7 +107,6 @@ class CCDTester(ABC):
             
         # 厳密解計算
         exact_x = self._compute_exact(test_func) if x is not None else None
-        print(b[-3:],x[-3:],exact_x[-3:])
         
         # 外部ビジュアライザーを使用して可視化
         visualizer = MatrixVisualizer(self.results_dir)
@@ -141,10 +140,10 @@ class CCDTester(ABC):
         """システム解法"""
         try:
             if self.solver_method == "direct":
-                from cupyx.scipy.sparse.linalg import spsolve
+                from scipy.sparse.linalg import spsolve
                 return spsolve(A, b)
             
-            from cupyx.scipy.sparse.linalg import gmres, cg, cgs, lsqr, minres, lsmr
+            from scipy.sparse.linalg import gmres, cg, cgs, lsqr, minres, lsmr
             solvers = {"gmres": gmres, "cg": cg, "cgs": cgs, "lsqr": lsqr, "minres": minres, "lsmr": lsmr}
             solver = solvers.get(self.solver_method)
             
@@ -152,7 +151,7 @@ class CCDTester(ABC):
                 x, _ = solver(A, b)
                 return x
                 
-            from cupyx.scipy.sparse.linalg import spsolve
+            from scipy.sparse.linalg import spsolve
             return spsolve(A, b)
         except Exception as e:
             print(f"解法エラー: {e}")
@@ -163,6 +162,11 @@ class CCDTester(ABC):
         if self.get_dimension() == 1:
             return Grid(n, x_range=x_range)
         return Grid(n, n, x_range=x_range, y_range=y_range or x_range)
+    
+    # NumPyに変換するユーティリティ関数
+    def _to_numpy(self, arr):
+        """CuPy配列をNumPy配列に変換（必要な場合のみ）"""
+        return arr.get() if hasattr(arr, 'get') else arr
     
     @abstractmethod
     def get_dimension(self):
@@ -229,7 +233,7 @@ class CCDTester1D(CCDTester):
         
         # ソース項
         is_derivative = isinstance(self.equation_set, DerivativeEquationSet1D)
-        f_values = cp.array([test_func.f(x) if is_derivative else test_func.d2f(x) for x in self.grid.x])
+        f_values = np.array([test_func.f(x) if is_derivative else test_func.d2f(x) for x in self.grid.x])
         
         # 境界値
         boundary = {
@@ -245,7 +249,7 @@ class CCDTester1D(CCDTester):
     def _compute_exact(self, test_func):
         """1D厳密解計算"""
         n_points = self.grid.n_points
-        exact = cp.zeros(n_points * 4)
+        exact = np.zeros(n_points * 4)
         
         for i in range(n_points):
             xi = self.grid.get_point(i)
@@ -257,19 +261,22 @@ class CCDTester1D(CCDTester):
         return exact
     
     def _process_solution(self, test_func):
-        """1D解処理"""
+        """1D解処理（NumPy/CuPy互換性を修正）"""
         x = self.grid.get_points()
         is_derivative = isinstance(self.equation_set, DerivativeEquationSet1D)
         
-        # 厳密解計算
-        exact_psi = cp.array([test_func.f(xi) for xi in x])
-        exact_psi_prime = cp.array([test_func.df(xi) for xi in x])
-        exact_psi_second = cp.array([test_func.d2f(xi) for xi in x])
-        exact_psi_third = cp.array([test_func.d3f(xi) for xi in x])
+        # NumPy配列に変換
+        x_np = self._to_numpy(x)
+
+        # 厳密解計算（NumPy配列として）
+        exact_psi = np.array([test_func.f(xi) for xi in x_np])
+        exact_psi_prime = np.array([test_func.df(xi) for xi in x_np])
+        exact_psi_second = np.array([test_func.d2f(xi) for xi in x_np])
+        exact_psi_third = np.array([test_func.d3f(xi) for xi in x_np])
         
         # 解計算のための入力準備
         x_min, x_max = self.grid.x_min, self.grid.x_max
-        f_values = cp.array([test_func.f(xi) if is_derivative else test_func.d2f(xi) for xi in x])
+        f_values = np.array([test_func.f(xi) if is_derivative else test_func.d2f(xi) for xi in x_np])
         
         # 境界条件
         boundary = {
@@ -284,11 +291,17 @@ class CCDTester1D(CCDTester):
             analyze_before_solve=False, f_values=f_values, **boundary
         )
 
-        # 誤差計算
-        err_psi = float(cp.max(cp.abs(psi - exact_psi)))
-        err_psi_prime = float(cp.max(cp.abs(psi_prime - exact_psi_prime)))
-        err_psi_second = float(cp.max(cp.abs(psi_second - exact_psi_second)))
-        err_psi_third = float(cp.max(cp.abs(psi_third - exact_psi_third)))
+        # NumPy配列に変換（CuPyの場合）
+        psi = self._to_numpy(psi)
+        psi_prime = self._to_numpy(psi_prime)
+        psi_second = self._to_numpy(psi_second)
+        psi_third = self._to_numpy(psi_third)
+
+        # 誤差計算（NumPy配列として）
+        err_psi = float(np.max(np.abs(psi - exact_psi)))
+        err_psi_prime = float(np.max(np.abs(psi_prime - exact_psi_prime)))
+        err_psi_second = float(np.max(np.abs(psi_second - exact_psi_second)))
+        err_psi_third = float(np.max(np.abs(psi_third - exact_psi_third)))
 
         return {
             "function": test_func.name,
@@ -341,7 +354,7 @@ class CCDTester2D(CCDTester):
         
         # ソース項
         is_derivative = isinstance(self.equation_set, DerivativeEquationSet2D)
-        f_values = cp.zeros((nx, ny))
+        f_values = np.zeros((nx, ny))
         for i in range(nx):
             for j in range(ny):
                 x, y = self.grid.get_point(i, j)
@@ -349,14 +362,14 @@ class CCDTester2D(CCDTester):
         
         # 境界値
         boundary = {
-            'left_dirichlet': cp.array([test_func.f(x_min, y) for y in self.grid.y]),
-            'right_dirichlet': cp.array([test_func.f(x_max, y) for y in self.grid.y]),
-            'bottom_dirichlet': cp.array([test_func.f(x, y_min) for x in self.grid.x]),
-            'top_dirichlet': cp.array([test_func.f(x, y_max) for x in self.grid.x]),
-            'left_neumann': cp.array([test_func.df_dx(x_min, y) for y in self.grid.y]),
-            'right_neumann': cp.array([test_func.df_dx(x_max, y) for y in self.grid.y]),
-            'bottom_neumann': cp.array([test_func.df_dy(x, y_min) for x in self.grid.x]),
-            'top_neumann': cp.array([test_func.df_dy(x, y_max) for x in self.grid.x])
+            'left_dirichlet': np.array([test_func.f(x_min, y) for y in self.grid.y]),
+            'right_dirichlet': np.array([test_func.f(x_max, y) for y in self.grid.y]),
+            'bottom_dirichlet': np.array([test_func.f(x, y_min) for x in self.grid.x]),
+            'top_dirichlet': np.array([test_func.f(x, y_max) for x in self.grid.x]),
+            'left_neumann': np.array([test_func.df_dx(x_min, y) for y in self.grid.y]),
+            'right_neumann': np.array([test_func.df_dx(x_max, y) for y in self.grid.y]),
+            'bottom_neumann': np.array([test_func.df_dy(x, y_min) for x in self.grid.x]),
+            'top_neumann': np.array([test_func.df_dy(x, y_max) for x in self.grid.x])
         }
         
         self._init_solver()
@@ -365,7 +378,7 @@ class CCDTester2D(CCDTester):
     def _compute_exact(self, test_func):
         """2D厳密解計算"""
         nx, ny = self.grid.nx_points, self.grid.ny_points
-        exact = cp.zeros(nx * ny * 7)
+        exact = np.zeros(nx * ny * 7)
         
         for j in range(ny):
             for i in range(nx):
@@ -382,22 +395,22 @@ class CCDTester2D(CCDTester):
         return exact
     
     def _process_solution(self, test_func):
-        """2D解処理"""
+        """2D解処理（NumPy/CuPy互換性を修正）"""
         nx, ny = self.grid.nx_points, self.grid.ny_points
         X, Y = self.grid.get_points()
         x_min, x_max = self.grid.x_min, self.grid.x_max
         y_min, y_max = self.grid.y_min, self.grid.y_max
         is_derivative = isinstance(self.equation_set, DerivativeEquationSet2D)
 
-        # 厳密解準備
+        # 厳密解準備（NumPy配列として）
         exact = {
-            'psi': cp.zeros((nx, ny)),
-            'psi_x': cp.zeros((nx, ny)),
-            'psi_y': cp.zeros((nx, ny)),
-            'psi_xx': cp.zeros((nx, ny)),
-            'psi_yy': cp.zeros((nx, ny)),
-            'psi_xxx': cp.zeros((nx, ny)),
-            'psi_yyy': cp.zeros((nx, ny))
+            'psi': np.zeros((nx, ny)),
+            'psi_x': np.zeros((nx, ny)),
+            'psi_y': np.zeros((nx, ny)),
+            'psi_xx': np.zeros((nx, ny)),
+            'psi_yy': np.zeros((nx, ny)),
+            'psi_xxx': np.zeros((nx, ny)),
+            'psi_yyy': np.zeros((nx, ny))
         }
 
         # 各点で厳密値計算
@@ -413,7 +426,7 @@ class CCDTester2D(CCDTester):
                 exact['psi_yyy'][i, j] = test_func.d3f_dy3(x, y)
 
         # 右辺値準備
-        f_values = cp.zeros((nx, ny))
+        f_values = np.zeros((nx, ny))
         for i in range(nx):
             for j in range(ny):
                 x, y = self.grid.get_point(i, j)
@@ -421,29 +434,38 @@ class CCDTester2D(CCDTester):
 
         # 境界条件
         boundary = {
-            'left_dirichlet': cp.array([test_func.f(x_min, y) for y in self.grid.y]),
-            'right_dirichlet': cp.array([test_func.f(x_max, y) for y in self.grid.y]),
-            'bottom_dirichlet': cp.array([test_func.f(x, y_min) for x in self.grid.x]),
-            'top_dirichlet': cp.array([test_func.f(x, y_max) for x in self.grid.x]),
-            'left_neumann': cp.array([test_func.df_dx(x_min, y) for y in self.grid.y]),
-            'right_neumann': cp.array([test_func.df_dx(x_max, y) for y in self.grid.y]),
-            'bottom_neumann': cp.array([test_func.df_dy(x, y_min) for x in self.grid.x]),
-            'top_neumann': cp.array([test_func.df_dy(x, y_max) for x in self.grid.x])
+            'left_dirichlet': np.array([test_func.f(x_min, y) for y in self.grid.y]),
+            'right_dirichlet': np.array([test_func.f(x_max, y) for y in self.grid.y]),
+            'bottom_dirichlet': np.array([test_func.f(x, y_min) for x in self.grid.x]),
+            'top_dirichlet': np.array([test_func.f(x, y_max) for x in self.grid.x]),
+            'left_neumann': np.array([test_func.df_dx(x_min, y) for y in self.grid.y]),
+            'right_neumann': np.array([test_func.df_dx(x_max, y) for y in self.grid.y]),
+            'bottom_neumann': np.array([test_func.df_dy(x, y_min) for x in self.grid.x]),
+            'top_neumann': np.array([test_func.df_dy(x, y_max) for x in self.grid.x])
         }
 
         # 解計算
         sol = self.solver.solve(analyze_before_solve=False, f_values=f_values, **boundary)
         psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy = sol
 
-        # 誤差計算
+        # NumPy配列に変換（CuPyの場合）
+        psi = self._to_numpy(psi)
+        psi_x = self._to_numpy(psi_x)
+        psi_y = self._to_numpy(psi_y)
+        psi_xx = self._to_numpy(psi_xx)
+        psi_yy = self._to_numpy(psi_yy)
+        psi_xxx = self._to_numpy(psi_xxx)
+        psi_yyy = self._to_numpy(psi_yyy)
+
+        # 誤差計算（NumPy配列として）
         errors = [
-            float(cp.max(cp.abs(psi - exact['psi']))),
-            float(cp.max(cp.abs(psi_x - exact['psi_x']))),
-            float(cp.max(cp.abs(psi_y - exact['psi_y']))),
-            float(cp.max(cp.abs(psi_xx - exact['psi_xx']))),
-            float(cp.max(cp.abs(psi_yy - exact['psi_yy']))),
-            float(cp.max(cp.abs(psi_xxx - exact['psi_xxx']))),
-            float(cp.max(cp.abs(psi_yyy - exact['psi_yyy'])))
+            float(np.max(np.abs(psi - exact['psi']))),
+            float(np.max(np.abs(psi_x - exact['psi_x']))),
+            float(np.max(np.abs(psi_y - exact['psi_y']))),
+            float(np.max(np.abs(psi_xx - exact['psi_xx']))),
+            float(np.max(np.abs(psi_yy - exact['psi_yy']))),
+            float(np.max(np.abs(psi_xxx - exact['psi_xxx']))),
+            float(np.max(np.abs(psi_yyy - exact['psi_yyy'])))
         ]
 
         return {

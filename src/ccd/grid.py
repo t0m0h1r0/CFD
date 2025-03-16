@@ -1,7 +1,7 @@
-import cupy as cp
+import numpy as np
 
 class Grid:
-    """統合計算格子クラス (1Dと2Dの機能を統合)"""
+    """統合計算格子クラス (1Dと2Dの機能を統合、CPU最適化版)"""
     
     def __init__(self, nx_points, ny_points=None, x_range=None, y_range=None):
         """
@@ -26,11 +26,11 @@ class Grid:
             self.hx = (self.x_max - self.x_min) / (self.nx_points - 1)
             self.hy = (self.y_max - self.y_min) / (self.ny_points - 1)
             
-            self.x = cp.linspace(self.x_min, self.x_max, self.nx_points)
-            self.y = cp.linspace(self.y_min, self.y_max, self.ny_points)
+            self.x = np.linspace(self.x_min, self.x_max, self.nx_points)
+            self.y = np.linspace(self.y_min, self.y_max, self.ny_points)
             
             # メッシュグリッド作成（ベクトル計算に便利）
-            self.X, self.Y = cp.meshgrid(self.x, self.y, indexing='ij')
+            self.X, self.Y = np.meshgrid(self.x, self.y, indexing='ij')
             
             # 後方互換性のため
             self.n_points = max(nx_points, ny_points)
@@ -42,7 +42,7 @@ class Grid:
                 raise ValueError("1D格子にはx_rangeを指定する必要があります")
             self.x_min, self.x_max = x_range
             self.h = (self.x_max - self.x_min) / (self.n_points - 1)
-            self.x = cp.linspace(self.x_min, self.x_max, self.n_points)
+            self.x = np.linspace(self.x_min, self.x_max, self.n_points)
             
             # 後方互換性のため
             self.nx_points = nx_points
