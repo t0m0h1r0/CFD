@@ -9,10 +9,6 @@ import os
 import time
 import numpy as np
 import scipy.sparse.linalg as splinalg_cpu
-import cupy as cp
-import cupyx.scipy.sparse as sp
-import cupyx.scipy.sparse.linalg as splinalg
-import matplotlib.pyplot as plt
 from abc import ABC, abstractmethod
 
 from equation_system import EquationSystem
@@ -35,9 +31,45 @@ class LinearSystemSolver:
         self.scaling_method = scaling_method
         self.last_iterations = None
         self.monitor_convergence = self.options.get("monitor_convergence", False)
+        
+        # GPU上の行列とスケーリング情報を保持する変数
+        self.A_gpu = None
+        self.A_scaled_gpu = None
+        self.scaling_info = None
+        self.scaler = None
+        self.original_A = None  # 比較用に元の行列への参照を保持
+    
+    def __del__(self):
+        """デストラクタ：インスタンス削除時にGPUメモリを解放"""
+        self.clear_gpu_memory()
+    
+    def clear_gpu_memory(self):
+        """GPU上の行列メモリを解放"""
+        self.A_gpu = None
+        self.A_scaled_gpu = None
+        self.scaling_info = None
+        self.scaler = None
+        if hasattr(self, 'original_A'):
+            self.original_A = None
+    
+    def _is_new_matrix(self, A):
+        """現在のGPU行列と異なる行列かどうかを判定"""
+        # GPU行列がまだないか、形状が違う場合は新しい行列
+        if self.A_gpu is None or self.original_A is None or self.A_gpu.shape != A.shape:
+            return True
+        
+        # 形状が同じ場合は、保存している参照と比較
+        if self.original_A is A:
+            return False
+        
+        # オブジェクトが異なれば新しい行列と判断
+        return True
     
     def _solve_with_gpu(self, A, b, callback=None):
         """GPU (CuPy) を使用して線形方程式系を解く"""
+        import cupy as cp
+        import cupyx.scipy.sparse.linalg as splinalg
+        
         if self.method == "direct":
             x = splinalg.spsolve(A, b)
             iterations = None
@@ -111,61 +143,99 @@ class LinearSystemSolver:
         start_time = time.time()
         residuals = []
         
-        # CPU -> GPU データ転送
-        try:
-            # GPU処理を試みる
-            A_gpu = sp.csr_matrix(A)
-            b_gpu = cp.array(b)
+        # force_cpuオプションが設定されているかチェック
+        force_cpu = self.options.get("force_cpu", False)
+        
+        if force_cpu:
+            # CPU処理を強制的に実行
+            print("CPU処理を強制的に実行します (スケーリング機能は無効化されます)...")
             
-            # スケーリングを適用 (GPU上で実行)
-            A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A_gpu, b_gpu)
+            # GPUメモリを解放
+            self.clear_gpu_memory()
             
-            # モニタリングコールバック
-            if self.monitor_convergence:
-                def callback(xk):
-                    residual = cp.linalg.norm(b_scaled - A_scaled @ xk) / cp.linalg.norm(b_scaled)
-                    residuals.append(float(residual))
-                    if len(residuals) % 10 == 0:
-                        print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
-            else:
-                callback = None
+            # CPU専用パス
+            try:
+                x, iterations = self._solve_with_cpu(A, b)
+            except Exception as e:
+                print(f"CPU解法でエラー: {e}")
+                raise
+        else:
+            # GPU優先の処理
+            try:
+                import cupy as cp
+                import cupyx.scipy.sparse as sp
                 
-            # GPU で計算を試行
-            x_gpu, iterations = self._solve_with_gpu(A_scaled, b_scaled, callback)
-            
-            # スケーリングを戻す (GPU上で実行)
-            if scaling_info is not None and scaler is not None:
-                x_gpu = scaler.unscale(x_gpu, scaling_info)
+                # 行列が変更されたかチェック
+                is_new_matrix = self._is_new_matrix(A)
                 
-            # 結果をCPUに転送
-            x = x_gpu.get()
-            
-        except Exception as e:
-            # エラーハンドリング: GPU失敗時はCPUにフォールバック
-            error_msg = str(e)
-            if "CUSOLVER_STATUS_ALLOC_FAILED" in error_msg or "CUDA" in error_msg or "GPU" in error_msg:
-                print(f"GPU メモリ不足のエラー: {e}")
+                # 新しい行列の場合はGPUに転送
+                if is_new_matrix:
+                    print("行列を GPU に転送しています...")
+                    self.clear_gpu_memory()
+                    self.A_gpu = sp.csr_matrix(A)
+                    self.original_A = A  # 元の行列への参照を保存
+                    
+                    # 新しい行列なのでスケーリング情報もリセット
+                    self.A_scaled_gpu = None
+                    self.scaling_info = None
+                    self.scaler = None
+                else:
+                    print("GPU上の既存行列を再利用します")
+                
+                # bをGPUに転送
+                b_gpu = cp.array(b)
+                
+                # スケーリングを適用または再利用
+                if is_new_matrix or self.A_scaled_gpu is None:
+                    # 新しい行列または初めての呼び出し時
+                    self.A_scaled_gpu, b_scaled, self.scaling_info, self.scaler = self._apply_scaling(self.A_gpu, b_gpu)
+                else:
+                    # 既存のスケーリング済み行列を再利用して、bだけを新たにスケーリング
+                    if self.scaling_method is not None and self.scaler is not None:
+                        # スケーリング情報からbをスケーリング
+                        if hasattr(self.scaler, 'scale_b_only'):
+                            # scale_b_onlyメソッドがあればそれを使用
+                            b_scaled = self.scaler.scale_b_only(b_gpu, self.scaling_info)
+                        else:
+                            # なければ完全なスケーリングを実行しA_scaled_gpuは無視
+                            _, b_scaled, _, _ = self.scaler.scale(self.A_gpu, b_gpu)
+                    else:
+                        b_scaled = b_gpu
+                
+                # モニタリングコールバック
+                if self.monitor_convergence:
+                    def callback(xk):
+                        residual = cp.linalg.norm(b_scaled - self.A_scaled_gpu @ xk) / cp.linalg.norm(b_scaled)
+                        residuals.append(float(residual))
+                        if len(residuals) % 10 == 0:
+                            print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
+                else:
+                    callback = None
+                    
+                # GPU で計算を実行
+                x_gpu, iterations = self._solve_with_gpu(self.A_scaled_gpu, b_scaled, callback)
+                
+                # スケーリングを戻す
+                if self.scaling_info is not None and self.scaler is not None:
+                    x_gpu = self.scaler.unscale(x_gpu, self.scaling_info)
+                    
+                # 結果をCPUに転送
+                x = x_gpu.get()
+                
+            except Exception as e:
+                print(f"GPU処理でエラー: {e}")
                 print("CPU (SciPy) に切り替えて計算を実行します...")
-                x, iterations = self._solve_with_cpu(A, b)  # CPU解法を直接使用
-                print("CPU (SciPy) での計算が完了しました。")
-            else:
-                print(f"解法エラー: {e}。直接解法にフォールバックします。")
-                try:
-                    # CPU版直接解法
-                    x, iterations = self._solve_with_cpu(A, b)
-                except Exception as e2:
-                    print(f"CPU解法でもエラー: {e2}")
-                    raise
+                # エラー時はGPUメモリを解放して再試行を容易にする
+                self.clear_gpu_memory()
+                x, iterations = self._solve_with_cpu(A, b)
         
         elapsed = time.time() - start_time
         self.last_iterations = iterations
         
-        # 実行情報表示
         print(f"解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
         if iterations:
             print(f"反復回数: {iterations}")
             
-        # 収束履歴の可視化
         if self.monitor_convergence and residuals:
             self._visualize_convergence(residuals)
         
@@ -201,6 +271,7 @@ class LinearSystemSolver:
         os.makedirs(output_dir, exist_ok=True)
         
         # 残差の推移グラフ
+        import matplotlib.pyplot as plt
         plt.figure(figsize=(8, 5))
         plt.semilogy(range(1, len(residuals)+1), residuals, 'b-')
         plt.grid(True, which="both", ls="--")

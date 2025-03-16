@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-import cupy as cp
+import numpy as np
 
 class Equation(ABC):
     """差分方程式の基底クラス"""
@@ -136,8 +136,8 @@ class CombinedEquation(Equation):
         all_offsets = set(list(coeffs1.keys()) + list(coeffs2.keys()))
 
         for offset in all_offsets:
-            coeff1 = coeffs1.get(offset, cp.zeros(4))
-            coeff2 = coeffs2.get(offset, cp.zeros(4))
+            coeff1 = coeffs1.get(offset, np.zeros(4))
+            coeff2 = coeffs2.get(offset, np.zeros(4))
             if self.operation == "+":
                 combined_coeffs[offset] = coeff1 + coeff2
             else:

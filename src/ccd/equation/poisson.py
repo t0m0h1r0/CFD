@@ -1,4 +1,4 @@
-import cupy as cp
+import numpy as np
 from .base1d import Equation
 from .base2d import Equation2D
 
@@ -25,7 +25,7 @@ class PoissonEquation(Equation):
         """
         # ポアソン方程式の場合、ステンシル係数は位置に依存しないため
         # iは実際には使用しない
-        return {0: cp.array([0, 0, 1, 0])}
+        return {0: np.array([0, 0, 1, 0])}
 
     def is_valid_at(self, i=None):
         """方程式が適用可能かどうかを判定
@@ -71,7 +71,7 @@ class PoissonEquation2D(Equation2D):
         
         # Set coefficient 1.0 for ψ_xx (index 2) and 1.0 for ψ_yy (index 5)
         coeffs = {
-            (0, 0): cp.array([0, 0, 1, 0, 0, 1, 0])
+            (0, 0): np.array([0, 0, 1, 0, 0, 1, 0])
         }
         return coeffs
         

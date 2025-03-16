@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-import cupy as cp
+import numpy as np
 
 class Equation2D(ABC):
     """Base class for 2D difference equations"""
@@ -144,8 +144,8 @@ class CombinedEquation2D(Equation2D):
         all_offsets = set(list(coeffs1.keys()) + list(coeffs2.keys()))
         
         for offset in all_offsets:
-            coeff1 = coeffs1.get(offset, cp.zeros(7))
-            coeff2 = coeffs2.get(offset, cp.zeros(7))
+            coeff1 = coeffs1.get(offset, np.zeros(7))
+            coeff2 = coeffs2.get(offset, np.zeros(7))
             
             if self.operation == "+":
                 combined_coeffs[offset] = coeff1 + coeff2

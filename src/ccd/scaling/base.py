@@ -43,6 +43,23 @@ class BaseScaling(ABC):
         """
         pass
     
+    def scale_b_only(self, b: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
+        """
+        右辺ベクトルbのみをスケーリング（最適化用）
+        
+        Args:
+            b: 右辺ベクトル (GPU上)
+            scale_info: 以前のスケーリングから得られた情報
+            
+        Returns:
+            スケーリングされた右辺ベクトル
+        """
+        # デフォルト実装：完全なスケーリングを実行して右辺のみ返す
+        import cupyx.scipy.sparse as sp
+        dummy_A = sp.eye(b.shape[0], format='csr')
+        _, b_scaled, _ = self.scale(dummy_A, b)
+        return b_scaled
+    
     @property
     @abstractmethod
     def name(self) -> str:
