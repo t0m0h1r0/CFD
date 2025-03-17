@@ -1,3 +1,7 @@
+"""
+スケーリングプラグインを管理するマネージャークラス
+"""
+
 import os
 import importlib
 import inspect
@@ -10,10 +14,10 @@ class ScalingPluginManager:
     """スケーリングプラグインを管理するマネージャークラス"""
     
     def __init__(self):
+        """初期化"""
         self._plugins: Dict[str, BaseScaling] = {}
         self._default_plugin: Optional[BaseScaling] = None
         self._plugins_loaded: bool = False
-        # ロガー設定
         self._logger = logging.getLogger(__name__)
         
     def discover_plugins(self) -> Dict[str, BaseScaling]:
@@ -23,17 +27,15 @@ class ScalingPluginManager:
             
         # scaling ディレクトリのパスを取得
         current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-        
-        # ディレクトリが存在しない場合は作成
         os.makedirs(current_dir, exist_ok=True)
         
         # scaling ディレクトリ内のすべての .py ファイルを検索
         for py_file in current_dir.glob("*.py"):
-            # __init__.py やこのファイル自体は除外
-            if py_file.name in ["__init__.py", "base.py", "plugin_manager.py"]:
+            # 特定のファイルは除外
+            if py_file.name in ["__init__.py", "base.py", "plugin_manager.py", "array_utils.py"]:
                 continue
                 
-            module_name = py_file.stem  # .py 拡張子を除去
+            module_name = py_file.stem
             
             try:
                 # モジュールを動的にインポート
@@ -41,12 +43,12 @@ class ScalingPluginManager:
                 
                 # モジュール内のすべてのクラスを検査
                 for _, obj in inspect.getmembers(module, inspect.isclass):
-                    # BaseScalingのサブクラスでBaseScaling自身ではないか確認
+                    # BaseScalingのサブクラスを見つける
                     if issubclass(obj, BaseScaling) and obj is not BaseScaling:
                         instance = obj()
                         self._plugins[instance.name] = instance
                         
-                        # デフォルトプラグインがまだ設定されていなければ最初のプラグインを設定
+                        # デフォルトプラグイン設定
                         if self._default_plugin is None:
                             self._default_plugin = instance
                         

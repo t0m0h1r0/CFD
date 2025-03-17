@@ -122,7 +122,7 @@ class CPULinearSolver(LinearSolver):
     def _solve_gmres(self, A, b, residuals):
         """GMRES法"""
         tol = self.options.get("tol", 1e-10)
-        maxiter = self.options.get("maxiter", 1000)
+        maxiter = self.options.get("maxiter", 100000)
         restart = self.options.get("restart", 100)
         x0 = np.ones_like(b)
         
@@ -137,7 +137,7 @@ class CPULinearSolver(LinearSolver):
     def _solve_iterative(self, A, b, residuals):
         """反復解法共通インターフェース"""
         tol = self.options.get("tol", 1e-10)
-        maxiter = self.options.get("maxiter", 1000)
+        maxiter = self.options.get("maxiter", 100000)
         x0 = np.ones_like(b)
         
         callback = self._create_callback(A, b, residuals)
@@ -280,19 +280,21 @@ class GPULinearSolver(LinearSolver):
     def _solve_gmres(self, A, b, residuals):
         """CuPyのGMRES法"""
         tol = self.options.get("tol", 1e-10)
-        maxiter = self.options.get("maxiter", 1000)
+        maxiter = self.options.get("maxiter", 100000)
         restart = self.options.get("restart", 100)
         x0 = self.cp.ones_like(b)
         
-        callback = self._create_callback(A, b, residuals)
+        def output(x):
+            print(x)
+        #callback = self._create_callback(A, b, residuals)
         
         return self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
-                                  restart=restart, callback=callback)
+                                  restart=restart, callback=output)
     
     def _solve_iterative(self, A, b, residuals):
         """CuPy反復解法共通インターフェース"""
         tol = self.options.get("tol", 1e-10)
-        maxiter = self.options.get("maxiter", 1000)
+        maxiter = self.options.get("maxiter", 100000)
         x0 = self.cp.ones_like(b)
         
         callback = self._create_callback(A, b, residuals)
@@ -377,9 +379,23 @@ class JAXLinearSolver(LinearSolver):
         self.b_jax = self.jnp.array(b)
         self.shape = A.shape
         
-        # 行列-ベクトル積を定義
-        def matvec(x):
-            return jsparse.csr_matvec(data, indices, indptr, self.shape[1], x)
+        # 行列-ベクトル積を定義（最新のJAX sparse APIに対応）
+        try:
+            # 新しいAPI方式を試行
+            def matvec(x):
+                # JAX 0.3.16以降の新API
+                try:
+                    mat = jsparse.BCSR((data, indices, indptr), shape=self.shape)
+                    return jsparse.bcsr_matvec(mat, x)
+                except AttributeError:
+                    # BCCSRなど他の形式がある場合
+                    return jsparse.csr_matvec((data, indices, indptr), x)
+        except Exception as e:
+            # レガシーAPIにフォールバック
+            print(f"JAXの新しいsparse APIに対応できません: {e}")
+            print("レガシーAPIを使用します")
+            def matvec(x):
+                return jsparse.csr_matvec(data, indices, indptr, self.shape[1], x)
         
         # 新しい行列の場合、JAX操作をコンパイル
         if (self.last_matrix is None or self.last_matrix[0] is not A or 
@@ -390,6 +406,7 @@ class JAXLinearSolver(LinearSolver):
         # 密行列に変換（直接解法用）
         self.dense_A = A.toarray()
         self.dense_A_jax = self.jnp.array(self.dense_A)
+
     
     def _solve_direct(self, A, b, *args):
         """JAXの直接解法を使用"""

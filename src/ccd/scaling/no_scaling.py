@@ -1,3 +1,7 @@
+"""
+スケーリングを行わないデフォルト実装
+"""
+
 from typing import Dict, Any, Tuple, Union
 import cupy as cp
 import cupyx.scipy.sparse as sp
@@ -13,6 +17,10 @@ class NoScaling(BaseScaling):
     def unscale(self, x: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
         """アンスケールを行わず、元のxを返す"""
         return x
+    
+    def scale_b_only(self, b: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
+        """右辺ベクトルのスケーリングを行わず、元のbを返す"""
+        return b
     
     @property
     def name(self) -> str:

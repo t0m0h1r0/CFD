@@ -1,12 +1,16 @@
+"""
+行と列のスケーリングを組み合わせた平衡化スケーリング実装
+"""
+
 from typing import Dict, Any, Tuple, Union
 import cupy as cp
 import cupyx.scipy.sparse as sp
 from .base import BaseScaling
 
 class EquilibrationScaling(BaseScaling):
-    """行と列のスケーリングを組み合わせた平衡化スケーリング"""
+    """行と列のスケーリングを組み合わせた平衡化スケーリング: A → D_r A D_c, b → D_r b"""
     
-    def __init__(self, max_iterations=10, tolerance=1e-8):
+    def __init__(self, max_iterations=5, tolerance=1e-8):
         """
         反復パラメータを指定して初期化
         
@@ -20,13 +24,6 @@ class EquilibrationScaling(BaseScaling):
     def scale(self, A: Union[sp.spmatrix, cp.ndarray], b: cp.ndarray) -> Tuple[Union[sp.spmatrix, cp.ndarray], cp.ndarray, Dict[str, Any]]:
         """
         反復的平衡化スケーリングを適用
-        
-        Args:
-            A: システム行列（スパース）
-            b: 右辺ベクトル
-            
-        Returns:
-            tuple: (scaled_A, scaled_b, scale_info)
         """
         m, n = A.shape
         scaled_A = A.copy()
@@ -35,50 +32,29 @@ class EquilibrationScaling(BaseScaling):
         row_scale = cp.ones(m)
         col_scale = cp.ones(n)
         
-        # 行列のフォーマットに応じた効率的なノルム計算のための判定
-        is_csr = hasattr(A, 'format') and A.format == 'csr'
-        is_csc = hasattr(A, 'format') and A.format == 'csc'
+        # 行列のフォーマットに応じた処理戦略を選択
+        is_csr = hasattr(scaled_A, 'format') and scaled_A.format == 'csr'
+        is_csc = hasattr(scaled_A, 'format') and scaled_A.format == 'csc'
         
         # 反復処理
         for _ in range(self.max_iterations):
-            # 行ノルムを計算（効率化）
-            row_norms = cp.zeros(m)
-            if is_csr:
-                for i in range(m):
-                    start = scaled_A.indptr[i]
-                    end = scaled_A.indptr[i+1]
-                    if end > start:
-                        row_norms[i] = cp.max(cp.abs(scaled_A.data[start:end]))
-            else:
-                for i in range(m):
-                    row = scaled_A[i, :].toarray().flatten()
-                    row_norms[i] = cp.linalg.norm(row, ord=float('inf'))
-            
-            # 列ノルムを計算（効率化）
-            col_norms = cp.zeros(n)
-            if is_csc:
-                for j in range(n):
-                    start = scaled_A.indptr[j]
-                    end = scaled_A.indptr[j+1]
-                    if end > start:
-                        col_norms[j] = cp.max(cp.abs(scaled_A.data[start:end]))
-            else:
-                for j in range(n):
-                    col = scaled_A[:, j].toarray().flatten()
-                    col_norms[j] = cp.linalg.norm(col, ord=float('inf'))
+            # 行/列ノルムを計算
+            row_norms = self._compute_row_norms(scaled_A, is_csr)
+            col_norms = self._compute_column_norms(scaled_A, is_csc)
             
             # 収束確認
             if (cp.abs(row_norms - 1.0) < self.tolerance).all() and (cp.abs(col_norms - 1.0) < self.tolerance).all():
                 break
             
-            # スケーリングベクトルを更新
-            row_scale_update = cp.where(row_norms < 1e-15, 1.0, 1.0 / cp.sqrt(row_norms))
-            col_scale_update = cp.where(col_norms < 1e-15, 1.0, 1.0 / cp.sqrt(col_norms))
+            # スケーリング係数の更新（安定化のため平方根を使用）
+            row_scale_update = 1.0 / cp.sqrt(cp.where(row_norms < 1e-15, 1.0, row_norms))
+            col_scale_update = 1.0 / cp.sqrt(cp.where(col_norms < 1e-15, 1.0, col_norms))
             
+            # 合計スケーリング係数を更新
             row_scale *= row_scale_update
             col_scale *= col_scale_update
             
-            # スケーリングを適用
+            # 行列をスケーリング
             DR = sp.diags(row_scale_update)
             DC = sp.diags(col_scale_update)
             scaled_A = DR @ scaled_A @ DC
@@ -86,25 +62,63 @@ class EquilibrationScaling(BaseScaling):
         # bをスケーリング
         scaled_b = b * row_scale
         
-        # アンスケーリング用の情報を保存
-        scale_info = {'row_scale': row_scale, 'col_scale': col_scale}
+        return scaled_A, scaled_b, {'row_scale': row_scale, 'col_scale': col_scale}
+    
+    def _compute_row_norms(self, A, is_csr=False):
+        """効率的な行ノルム計算"""
+        m = A.shape[0]
+        row_norms = cp.zeros(m)
         
-        return scaled_A, scaled_b, scale_info
+        if is_csr:
+            # CSRフォーマットではindptrを使って行単位で処理
+            for i in range(m):
+                start, end = A.indptr[i], A.indptr[i+1]
+                if end > start:
+                    row_norms[i] = cp.max(cp.abs(A.data[start:end]))
+        else:
+            # その他の形式
+            for i in range(m):
+                row = A[i, :]
+                if hasattr(row, 'toarray'):
+                    row = row.toarray().flatten()
+                row_norms[i] = cp.max(cp.abs(row)) if row.size > 0 else 0.0
+        
+        return row_norms
+    
+    def _compute_column_norms(self, A, is_csc=False):
+        """効率的な列ノルム計算"""
+        n = A.shape[1]
+        col_norms = cp.zeros(n)
+        
+        if is_csc:
+            # CSCフォーマットではindptrを使って列単位で処理
+            for j in range(n):
+                start, end = A.indptr[j], A.indptr[j+1]
+                if end > start:
+                    col_norms[j] = cp.max(cp.abs(A.data[start:end]))
+        else:
+            # その他の形式
+            for j in range(n):
+                col = A[:, j]
+                if hasattr(col, 'toarray'):
+                    col = col.toarray().flatten()
+                col_norms[j] = cp.max(cp.abs(col)) if col.size > 0 else 0.0
+        
+        return col_norms
     
     def unscale(self, x: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
-        """
-        解ベクトルをアンスケーリング
-        
-        Args:
-            x: 解ベクトル
-            scale_info: row_scaleとcol_scaleを含むスケーリング情報
-            
-        Returns:
-            unscaled_x: アンスケーリングされた解ベクトル
-        """
-        col_scale = scale_info['col_scale']
-        unscaled_x = x / col_scale
-        return unscaled_x
+        """解ベクトルをアンスケーリング"""
+        col_scale = scale_info.get('col_scale')
+        if col_scale is None:
+            return x
+        return x / col_scale
+    
+    def scale_b_only(self, b: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
+        """右辺ベクトルbのみをスケーリング"""
+        row_scale = scale_info.get('row_scale')
+        if row_scale is not None:
+            return b * row_scale
+        return b
     
     @property
     def name(self) -> str:
