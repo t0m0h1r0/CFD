@@ -75,6 +75,26 @@ class ArrayBackend:
         xp = self.get_array_module()
         return xp.ones(shape, dtype=dtype)
     
+    def zeros_like(self, a):
+        """Create a zeros array with same shape and type as input."""
+        xp = self.get_array_module()
+        return xp.zeros_like(a)
+    
+    def ones_like(self, a):
+        """Create a ones array with same shape and type as input."""
+        xp = self.get_array_module()
+        return xp.ones_like(a)
+    
+    def maximum(self, a, b):
+        """Compute element-wise maximum with the current backend."""
+        xp = self.get_array_module()
+        return xp.maximum(a, b)
+    
+    def minimum(self, a, b):
+        """Compute element-wise minimum with the current backend."""
+        xp = self.get_array_module()
+        return xp.minimum(a, b)
+    
     def max(self, a, axis=None):
         """Compute maximum with the current backend."""
         xp = self.get_array_module()
@@ -129,6 +149,36 @@ class ArrayBackend:
         """Compute sum with the current backend."""
         xp = self.get_array_module()
         return xp.sum(a, axis=axis)
+    
+    def dot(self, a, b):
+        """Compute dot product with the current backend."""
+        xp = self.get_array_module()
+        return xp.dot(a, b)
+    
+    def matmul(self, a, b):
+        """Compute matrix multiplication with the current backend."""
+        xp = self.get_array_module()
+        return xp.matmul(a, b)
+    
+    def allclose(self, a, b, rtol=1e-05, atol=1e-08):
+        """Check if arrays are element-wise equal within a tolerance."""
+        xp = self.get_array_module()
+        return xp.allclose(a, b, rtol=rtol, atol=atol)
+    
+    def count_nonzero(self, a):
+        """Count the number of non-zero elements in the array."""
+        xp = self.get_array_module()
+        return xp.count_nonzero(a)
+    
+    def random_choice(self, a, size=None, replace=True, p=None):
+        """Generate a random sample from an array."""
+        xp = self.get_array_module()
+        if self.backend == 'jax':
+            # JAX requires a different API for random operations
+            key = jax.random.PRNGKey(0)  # Use a fixed seed for reproducibility
+            return jax.random.choice(key, a, shape=(size,), replace=replace, p=p)
+        else:
+            return xp.random.choice(a, size=size, replace=replace, p=p)
     
     def diags(self, diagonal_array):
         """Create a diagonal sparse matrix with the current backend."""
