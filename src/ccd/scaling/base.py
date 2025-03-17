@@ -1,23 +1,35 @@
 """
-行列スケーリングモジュールの基底クラス
+Base class for matrix scaling implementations.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple, Union
-import cupy as cp
-import cupyx.scipy.sparse as sp
+from typing import Dict, Any, Tuple, Union, Optional
+import numpy as np
+
+# Import our array utilities
+from .array_utils import ArrayBackend
+
 
 class BaseScaling(ABC):
-    """行列スケーリング手法の基底クラス"""
+    """Base class for matrix scaling techniques."""
     
-    @abstractmethod
-    def scale(self, A: Union[sp.spmatrix, cp.ndarray], b: cp.ndarray) -> Tuple[Union[sp.spmatrix, cp.ndarray], cp.ndarray, Dict[str, Any]]:
+    def __init__(self, backend='numpy'):
         """
-        行列Aと右辺ベクトルbをスケーリングする
+        Initialize scaling with specified backend.
         
         Args:
-            A: システム行列
-            b: 右辺ベクトル
+            backend: 'numpy', 'cupy', or 'jax'
+        """
+        self.array_utils = ArrayBackend(backend)
+    
+    @abstractmethod
+    def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
+        """
+        Scale matrix A and right-hand side vector b.
+        
+        Args:
+            A: System matrix
+            b: Right-hand side vector
             
         Returns:
             tuple: (scaled_A, scaled_b, scale_info)
@@ -25,46 +37,55 @@ class BaseScaling(ABC):
         pass
     
     @abstractmethod
-    def unscale(self, x: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
+    def unscale(self, x, scale_info: Dict[str, Any]):
         """
-        スケーリング情報を使用して解ベクトルをアンスケールする
+        Unscale the solution vector using scaling information.
         
         Args:
-            x: 解ベクトル
-            scale_info: スケーリング情報
+            x: Solution vector
+            scale_info: Scaling information
             
         Returns:
-            unscaled_x: アンスケールされた解ベクトル
+            unscaled_x: Unscaled solution
         """
         pass
     
-    def scale_b_only(self, b: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
+    def scale_b_only(self, b, scale_info: Dict[str, Any]):
         """
-        右辺ベクトルbのみをスケーリング（最適化用）
+        Scale only the right-hand side vector (optimization for multiple solves).
         
         Args:
-            b: 右辺ベクトル
-            scale_info: スケーリング情報
+            b: Right-hand side vector
+            scale_info: Scaling information
             
         Returns:
-            スケーリングされた右辺ベクトル
+            scaled_b: Scaled right-hand side
         """
-        # デフォルト実装：行スケール係数があればそれを使用
+        # Default implementation: use row scale if available
         row_scale = scale_info.get('row_scale')
         if row_scale is not None:
             return b * row_scale
             
-        # それ以外は各サブクラスで効率的に実装
+        # Otherwise, each subclass should implement efficiently
         return b
     
     @property
     @abstractmethod
     def name(self) -> str:
-        """スケーリング手法の名前を返す"""
+        """Return the name of the scaling method."""
         pass
     
     @property
     @abstractmethod
     def description(self) -> str:
-        """スケーリング手法の説明を返す"""
+        """Return the description of the scaling method."""
         pass
+    
+    def set_backend(self, backend: str):
+        """
+        Change the computational backend.
+        
+        Args:
+            backend: 'numpy', 'cupy', or 'jax'
+        """
+        self.array_utils = ArrayBackend(backend)

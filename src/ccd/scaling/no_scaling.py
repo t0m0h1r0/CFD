@@ -2,23 +2,22 @@
 スケーリングを行わないデフォルト実装
 """
 
-from typing import Dict, Any, Tuple, Union
-import cupy as cp
-import cupyx.scipy.sparse as sp
+from typing import Dict, Any, Tuple
 from .base import BaseScaling
+
 
 class NoScaling(BaseScaling):
     """スケーリングを行わないデフォルトプラグイン"""
     
-    def scale(self, A: Union[sp.spmatrix, cp.ndarray], b: cp.ndarray) -> Tuple[Union[sp.spmatrix, cp.ndarray], cp.ndarray, Dict[str, Any]]:
+    def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
         """スケーリングを行わず、元のAとbを返す"""
         return A, b, {}
     
-    def unscale(self, x: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
+    def unscale(self, x, scale_info: Dict[str, Any]):
         """アンスケールを行わず、元のxを返す"""
         return x
     
-    def scale_b_only(self, b: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
+    def scale_b_only(self, b, scale_info: Dict[str, Any]):
         """右辺ベクトルのスケーリングを行わず、元のbを返す"""
         return b
     

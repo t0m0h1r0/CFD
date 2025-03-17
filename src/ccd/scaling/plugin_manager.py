@@ -15,12 +15,22 @@ class ScalingPluginManager:
     
     def __init__(self):
         """初期化"""
-        self._plugins: Dict[str, BaseScaling] = {}
-        self._default_plugin: Optional[BaseScaling] = None
+        self._plugins: Dict[str, type] = {}  # クラス型を保存
+        self._default_plugin: Optional[str] = None
         self._plugins_loaded: bool = False
         self._logger = logging.getLogger(__name__)
+        self._backend = 'numpy'  # デフォルトバックエンド
         
-    def discover_plugins(self) -> Dict[str, BaseScaling]:
+    def set_backend(self, backend: str):
+        """
+        全プラグインの計算バックエンドを設定
+        
+        Args:
+            backend: 'numpy', 'cupy', 'jax' のいずれか
+        """
+        self._backend = backend
+        
+    def discover_plugins(self) -> Dict[str, type]:
         """scalingパッケージ内のすべてのスケーリングプラグインを検出する"""
         if self._plugins_loaded:
             return self._plugins
@@ -45,16 +55,15 @@ class ScalingPluginManager:
                 for _, obj in inspect.getmembers(module, inspect.isclass):
                     # BaseScalingのサブクラスを見つける
                     if issubclass(obj, BaseScaling) and obj is not BaseScaling:
-                        instance = obj()
-                        self._plugins[instance.name] = instance
+                        self._plugins[obj().name] = obj
                         
                         # デフォルトプラグイン設定
                         if self._default_plugin is None:
-                            self._default_plugin = instance
+                            self._default_plugin = obj().name
                         
                         # NoScalingが見つかれば、それをデフォルトに設定
-                        if instance.name.lower() == "noscaling":
-                            self._default_plugin = instance
+                        if obj().name.lower() == "noscaling":
+                            self._default_plugin = obj().name
                             
             except Exception as e:
                 self._logger.warning(f"プラグイン {module_name} の読み込み中にエラーが発生しました: {e}")
@@ -76,16 +85,27 @@ class ScalingPluginManager:
             self.discover_plugins()
             
         if name is None:
-            return self._default_plugin
+            # デフォルトプラグインを返す
+            plugin_class = self._plugins.get(self._default_plugin)
+            if plugin_class is None:
+                # Fallback to NoScaling
+                from .no_scaling import NoScaling
+                return NoScaling(backend=self._backend)
+            return plugin_class(backend=self._backend)
         
         # 大文字小文字を区別せずに検索
-        for plugin_name, plugin in self._plugins.items():
+        for plugin_name, plugin_class in self._plugins.items():
             if plugin_name.lower() == name.lower():
-                return plugin
+                return plugin_class(backend=self._backend)
                 
         # 見つからない場合はデフォルトを返す
         self._logger.warning(f"警告: スケーリングプラグイン '{name}' が見つかりません。デフォルトを使用します。")
-        return self._default_plugin
+        plugin_class = self._plugins.get(self._default_plugin)
+        if plugin_class is None:
+            # Fallback to NoScaling
+            from .no_scaling import NoScaling
+            return NoScaling(backend=self._backend)
+        return plugin_class(backend=self._backend)
     
     def get_available_plugins(self) -> List[str]:
         """

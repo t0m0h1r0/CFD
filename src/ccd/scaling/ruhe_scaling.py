@@ -1,185 +1,184 @@
 """
-Ruhe diagonal scaling implementation
+Ruhe対角スケーリングの実装
 
-This scaling method implements Axel Ruhe's iterative technique for improving
-matrix condition number through diagonal scaling. The method iteratively
-computes scaling factors to make row and column norms approximately equal.
+このスケーリング手法は、Axel Ruheの反復的手法を実装して対角スケーリングにより
+行列の条件数を改善します。この方法は行と列のノルムがほぼ等しくなるように
+スケーリング係数を反復的に計算します。
 """
 
-from typing import Dict, Any, Tuple, Union
-import cupy as cp
-import cupyx.scipy.sparse as sp
+from typing import Dict, Any, Tuple
 from .base import BaseScaling
 
 
 class RuheScaling(BaseScaling):
     """
-    Ruhe diagonal scaling technique.
+    Ruhe対角スケーリング手法
     
-    This scaling strategy iteratively balances the matrix to achieve
-    approximately equal row and column norms, which often improves
-    the condition number significantly for many problem types.
+    この手法は行と列のノルムがほぼ等しくなるよう行列を反復的に平衡化し、
+    多くの問題タイプの条件数を大幅に改善します。
     
-    References:
+    参考文献:
         Ruhe, A. (1980). "Perturbation bounds for means of eigenvalues and invariant subspaces."
     """
     
-    def __init__(self, max_iterations=10, tolerance=1e-6, norm_type=2):
+    def __init__(self, max_iterations=10, tolerance=1e-6, norm_type=2, backend='numpy'):
         """
-        Initialize the Ruhe scaling algorithm.
+        Ruheスケーリングアルゴリズムを初期化
         
         Args:
-            max_iterations: Maximum number of iterations for the algorithm
-            tolerance: Convergence tolerance for row/column norm ratios
-            norm_type: Type of norm to use (2 for Euclidean, float('inf') for max)
+            max_iterations: アルゴリズムの最大反復回数
+            tolerance: 行/列ノルム比の収束許容誤差
+            norm_type: 使用するノルムの種類 (2: ユークリッド、float('inf'): 最大)
+            backend: 計算バックエンド ('numpy', 'cupy', 'jax')
         """
+        super().__init__(backend)
         self.max_iterations = max_iterations
         self.tolerance = tolerance
         self.norm_type = norm_type
         
-    def scale(self, A: Union[sp.spmatrix, cp.ndarray], b: cp.ndarray) -> Tuple[Union[sp.spmatrix, cp.ndarray], cp.ndarray, Dict[str, Any]]:
+    def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
         """
-        Apply Ruhe diagonal scaling to matrix A and right-hand side b.
+        Ruhe対角スケーリングを行列Aと右辺ベクトルbに適用
         
         Args:
-            A: System matrix to scale
-            b: Right-hand side vector
+            A: スケーリングするシステム行列
+            b: 右辺ベクトル
             
         Returns:
-            Tuple of (scaled_A, scaled_b, scaling_info)
+            tuple: (scaled_A, scaled_b, scale_info)
         """
         m, n = A.shape
         
-        # Initialize scaling vectors with ones
-        d_row = cp.ones(m, dtype=cp.float64)
-        d_col = cp.ones(n, dtype=cp.float64)
+        # スケーリングベクトルを1で初期化
+        d_row = self.array_utils.ones(m, dtype='float64')
+        d_col = self.array_utils.ones(n, dtype='float64')
         
-        # Create a copy of A to work with
-        scaled_A = A.copy()
+        # 作業用にAのコピーを作成
+        scaled_A = self.array_utils.copy_matrix(A)
         
-        # Determine if A is stored in CSR or CSC format for efficient operations
+        # Aが疎行列形式かどうかを判定
         is_csr = hasattr(scaled_A, 'format') and scaled_A.format == 'csr'
         is_csc = hasattr(scaled_A, 'format') and scaled_A.format == 'csc'
         
-        # Iterative scaling algorithm
+        # 反復スケーリングアルゴリズム
         for iteration in range(self.max_iterations):
-            # Compute row and column norms
+            # 行と列のノルムを計算
             row_norms = self._compute_row_norms(scaled_A, is_csr)
             col_norms = self._compute_column_norms(scaled_A, is_csc)
             
-            # Check convergence
-            row_norm_avg = cp.mean(row_norms)
-            col_norm_avg = cp.mean(col_norms)
+            # 収束チェック
+            row_norm_avg = self.array_utils.mean(row_norms)
+            col_norm_avg = self.array_utils.mean(col_norms)
             
-            # Break if norms are nearly equal
+            # ノルムがほぼ等しい場合は終了
             if abs(row_norm_avg - col_norm_avg) < self.tolerance:
                 break
                 
-            # Compute scaling factors
-            alpha_row = cp.sqrt(col_norm_avg / cp.maximum(row_norm_avg, 1e-15))
-            alpha_col = cp.sqrt(row_norm_avg / cp.maximum(col_norm_avg, 1e-15))
+            # スケーリング係数を計算
+            alpha_row = self.array_utils.sqrt(col_norm_avg / self.array_utils.maximum(row_norm_avg, 1e-15))
+            alpha_col = self.array_utils.sqrt(row_norm_avg / self.array_utils.maximum(col_norm_avg, 1e-15))
             
-            # Update scaling vectors
-            d_row_update = cp.power(row_norms, -0.5) * alpha_row
-            d_col_update = cp.power(col_norms, -0.5) * alpha_col
+            # スケーリングベクトルを更新
+            d_row_update = self.array_utils.power(row_norms, -0.5) * alpha_row
+            d_col_update = self.array_utils.power(col_norms, -0.5) * alpha_col
             
-            # Apply numerical stability safeguards
-            d_row_update = cp.where(cp.isfinite(d_row_update), d_row_update, 1.0)
-            d_col_update = cp.where(cp.isfinite(d_col_update), d_col_update, 1.0)
+            # 数値的安定性の保護
+            d_row_update = self.array_utils.where(self.array_utils.isfinite(d_row_update), d_row_update, 1.0)
+            d_col_update = self.array_utils.where(self.array_utils.isfinite(d_col_update), d_col_update, 1.0)
             
-            # Update cumulative scaling factors
+            # 累積スケーリング係数を更新
             d_row *= d_row_update
             d_col *= d_col_update
             
-            # Construct diagonal scaling matrices
-            D_row = sp.diags(d_row_update)
-            D_col = sp.diags(d_col_update)
+            # 対角スケーリング行列を構築
+            D_row = self.array_utils.diags(d_row_update)
+            D_col = self.array_utils.diags(d_col_update)
             
-            # Apply scaling to the matrix
+            # 行列にスケーリングを適用
             scaled_A = D_row @ scaled_A @ D_col
         
-        # Scale the right-hand side vector
+        # 右辺ベクトルをスケーリング
         scaled_b = b * d_row
         
-        # Return the scaled matrix, scaled RHS, and scaling information
+        # スケーリングされた行列、スケーリングされた右辺、スケーリング情報を返す
         return scaled_A, scaled_b, {'row_scale': d_row, 'col_scale': d_col}
         
     def _compute_row_norms(self, A, is_csr=False):
-        """Efficiently compute row norms of matrix A"""
+        """行列Aの行ノルムを効率的に計算"""
         m = A.shape[0]
-        row_norms = cp.zeros(m)
+        row_norms = self.array_utils.zeros(m)
         
         if is_csr:
-            # For CSR format, use indptr for efficient row access
+            # CSRフォーマットでは行へのアクセスに効率的なindptrを使用
             for i in range(m):
                 start, end = A.indptr[i], A.indptr[i+1]
                 if end > start:
                     row_data = A.data[start:end]
                     if self.norm_type == float('inf'):
-                        row_norms[i] = cp.max(cp.abs(row_data))
+                        row_norms[i] = self.array_utils.max(self.array_utils.abs(row_data))
                     else:
-                        row_norms[i] = cp.linalg.norm(row_data, ord=self.norm_type)
+                        row_norms[i] = self.array_utils.linalg_norm(row_data, ord=self.norm_type)
         else:
-            # General case
+            # 一般的なケース
             for i in range(m):
                 row = A[i, :]
                 if hasattr(row, 'toarray'):
                     row = row.toarray().flatten()
-                row_norms[i] = cp.linalg.norm(row, ord=self.norm_type)
+                row_norms[i] = self.array_utils.linalg_norm(row, ord=self.norm_type)
         
         return row_norms
     
     def _compute_column_norms(self, A, is_csc=False):
-        """Efficiently compute column norms of matrix A"""
+        """行列Aの列ノルムを効率的に計算"""
         n = A.shape[1]
-        col_norms = cp.zeros(n)
+        col_norms = self.array_utils.zeros(n)
         
         if is_csc:
-            # For CSC format, use indptr for efficient column access
+            # CSCフォーマットでは列へのアクセスに効率的なindptrを使用
             for j in range(n):
                 start, end = A.indptr[j], A.indptr[j+1]
                 if end > start:
                     col_data = A.data[start:end]
                     if self.norm_type == float('inf'):
-                        col_norms[j] = cp.max(cp.abs(col_data))
+                        col_norms[j] = self.array_utils.max(self.array_utils.abs(col_data))
                     else:
-                        col_norms[j] = cp.linalg.norm(col_data, ord=self.norm_type)
+                        col_norms[j] = self.array_utils.linalg_norm(col_data, ord=self.norm_type)
         else:
-            # General case
+            # 一般的なケース
             for j in range(n):
                 col = A[:, j]
                 if hasattr(col, 'toarray'):
                     col = col.toarray().flatten()
-                col_norms[j] = cp.linalg.norm(col, ord=self.norm_type)
+                col_norms[j] = self.array_utils.linalg_norm(col, ord=self.norm_type)
         
         return col_norms
     
-    def unscale(self, x: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
+    def unscale(self, x, scale_info: Dict[str, Any]):
         """
-        Unscale the solution vector.
+        解ベクトルをアンスケーリング
         
         Args:
-            x: Solution vector to unscale
-            scale_info: Scaling information from the scale method
+            x: アンスケーリングする解ベクトル
+            scale_info: scaleメソッドからのスケーリング情報
             
         Returns:
-            Unscaled solution vector
+            アンスケーリングされた解ベクトル
         """
         col_scale = scale_info.get('col_scale')
         if col_scale is None:
             return x
         return x / col_scale
     
-    def scale_b_only(self, b: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
+    def scale_b_only(self, b, scale_info: Dict[str, Any]):
         """
-        Scale only the right-hand side vector.
+        右辺ベクトルのみをスケーリング
         
         Args:
-            b: Right-hand side vector to scale
-            scale_info: Scaling information from the scale method
+            b: スケーリングする右辺ベクトル
+            scale_info: scaleメソッドからのスケーリング情報
             
         Returns:
-            Scaled right-hand side vector
+            スケーリングされた右辺ベクトル
         """
         row_scale = scale_info.get('row_scale')
         if row_scale is None:
@@ -192,4 +191,4 @@ class RuheScaling(BaseScaling):
     
     @property
     def description(self) -> str:
-        return "Ruhe's iterative diagonal scaling to improve matrix condition number"
+        return "行列の条件数を改善するRuheの反復的対角スケーリング"

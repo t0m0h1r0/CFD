@@ -5,7 +5,7 @@ import time
 import numpy as np
 import scipy.sparse.linalg as splinalg_cpu
 from abc import ABC, abstractmethod
-from scaling import plugin_manager
+from scaling import plugin_manager, set_backend
 
 
 class LinearSolver(ABC):
@@ -495,6 +495,14 @@ def create_solver(method="direct", options=None, scaling_method=None, backend="c
     """適切な線形ソルバーを作成するファクトリ関数"""
     # バックエンド設定
     backend = options.get("backend", backend) if options else backend
+    
+    # スケーリングとソルバーの両方で同じバックエンドを使用するよう設定
+    if backend == "cpu":
+        set_backend("numpy")
+    elif backend == "cuda":
+        set_backend("cupy")
+    elif backend == "jax":
+        set_backend("jax")
     
     # ソルバーマップ
     solvers = {
