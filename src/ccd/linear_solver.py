@@ -5,7 +5,7 @@ import time
 import numpy as np
 import scipy.sparse.linalg as splinalg_cpu
 from abc import ABC, abstractmethod
-from scaling import plugin_manager, set_backend
+from scaling import plugin_manager
 
 
 class LinearSolver(ABC):
@@ -124,12 +124,11 @@ class CPULinearSolver(LinearSolver):
         tol = self.options.get("tol", 1e-10)
         maxiter = self.options.get("maxiter", 1000)
         restart = self.options.get("restart", 100)
-        x0 = np.ones_like(b)
         
         callback = self._create_callback(A, b, residuals)
         
         try:
-            return splinalg_cpu.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
+            return splinalg_cpu.gmres(A, b, tol=tol, maxiter=maxiter, 
                                       restart=restart, callback=callback)
         except TypeError:
             return splinalg_cpu.gmres(A, b, restart=restart)
@@ -138,13 +137,12 @@ class CPULinearSolver(LinearSolver):
         """反復解法共通インターフェース"""
         tol = self.options.get("tol", 1e-10)
         maxiter = self.options.get("maxiter", 1000)
-        x0 = np.ones_like(b)
         
         callback = self._create_callback(A, b, residuals)
         solver_func = getattr(splinalg_cpu, self.method)
         
         try:
-            return solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
+            return solver_func(A, b, tol=tol, maxiter=maxiter, callback=callback)
         except TypeError:
             return solver_func(A, b)
     
@@ -282,23 +280,21 @@ class GPULinearSolver(LinearSolver):
         tol = self.options.get("tol", 1e-10)
         maxiter = self.options.get("maxiter", 1000)
         restart = self.options.get("restart", 100)
-        x0 = self.cp.ones_like(b)
         
         callback = self._create_callback(A, b, residuals)
         
-        return self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
+        return self.splinalg.gmres(A, b, tol=tol, maxiter=maxiter, 
                                   restart=restart)
     
     def _solve_iterative(self, A, b, residuals):
         """CuPy反復解法共通インターフェース"""
         tol = self.options.get("tol", 1e-10)
         maxiter = self.options.get("maxiter", 1000)
-        x0 = self.cp.ones_like(b)
         
         callback = self._create_callback(A, b, residuals)
         solver_func = getattr(self.splinalg, self.method)
         
-        return solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
+        return solver_func(A, b, tol=tol, maxiter=maxiter, callback=callback)
     
     def _solve_least_squares(self, A, b, *args):
         """CuPy最小二乗法ソルバー"""
@@ -306,8 +302,7 @@ class GPULinearSolver(LinearSolver):
         solver_func = getattr(self.splinalg, self.method)
         
         if self.method == "lsmr":
-            x0 = self.cp.ones_like(b)
-            x = solver_func(A, b, x0=x0, maxiter=maxiter)[0]
+            x = solver_func(A, b, maxiter=maxiter)[0]
         else:
             x = solver_func(A, b)[0]
             
@@ -406,7 +401,7 @@ class JAXLinearSolver(LinearSolver):
         maxiter = self.options.get("maxiter", 1000)
         
         # 初期値設定
-        x0 = self.jnp.ones_like(self.b_jax)
+        x0 = self.jnp.zeros_like(self.b_jax)
         r0 = self.b_jax - self.last_op(x0)
         p0 = r0
         
@@ -443,7 +438,7 @@ class JAXLinearSolver(LinearSolver):
         maxiter = self.options.get("maxiter", 1000)
         
         # 初期値設定
-        x0 = self.jnp.ones_like(self.b_jax)
+        x0 = self.jnp.zeros_like(self.b_jax)
         r0 = self.b_jax - self.last_op(x0)
         r_hat = r0
         v0 = self.last_op(r0)
@@ -495,14 +490,6 @@ def create_solver(method="direct", options=None, scaling_method=None, backend="c
     """適切な線形ソルバーを作成するファクトリ関数"""
     # バックエンド設定
     backend = options.get("backend", backend) if options else backend
-    
-    # スケーリングとソルバーの両方で同じバックエンドを使用するよう設定
-    if backend == "cpu":
-        set_backend("numpy")
-    elif backend == "cuda":
-        set_backend("cupy")
-    elif backend == "jax":
-        set_backend("jax")
     
     # ソルバーマップ
     solvers = {
