@@ -43,15 +43,17 @@ class BaseCCDSolver(ABC):
         pass
     
     def set_solver(self, method="direct", options=None, scaling_method=None):
-        """
-        ソルバーの設定
-        
-        Args:
-            method: 解法メソッド
-            options: ソルバーオプション辞書
-            scaling_method: スケーリング手法名
-        """
-        self.linear_solver = create_solver(method, options, scaling_method)
+            """
+            ソルバーの設定
+            
+            Args:
+                method: 解法メソッド
+                options: ソルバーオプション辞書
+                scaling_method: スケーリング手法名
+            """
+            # バックエンド指定を取得
+            backend = options.get("backend", "cuda") if options else "cuda"
+            self.linear_solver = create_solver(method, options, scaling_method, backend)
     
     @property
     def scaling_method(self):

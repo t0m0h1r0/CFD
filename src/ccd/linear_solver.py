@@ -1,7 +1,7 @@
 """
 線形方程式系 Ax=b を解くためのソルバーモジュール
 
-このモジュールはCPU (SciPy) およびGPU (CuPy) 実装の線形ソルバーを提供し、
+このモジュールはCPU (SciPy)、GPU (CuPy)、およびJAX実装の線形ソルバーを提供し、
 スパース行列向けの様々な解法 (直接解法・反復解法) をサポートします。
 """
 
@@ -179,7 +179,7 @@ class CPULinearSolver(LinearSolver):
         elapsed = time.time() - start_time
         self.last_iterations = iterations
         
-        print(f"CPU解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
+        print(f"CPU (SciPy) 解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
         if iterations:
             print(f"反復回数: {iterations}")
             
@@ -330,7 +330,7 @@ class GPULinearSolver(LinearSolver):
         
         # 新しい行列の場合はGPUに転送
         if is_new_matrix:
-            print("行列を GPU に転送しています...")
+            print("行列を GPU (CuPy) に転送しています...")
             self.clear_gpu_memory()
             self.A_gpu = sp.csr_matrix(A)
             self.original_A = A  # 元の行列への参照を保存
@@ -392,7 +392,7 @@ class GPULinearSolver(LinearSolver):
         elapsed = time.time() - start_time
         self.last_iterations = iterations
         
-        print(f"GPU解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
+        print(f"GPU (CuPy) 解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
         if iterations:
             print(f"反復回数: {iterations}")
             
@@ -402,7 +402,150 @@ class GPULinearSolver(LinearSolver):
         return x
 
 
-def create_solver(method="direct", options=None, scaling_method=None):
+class JAXLinearSolver(LinearSolver):
+    """JAX を使用した線形方程式系ソルバー"""
+    
+    def __init__(self, method="direct", options=None, scaling_method=None):
+        """
+        JAX線形方程式系ソルバーを初期化
+        
+        Args:
+            method: 解法メソッド
+            options: ソルバーオプション辞書
+            scaling_method: スケーリング手法名
+        """
+        super().__init__(method, options, scaling_method)
+        self.last_matrix = None
+        self.last_op = None
+    
+    def solve(self, A, b):
+        """
+        JAX を使用して線形方程式系を解く
+        
+        Args:
+            A: システム行列 (SciPy CSR形式)
+            b: 右辺ベクトル (NumPy配列)
+            
+        Returns:
+            解ベクトル x (NumPy配列)
+        """
+        try:
+            import jax
+            import jax.numpy as jnp
+            from jax.experimental import sparse as jsparse
+        except ImportError:
+            print("JAXがインストールされていません。CPUソルバーに切り替えます。")
+            return CPULinearSolver(self.method, self.options, self.scaling_method).solve(A, b)
+        
+        # 開始時間を記録
+        start_time = time.time()
+        residuals = []
+        
+        # 行列と右辺ベクトルをJAXで処理できる形式に変換
+        data = jnp.array(A.data)
+        indices = jnp.array(A.indices)
+        indptr = jnp.array(A.indptr)
+        b_jax = jnp.array(b)
+        shape = A.shape
+        
+        # 行列-ベクトル積を定義
+        def matvec(x):
+            return jsparse.csr_matvec(data, indices, indptr, shape[1], x)
+        
+        # 新しい行列かどうかチェック
+        new_matrix = (self.last_matrix is None or 
+                      self.last_matrix[0] is not A or 
+                      self.last_matrix[1].shape != shape)
+        
+        # 新しい行列の場合、JAX操作をコンパイル
+        if new_matrix:
+            print("JAX MatVec関数をコンパイル中...")
+            self.last_op = jax.jit(matvec)
+            self.last_matrix = (A, A)  # 元の行列への参照を保存
+        
+        # 解法選択
+        if self.method == "direct":
+            # JAXでは密行列に変換して直接解法
+            dense_A = A.toarray()
+            dense_A_jax = jnp.array(dense_A)
+            
+            try:
+                # JAXの直接解法で解く
+                x = jnp.linalg.solve(dense_A_jax, b_jax)
+                iterations = None
+            except Exception as e:
+                print(f"JAXの直接解法でエラー: {e}")
+                print("NumPy直接解法にフォールバックします。")
+                x = np.linalg.solve(dense_A, b)
+                iterations = None
+        
+        elif self.method == "cg":
+            # 共役勾配法のパラメータ設定
+            tol = self.options.get("tol", 1e-10)
+            maxiter = self.options.get("maxiter", 1000)
+            
+            # 初期値設定
+            x0 = jnp.ones_like(b_jax)
+            r0 = b_jax - self.last_op(x0)
+            p0 = r0
+            
+            # モニタリングコールバック
+            if self.monitor_convergence:
+                def callback(state):
+                    x_k, _, _, iter_num = state
+                    residual = jnp.linalg.norm(b_jax - self.last_op(x_k)) / jnp.linalg.norm(b_jax)
+                    residuals.append(float(residual))
+                    if len(residuals) % 10 == 0:
+                        print(f"  反復 {iter_num}: 残差 = {residual:.6e}")
+                    return state
+            else:
+                callback = None
+            
+            # JAX特有の効率的CG実装
+            def cg_step(state):
+                x_k, r_k, p_k, k = state
+                Ap_k = self.last_op(p_k)
+                alpha_k = jnp.dot(r_k, r_k) / jnp.dot(p_k, Ap_k)
+                x_next = x_k + alpha_k * p_k
+                r_next = r_k - alpha_k * Ap_k
+                beta_k = jnp.dot(r_next, r_next) / jnp.dot(r_k, r_k)
+                p_next = r_next + beta_k * p_k
+                return x_next, r_next, p_next, k + 1
+                
+            def cg_while_loop(val):
+                x_k, r_k, p_k, k = val
+                return (jnp.linalg.norm(r_k) > tol) & (k < maxiter)
+            
+            # JITコンパイルされたCGループ
+            cg_loop = jax.jit(lambda state: jax.lax.while_loop(cg_while_loop, cg_step, state))
+            
+            # 初期状態を設定して実行
+            init_state = (x0, r0, p0, 0)
+            x_final, r_final, _, iterations = cg_loop(init_state)
+            
+            x = x_final
+            
+        else:
+            print(f"JAXでは{self.method}解法は実装されていません。CPUソルバーに切り替えます。")
+            return CPULinearSolver(self.method, self.options, self.scaling_method).solve(A, b)
+        
+        # 計算時間とログ出力
+        elapsed = time.time() - start_time
+        self.last_iterations = iterations
+        
+        print(f"JAX解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
+        if iterations:
+            print(f"反復回数: {iterations}")
+            
+        # 残差の可視化
+        if self.monitor_convergence and residuals:
+            self._visualize_convergence(residuals)
+            
+        # JAX配列からNumPy配列に変換
+        return np.array(x)
+
+
+def create_solver(method="direct", options=None, scaling_method=None, backend="cuda"):
     """
     適切な線形ソルバーを作成するファクトリ関数
     
@@ -410,21 +553,36 @@ def create_solver(method="direct", options=None, scaling_method=None):
         method: 解法メソッド
         options: ソルバーオプション辞書
         scaling_method: スケーリング手法名
+        backend: 計算バックエンド ('cpu', 'cuda', 'jax')
         
     Returns:
-        LinearSolver: CPU または GPU ソルバーのインスタンス
+        LinearSolver: 指定されたバックエンドのソルバーインスタンス
     """
-    # オプションから強制CPU使用フラグを取得
-    force_cpu = options.get("force_cpu", False) if options else False
+    # オプションからバックエンド指定を取得（引数のbackendが優先）
+    if options and "backend" in options:
+        backend = options.get("backend", backend)
     
-    if force_cpu:
-        # CPU処理を強制的に使用
+    if backend == "cpu":
+        # CPU (SciPy) ソルバーを使用
         return CPULinearSolver(method, options, scaling_method)
-    else:
-        # GPUが利用可能であれば使用、そうでなければCPU
+    elif backend == "jax":
+        # JAX ソルバーを使用
         try:
-            import cupy  # noqa
+            import jax
+            return JAXLinearSolver(method, options, scaling_method)
+        except ImportError:
+            print("JAXが利用できません。CUDAソルバーを試行します。")
+            backend = "cuda"  # JAX利用不可の場合はCUDAにフォールバック
+    
+    # デフォルト: CUDAソルバーを試行
+    if backend == "cuda":
+        try:
+            import cupy
             return GPULinearSolver(method, options, scaling_method)
         except ImportError:
-            # GPU利用不可なのでCPUソルバーを使用
+            print("CuPyが利用できません。CPUソルバーに切り替えます。")
             return CPULinearSolver(method, options, scaling_method)
+    
+    # 不明なバックエンドの場合はCPUソルバーを返す
+    print(f"未知のバックエンド '{backend}'。CPUソルバーを使用します。")
+    return CPULinearSolver(method, options, scaling_method)
