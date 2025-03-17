@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 import os
+import time
 import numpy as np
 from grid import Grid
-from solver import CCDSolver1D, CCDSolver2D
+from ccd_solver import CCDSolver1D, CCDSolver2D
 from equation_sets import EquationSet, DerivativeEquationSet1D, DerivativeEquationSet2D
 from scaling import plugin_manager
 from matrix_visualizer import MatrixVisualizer
@@ -97,13 +98,8 @@ class CCDTester(ABC):
         A = self.matrix_A
         b = self._build_rhs(test_func)
         
-        # スケーリング
-        A_scaled, b_scaled, scaling_info, scaler = self._apply_scaling(A, b)
-        
         # 解計算
-        x = self._solve_system(A_scaled, b_scaled)
-        if x is not None and scaling_info is not None and scaler is not None:
-            x = scaler.unscale(x, scaling_info)
+        x = self._solve_for_visualization(A, b)
             
         # 厳密解計算
         exact_x = self._compute_exact(test_func) if x is not None else None
@@ -112,50 +108,38 @@ class CCDTester(ABC):
         visualizer = MatrixVisualizer(self.results_dir)
         eq_name = self.equation_set.__class__.__name__.replace("EquationSet", "").replace("1D", "").replace("2D", "")
         return visualizer.visualize(
-            A_scaled, b_scaled, x, exact_x, f"{eq_name}_{test_func.name}",
+            A, b, x, exact_x, f"{eq_name}_{test_func.name}",
             self.get_dimension(), self.scaling_method
         )
+    
+    def _solve_for_visualization(self, A, b):
+        """可視化用に方程式系を解く"""
+        try:
+            from linear_solver import create_solver
+            solver = create_solver(
+                method=self.solver_method, 
+                options=self.solver_options, 
+                scaling_method=self.scaling_method
+            )
+            return solver.solve(A, b)
+        except Exception as e:
+            print(f"解法エラー: {e}")
+            # フォールバック: 直接SciPyを使用
+            try:
+                from scipy.sparse.linalg import spsolve
+                return spsolve(A, b)
+            except:
+                print("SciPyによるフォールバック解法も失敗しました")
+                return None
     
     def _init_solver(self):
         """ソルバー初期化"""
         if not self.solver:
             self._create_solver()
             
-        if self.solver_method != "direct" or self.solver_options:
-            self.solver.set_solver(method=self.solver_method, options=self.solver_options)
-        
-        if self.scaling_method:
-            self.solver.scaling_method = self.scaling_method
-    
-    def _apply_scaling(self, A, b):
-        """スケーリング適用"""
-        if self.scaling_method:
-            scaler = plugin_manager.get_plugin(self.scaling_method)
-            if scaler:
-                A_scaled, b_scaled, scaling_info = scaler.scale(A, b)
-                return A_scaled, b_scaled, scaling_info, scaler
-        return A, b, None, None
-    
-    def _solve_system(self, A, b):
-        """システム解法"""
-        try:
-            if self.solver_method == "direct":
-                from scipy.sparse.linalg import spsolve
-                return spsolve(A, b)
-            
-            from scipy.sparse.linalg import gmres, cg, cgs, lsqr, minres, lsmr
-            solvers = {"gmres": gmres, "cg": cg, "cgs": cgs, "lsqr": lsqr, "minres": minres, "lsmr": lsmr}
-            solver = solvers.get(self.solver_method)
-            
-            if solver:
-                x, _ = solver(A, b)
-                return x
-                
-            from scipy.sparse.linalg import spsolve
-            return spsolve(A, b)
-        except Exception as e:
-            print(f"解法エラー: {e}")
-            return None
+        if self.solver_method != "direct" or self.solver_options or self.scaling_method:
+            self.solver.set_solver(method=self.solver_method, options=self.solver_options, 
+                                  scaling_method=self.scaling_method)
     
     def _create_grid(self, n, x_range, y_range=None):
         """グリッド作成"""
@@ -210,6 +194,8 @@ class CCDTester1D(CCDTester):
     def _create_solver(self):
         """1D用ソルバー作成"""
         self.solver = CCDSolver1D(self.equation_set, self.grid)
+        # システム行列への参照を保持
+        self.matrix_A = self.solver.matrix_A
             
     def get_dimension(self):
         return 1
@@ -244,7 +230,8 @@ class CCDTester1D(CCDTester):
         }
         
         self._init_solver()
-        return self.solver._build_rhs_vector(f_values=f_values, **boundary)
+        # 新しいインターフェースを使用
+        return self.solver.rhs_builder.build_rhs_vector(f_values=f_values, **boundary)
     
     def _compute_exact(self, test_func):
         """1D厳密解計算"""
@@ -322,6 +309,8 @@ class CCDTester2D(CCDTester):
     def _create_solver(self):
         """2D用ソルバー作成"""
         self.solver = CCDSolver2D(self.equation_set, self.grid)
+        # システム行列への参照を保持
+        self.matrix_A = self.solver.matrix_A
             
     def get_dimension(self):
         return 2
@@ -373,7 +362,8 @@ class CCDTester2D(CCDTester):
         }
         
         self._init_solver()
-        return self.solver._build_rhs_vector(f_values=f_values, **boundary)
+        # 新しいインターフェースを使用
+        return self.solver.rhs_builder.build_rhs_vector(f_values=f_values, **boundary)
     
     def _compute_exact(self, test_func):
         """2D厳密解計算"""

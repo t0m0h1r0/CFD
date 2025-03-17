@@ -7,6 +7,9 @@ from test_functions import TestFunctionFactory
 from visualization1d import CCDVisualizer
 from visualization2d import CCD2DVisualizer
 from scaling import plugin_manager
+# リファクタリングされたソルバーモジュールをインポート
+from ccd_solver import CCDSolver1D, CCDSolver2D
+from linear_solver import create_solver
 
 def parse_args():
     """コマンドライン引数の解析"""
@@ -26,7 +29,7 @@ def parse_args():
     parser.add_argument("--yrange", type=float, nargs=2, default=[-1.0, 1.0], help="y方向の範囲 (2Dのみ)")
     
     # ソルバー設定
-    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'minres', 'lsmr', 'bicgstab'], 
+    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'minres', 'lsmr'], 
                       default='direct', help="ソルバー手法")
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法")
     parser.add_argument("--analyze", action="store_true", help="行列を分析する")
@@ -63,13 +66,36 @@ def create_tester(args):
         "monitor_convergence": args.monitor,
         "output_dir": args.out,
         "prefix": args.prefix,
-        "force_cpu": args.force_cpu  # 新しいオプションを追加
+        "force_cpu": args.force_cpu  # CPU強制使用オプション
     }
     tester.set_solver_options(args.solver, solver_options, args.analyze)
     tester.scaling_method = args.scaling
     tester.set_equation_set(args.equation)
     
     return tester
+
+def create_solver_instance(args, equation_set, grid):
+    """リファクタリングされたソルバークラスのインスタンスを作成"""
+    # 次元に応じたソルバーを作成
+    if args.dim == 1:
+        solver = CCDSolver1D(equation_set, grid)
+    else:
+        solver = CCDSolver2D(equation_set, grid)
+
+    # ソルバーオプション設定
+    solver_options = {
+        "tol": 1e-10,
+        "maxiter": 1000,
+        "monitor_convergence": args.monitor,
+        "output_dir": args.out,
+        "prefix": args.prefix,
+        "force_cpu": args.force_cpu  # CPU強制使用オプション
+    }
+    
+    # 線形ソルバー設定
+    solver.set_solver(method=args.solver, options=solver_options, scaling_method=args.scaling)
+    
+    return solver
 
 def list_functions(dim):
     """利用可能な関数一覧表示"""
