@@ -22,7 +22,7 @@ class LinearSystemSolver:
         線形方程式系ソルバーを初期化
         
         Args:
-            method: 解法メソッド ("direct", "gmres", "cg", "cgs", "minres", "lsqr")
+            method: 解法メソッド ("direct", "gmres", "cg", "cgs", "minres", "lsqr", "bicgstab")
             options: ソルバーオプション辞書
             scaling_method: スケーリング手法名
         """
@@ -71,6 +71,10 @@ class LinearSystemSolver:
         import cupyx.scipy.sparse.linalg as splinalg
         
         try:
+            # CPUのみでサポートされるソルバーのチェック
+            if self.method == "bicgstab":
+                raise NotImplementedError("bicgstabはCuPyでサポートされていないため、CPU処理に切り替えます")
+                
             if self.method == "direct":
                 x = splinalg.spsolve(A, b)
                 iterations = None
@@ -108,7 +112,14 @@ class LinearSystemSolver:
             elif self.method in ["cg", "cgs", "minres"]:
                 tol = self.options.get("tol", 1e-10)
                 maxiter = self.options.get("maxiter", 1000)
-                solver_func = getattr(splinalg, self.method)
+                
+                # メソッドがCuPyにあるか確認
+                try:
+                    solver_func = getattr(splinalg, self.method)
+                except AttributeError:
+                    print(f"CuPyは{self.method}をサポートしていません。CPU処理に切り替えます。")
+                    raise NotImplementedError(f"{self.method}はCuPyで実装されていません")
+                
                 x0 = cp.zeros_like(b)
                 
                 # コールバックを安全に扱う
@@ -132,8 +143,14 @@ class LinearSystemSolver:
                     iterations = info
                     
             elif self.method in ["lsqr", "lsmr"]:
-                solver_func = getattr(splinalg, self.method)
                 maxiter = self.options.get("maxiter", 1000)
+                
+                # メソッドがCuPyにあるか確認
+                try:
+                    solver_func = getattr(splinalg, self.method)
+                except AttributeError:
+                    print(f"CuPyは{self.method}をサポートしていません。CPU処理に切り替えます。")
+                    raise NotImplementedError(f"{self.method}はCuPyで実装されていません")
                 
                 try:
                     if self.method == "lsmr":
@@ -163,7 +180,7 @@ class LinearSystemSolver:
         import scipy.sparse.linalg as splinalg_cpu
         
         try:
-            if self.method == "direct" or self.method not in ["gmres", "cg", "cgs", "minres", "lsqr", "lsmr"]:
+            if self.method == "direct" or self.method not in ["gmres", "cg", "cgs", "minres", "lsqr", "lsmr", "bicgstab"]:
                 x = splinalg_cpu.spsolve(A, b)
                 iterations = None
             elif self.method == "gmres":
@@ -185,6 +202,40 @@ class LinearSystemSolver:
                     except Exception as ee:
                         print(f"GMRES再試行エラー: {ee}")
                         # 最後の手段: 直接法
+                        print("直接法にフォールバック")
+                        x = splinalg_cpu.spsolve(A, b)
+                        iterations = None
+            elif self.method == "bicgstab":
+                # BiCGSTABの場合、パラメータをSciPyの仕様に合わせて修正
+                maxiter = self.options.get("maxiter", 1000)
+                atol = self.options.get("tol", 1e-10)  # tolをatolとして使用
+                
+                try:
+                    # SciPyのBiCGSTABに適切なパラメータを使用
+                    print(f"BiCGSTABを実行: maxiter={maxiter}, atol={atol}")
+                    x, iterations = splinalg_cpu.bicgstab(A, b, maxiter=maxiter)
+                    
+                    # 負の反復回数は収束失敗を示す
+                    if iterations < 0:
+                        print(f"BiCGSTAB収束失敗: 状態コード={iterations}")
+                        if iterations == -10:
+                            print("計算が発散または停滞しました")
+                        elif iterations == -1:
+                            print("入力パラメータに問題があります")
+                        # 直接法にフォールバック
+                        print("直接法にフォールバック")
+                        x = splinalg_cpu.spsolve(A, b)
+                    else:
+                        print(f"BiCGSTAB実行完了: 反復回数={iterations}")
+                except TypeError as te:
+                    print(f"SciPyのBiCGSTABでパラメータエラー: {te}")
+                    # 最小限のパラメータで再試行
+                    try:
+                        x, iterations = splinalg_cpu.bicgstab(A, b)
+                        print(f"最小パラメータでBiCGSTAB実行完了: 反復回数={iterations}")
+                    except Exception as ee:
+                        print(f"BiCGSTAB再試行エラー: {ee}")
+                        # 直接法にフォールバック
                         print("直接法にフォールバック")
                         x = splinalg_cpu.spsolve(A, b)
                         iterations = None
@@ -265,9 +316,15 @@ class LinearSystemSolver:
         # force_cpuオプションが設定されているかチェック
         force_cpu = self.options.get("force_cpu", False)
         
+        # CPUのみでサポートされるソルバーのチェック
+        cpu_only_solvers = ["bicgstab"]
+        if self.method in cpu_only_solvers:
+            print(f"{self.method}はCPUでのみサポートされているソルバーです。CPU処理を強制します。")
+            force_cpu = True
+        
         if force_cpu:
             # CPU処理を強制的に実行
-            print("CPU処理を強制的に実行します (スケーリング機能は無効化されます)...")
+            print("CPU処理を実行します (スケーリング機能は無効化されます)...")
             
             # GPUメモリを解放
             self.clear_gpu_memory()
@@ -325,18 +382,37 @@ class LinearSystemSolver:
                 if self.monitor_convergence:
                     def callback(xk):
                         try:
-                            # 残差計算時にスカラー演算子の問題を回避するため明示的にマトリックス乗算を使用
-                            resid_vec = b_scaled - self.A_scaled_gpu.dot(xk)
-                            residual = cp.linalg.norm(resid_vec) / cp.linalg.norm(b_scaled)
-                            res_value = float(residual)  # GPUからCPUに転送
+                            # スカラー演算子問題を回避する完全に別の実装
+                            # 1. 行列-ベクトル積を計算
+                            Axk = self.A_scaled_gpu.dot(xk)
+                            
+                            # 2. 残差ベクトルを計算 (b_scaled - Axk)
+                            resid_vec = b_scaled.copy()
+                            resid_vec -= Axk  # インプレース減算
+                            
+                            # 3. ノルム計算
+                            res_norm = cp.linalg.norm(resid_vec)
+                            b_norm = cp.linalg.norm(b_scaled)
+                            
+                            # 4. 残差比を計算 (ゼロ除算防止)
+                            if b_norm > 1e-15:
+                                # res_value = res_norm / b_norm
+                                # 除算を避けるため、逆数を掛ける
+                                b_norm_inv = 1.0 / float(b_norm)
+                                res_value = float(res_norm) * b_norm_inv
+                            else:
+                                res_value = float(res_norm)
+                            
+                            # 5. 結果を記録
                             residuals.append(res_value)
                             if len(residuals) % 10 == 0:
                                 print(f"  反復 {len(residuals)}: 残差 = {res_value:.6e}")
                             return res_value
                         except Exception as e:
-                            print(f"コールバック内でエラー: {e}")
-                            # エラーがあっても処理を続行
+                            print(f"コールバック内でエラー: {type(e).__name__}: {e}")
+                            # エラー発生時はNoneを返す（反復は続行）
                             return None
+                        
                 else:
                     callback = None
                     
@@ -357,7 +433,7 @@ class LinearSystemSolver:
                     self.clear_gpu_memory()
                     # CPU計算に切り替え
                     x, iterations = self._solve_with_cpu(A, b)
-                
+                    
             except ImportError as ie:
                 print(f"CuPyが利用できません: {ie}")
                 print("CPU処理を実行します...")
