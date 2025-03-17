@@ -1,16 +1,10 @@
-"""
-線形方程式系 Ax=b を解くためのソルバーモジュール
-
-このモジュールはCPU (SciPy)、GPU (CuPy)、およびJAX実装の線形ソルバーを提供し、
-スパース行列向けの様々な解法 (直接解法・反復解法) をサポートします。
-"""
+"""線形方程式系 Ax=b を解くためのソルバーモジュール"""
 
 import os
 import time
 import numpy as np
 import scipy.sparse.linalg as splinalg_cpu
 from abc import ABC, abstractmethod
-
 from scaling import plugin_manager
 
 
@@ -18,44 +12,57 @@ class LinearSolver(ABC):
     """線形方程式系 Ax=b を解くための抽象基底クラス"""
     
     def __init__(self, method="direct", options=None, scaling_method=None):
-        """
-        線形方程式系ソルバーを初期化
-        
-        Args:
-            method: 解法メソッド
-            options: ソルバーオプション辞書
-            scaling_method: スケーリング手法名
-        """
         self.method = method
         self.options = options or {}
         self.scaling_method = scaling_method
         self.last_iterations = None
         self.monitor_convergence = self.options.get("monitor_convergence", False)
+        
+        # 継承クラスで拡張される解法辞書
+        self.solvers = {"direct": self._solve_direct}
     
     @abstractmethod
     def solve(self, A, b):
-        """
-        線形方程式系を解く
-        
-        Args:
-            A: システム行列
-            b: 右辺ベクトル
-            
-        Returns:
-            解ベクトル x
-        """
+        """線形方程式系を解く"""
         pass
     
+    def _solve_system(self, A, b, residuals=None):
+        """適切な解法で方程式系を解く"""
+        if self.method not in self.solvers:
+            print(f"未対応の解法: {self.method}、directに切り替えます")
+            self.method = "direct"
+        
+        return self.solvers[self.method](A, b, residuals)
+    
+    def _create_callback(self, A, b, residuals):
+        """収束モニタリング用コールバック関数"""
+        if not self.monitor_convergence:
+            return None
+            
+        def callback(xk):
+            residual = self._calculate_residual(A, b, xk)
+            residuals.append(float(residual))
+            if len(residuals) % 10 == 0:
+                print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
+        
+        return callback
+    
+    def _calculate_residual(self, A, b, x):
+        """残差計算"""
+        return np.linalg.norm(b - A @ x) / np.linalg.norm(b)
+    
+    def _solve_direct(self, A, b, *args):
+        """直接解法（サブクラスでオーバーライド）"""
+        raise NotImplementedError()
+    
     def _visualize_convergence(self, residuals):
-        """収束履歴をグラフ化（必要な場合）"""
+        """収束履歴を可視化"""
         if not residuals:
             return
             
-        # 出力ディレクトリを確保
         output_dir = self.options.get("output_dir", "results")
         os.makedirs(output_dir, exist_ok=True)
         
-        # 残差の推移グラフ
         import matplotlib.pyplot as plt
         plt.figure(figsize=(8, 5))
         plt.semilogy(range(1, len(residuals)+1), residuals, 'b-')
@@ -64,7 +71,6 @@ class LinearSolver(ABC):
         plt.ylabel('残差 (対数スケール)')
         plt.title(f'{self.method.upper()} ソルバーの収束履歴')
         
-        # 保存
         prefix = self.options.get("prefix", "")
         filename = os.path.join(output_dir, f"{prefix}_convergence_{self.method}.png")
         plt.savefig(filename, dpi=150)
@@ -74,178 +80,129 @@ class LinearSolver(ABC):
 class CPULinearSolver(LinearSolver):
     """CPU (SciPy) を使用した線形方程式系ソルバー"""
     
-    def solve(self, A, b):
-        """
-        SciPy を使用して線形方程式系を解く
+    ITERATIVE_METHODS = ['cg', 'cgs', 'bicgstab', 'minres']
+    LEAST_SQUARES_METHODS = ['lsqr', 'lsmr']
+    
+    def __init__(self, method="direct", options=None, scaling_method=None):
+        super().__init__(method, options, scaling_method)
         
-        Args:
-            A: システム行列 (SciPy CSR形式)
-            b: 右辺ベクトル (NumPy配列)
-            
-        Returns:
-            解ベクトル x (NumPy配列)
-        """
-        # 開始時間を記録
+        # 解法メソッド辞書を拡張
+        self.solvers.update({
+            'gmres': self._solve_gmres,
+            'lsqr': self._solve_least_squares,
+            'lsmr': self._solve_least_squares
+        })
+        
+        # 反復解法を追加
+        for method in self.ITERATIVE_METHODS:
+            self.solvers[method] = self._solve_iterative
+    
+    def solve(self, A, b):
+        """SciPy を使用して線形方程式系を解く"""
         start_time = time.time()
         residuals = []
         
-        if self.method == "direct" or self.method not in ["gmres", "cg", "cgs", "minres", "lsqr", "lsmr"]:
-            x = splinalg_cpu.spsolve(A, b)
-            iterations = None
-        elif self.method == "gmres":
-            tol = self.options.get("tol", 1e-10)
-            maxiter = self.options.get("maxiter", 1000)
-            restart = self.options.get("restart", 100)
-            x0 = np.ones_like(b)
-            
-            # 収束モニター
-            if self.monitor_convergence:
-                def callback(xk):
-                    residual = np.linalg.norm(b - A @ xk) / np.linalg.norm(b)
-                    residuals.append(float(residual))
-                    if len(residuals) % 10 == 0:
-                        print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
-            else:
-                callback = None
-            
-            # SciPyバージョンに対応するAPI呼び出し
-            try:
-                # 標準のパラメータで試行
-                x, iterations = splinalg_cpu.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
-                                                  restart=restart, callback=callback)
-            except TypeError:
-                # パラメータ互換性問題の場合、最小限のパラメータで再試行
-                print("警告: SciPyのAPI互換性問題を検出しました。最小限のパラメータで再試行します。")
-                x, iterations = splinalg_cpu.gmres(A, b, restart=restart)
-        elif self.method in ["cg", "cgs"]:
-            tol = self.options.get("tol", 1e-10)
-            maxiter = self.options.get("maxiter", 1000)
-            solver_func = getattr(splinalg_cpu, self.method)
-            x0 = np.ones_like(b)
-            
-            # 収束モニター
-            if self.monitor_convergence:
-                def callback(xk):
-                    residual = np.linalg.norm(b - A @ xk) / np.linalg.norm(b)
-                    residuals.append(float(residual))
-                    if len(residuals) % 10 == 0:
-                        print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
-            else:
-                callback = None
-            
-            # SciPyバージョンに対応するAPI呼び出し
-            try:
-                x, iterations = solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
-            except TypeError:
-                # パラメータ互換性問題の場合、最小限のパラメータで再試行
-                print("警告: SciPyのAPI互換性問題を検出しました。最小限のパラメータで再試行します。")
-                x, iterations = solver_func(A, b)
-        elif self.method == "minres":
-            tol = self.options.get("tol", 1e-10)
-            maxiter = self.options.get("maxiter", 1000)
-            x0 = np.ones_like(b)
-            
-            # 収束モニター
-            if self.monitor_convergence:
-                def callback(xk):
-                    residual = np.linalg.norm(b - A @ xk) / np.linalg.norm(b)
-                    residuals.append(float(residual))
-                    if len(residuals) % 10 == 0:
-                        print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
-            else:
-                callback = None
-            
-            # SciPyバージョンに対応するAPI呼び出し
-            try:
-                x, iterations = splinalg_cpu.minres(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
-            except TypeError:
-                # パラメータ互換性問題の場合、最小限のパラメータで再試行
-                print("警告: SciPyのAPI互換性問題を検出しました。最小限のパラメータで再試行します。")
-                x, iterations = splinalg_cpu.minres(A, b)
-        elif self.method in ["lsqr", "lsmr"]:
-            maxiter = self.options.get("maxiter", 1000)
-            solver_func = getattr(splinalg_cpu, self.method)
-            
-            # SciPyバージョンに対応するAPI呼び出し
-            try:
-                x = solver_func(A, b, iter_lim=maxiter)[0]
-            except TypeError:
-                # パラメータ互換性問題の場合、最小限のパラメータで再試行
-                print("警告: SciPyのAPI互換性問題を検出しました。最小限のパラメータで再試行します。")
-                x = solver_func(A, b)[0]
-            iterations = None
+        # 解法実行
+        x, iterations = self._solve_system(A, b, residuals)
         
-        # 経過時間を計算
+        # ログと可視化
         elapsed = time.time() - start_time
         self.last_iterations = iterations
+        print(f"CPU解法: {self.method}, 時間: {elapsed:.4f}秒" + (f", 反復: {iterations}" if iterations else ""))
         
-        print(f"CPU (SciPy) 解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
-        if iterations:
-            print(f"反復回数: {iterations}")
-            
-        # 収束履歴を表示
         if self.monitor_convergence and residuals:
             self._visualize_convergence(residuals)
         
         return x
+    
+    def _solve_direct(self, A, b, *args):
+        """直接解法"""
+        return splinalg_cpu.spsolve(A, b), None
+    
+    def _solve_gmres(self, A, b, residuals):
+        """GMRES法"""
+        tol = self.options.get("tol", 1e-10)
+        maxiter = self.options.get("maxiter", 1000)
+        restart = self.options.get("restart", 100)
+        x0 = np.ones_like(b)
+        
+        callback = self._create_callback(A, b, residuals)
+        
+        try:
+            return splinalg_cpu.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
+                                      restart=restart, callback=callback)
+        except TypeError:
+            return splinalg_cpu.gmres(A, b, restart=restart)
+    
+    def _solve_iterative(self, A, b, residuals):
+        """反復解法共通インターフェース"""
+        tol = self.options.get("tol", 1e-10)
+        maxiter = self.options.get("maxiter", 1000)
+        x0 = np.ones_like(b)
+        
+        callback = self._create_callback(A, b, residuals)
+        solver_func = getattr(splinalg_cpu, self.method)
+        
+        try:
+            return solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
+        except TypeError:
+            return solver_func(A, b)
+    
+    def _solve_least_squares(self, A, b, *args):
+        """最小二乗法ソルバー"""
+        maxiter = self.options.get("maxiter", 1000)
+        solver_func = getattr(splinalg_cpu, self.method)
+        
+        try:
+            x = solver_func(A, b, iter_lim=maxiter)[0]
+        except TypeError:
+            x = solver_func(A, b)[0]
+        
+        return x, None
 
 
 class GPULinearSolver(LinearSolver):
     """GPU (CuPy) を使用した線形方程式系ソルバー"""
     
     def __init__(self, method="direct", options=None, scaling_method=None):
-        """
-        GPU線形方程式系ソルバーを初期化
-        
-        Args:
-            method: 解法メソッド
-            options: ソルバーオプション辞書
-            scaling_method: スケーリング手法名
-        """
         super().__init__(method, options, scaling_method)
         self.A_gpu = None
         self.A_scaled_gpu = None
         self.scaling_info = None
         self.scaler = None
         self.original_A = None
+        
+        # CuPyが利用可能か確認
+        try:
+            import cupy as cp
+            import cupyx.scipy.sparse.linalg as splinalg
+            self.cp = cp
+            self.splinalg = splinalg
+            
+            # 解法メソッド辞書を拡張
+            self.solvers.update({
+                'gmres': self._solve_gmres,
+                'cg': self._solve_iterative,
+                'cgs': self._solve_iterative,
+                'minres': self._solve_iterative,
+                'lsqr': self._solve_least_squares,
+                'lsmr': self._solve_least_squares
+            })
+        except ImportError:
+            self.cp = None
     
     def __del__(self):
-        """デストラクタ：インスタンス削除時にGPUメモリを解放"""
-        self.clear_gpu_memory()
-    
-    def clear_gpu_memory(self):
-        """GPU上の行列メモリを解放"""
+        """デストラクタ：GPU上のメモリを解放"""
         self.A_gpu = None
         self.A_scaled_gpu = None
-        self.scaling_info = None
-        self.scaler = None
-        if hasattr(self, 'original_A'):
-            self.original_A = None
     
     def _is_new_matrix(self, A):
-        """現在のGPU行列と異なる行列かどうかを判定"""
-        # GPU行列がまだないか、形状が違う場合は新しい行列
-        if self.A_gpu is None or self.original_A is None or self.A_gpu.shape != A.shape:
-            return True
-        
-        # 形状が同じ場合は、保存している参照と比較
-        if self.original_A is A:
-            return False
-        
-        # オブジェクトが異なれば新しい行列と判断
-        return True
+        """現在のGPU行列と異なる行列かを判定"""
+        return (self.A_gpu is None or self.original_A is None or 
+                self.A_gpu.shape != A.shape or self.original_A is not A)
     
     def _apply_scaling(self, A, b):
-        """
-        行列と右辺ベクトルにスケーリングを適用
-        
-        Args:
-            A: システム行列 (GPU)
-            b: 右辺ベクトル (GPU)
-            
-        Returns:
-            tuple: (scaled_A, scaled_b, scaling_info, scaler)
-        """
+        """行列と右辺ベクトルにスケーリングを適用"""
         if self.scaling_method is not None:
             scaler = plugin_manager.get_plugin(self.scaling_method)
             if scaler:
@@ -255,334 +212,304 @@ class GPULinearSolver(LinearSolver):
         
         return A, b, None, None
     
-    def _solve_gpu(self, A, b, callback=None):
-        """
-        GPU上で線形方程式系を解く
-        
-        Args:
-            A: システム行列 (CuPy CSR形式)
-            b: 右辺ベクトル (CuPy配列)
-            callback: 収束モニタリング用コールバック関数
-            
-        Returns:
-            tuple: (x, iterations)
-        """
-        import cupy as cp
-        import cupyx.scipy.sparse.linalg as splinalg
-        
-        if self.method == "direct":
-            x = splinalg.spsolve(A, b)
-            iterations = None
-        elif self.method == "gmres":
-            tol = self.options.get("tol", 1e-10)
-            maxiter = self.options.get("maxiter", 1000)
-            restart = self.options.get("restart", 100)
-            x0 = cp.ones_like(b)
-            x, iterations = splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
-                                          restart=restart, callback=callback)
-        elif self.method in ["cg", "cgs", "minres"]:
-            tol = self.options.get("tol", 1e-10)
-            maxiter = self.options.get("maxiter", 1000)
-            solver_func = getattr(splinalg, self.method)
-            x0 = cp.ones_like(b)
-            x, iterations = solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
-        elif self.method in ["lsqr", "lsmr"]:
-            solver_func = getattr(splinalg, self.method)
-            maxiter = self.options.get("maxiter", 1000)
-            if self.method == "lsmr":
-                x0 = cp.ones_like(b)
-                x = solver_func(A, b, x0=x0, maxiter=maxiter)[0]
-            else:
-                x = solver_func(A, b)[0]
-            iterations = None
-        else:
-            print(f"未知の解法 {self.method}。直接解法を使用します。")
-            x = splinalg.spsolve(A, b)
-            iterations = None
-        
-        return x, iterations
-        
     def solve(self, A, b):
-        """
-        線形方程式系を解く
-        
-        Args:
-            A: システム行列 (CPU/SciPy形式)
-            b: 右辺ベクトル (CPU/NumPy形式)
-            
-        Returns:
-            解ベクトル x (CPU/NumPy形式)
-        """
-        # GPUが利用可能かチェック
-        try:
-            import cupy as cp
-            import cupyx.scipy.sparse as sp
-        except ImportError:
+        """CuPyを使用して線形方程式系を解く"""
+        if self.cp is None:
             print("CuPyが利用できません。CPUソルバーに切り替えます。")
             return CPULinearSolver(self.method, self.options, self.scaling_method).solve(A, b)
         
-        # スケーリング実行前のタイミング計測
         start_time = time.time()
         residuals = []
         
-        # 行列が変更されたかチェック
+        # 行列準備（新しい行列か再利用）
         is_new_matrix = self._is_new_matrix(A)
         
-        # 新しい行列の場合はGPUに転送
         if is_new_matrix:
-            print("行列を GPU (CuPy) に転送しています...")
-            self.clear_gpu_memory()
-            self.A_gpu = sp.csr_matrix(A)
-            self.original_A = A  # 元の行列への参照を保存
-            
-            # 新しい行列なのでスケーリング情報もリセット
+            print("行列をGPUに転送中...")
+            self.A_gpu = self.cp.sparse.csr_matrix(A)
+            self.original_A = A
             self.A_scaled_gpu = None
-            self.scaling_info = None
-            self.scaler = None
-        else:
-            print("GPU上の既存行列を再利用します")
         
         # bをGPUに転送
-        b_gpu = cp.array(b)
+        b_gpu = self.cp.array(b)
         
-        # スケーリングを適用または再利用
+        # スケーリング適用または再利用
         if is_new_matrix or self.A_scaled_gpu is None:
-            # 新しい行列または初めての呼び出し時
             self.A_scaled_gpu, b_scaled, self.scaling_info, self.scaler = self._apply_scaling(self.A_gpu, b_gpu)
         else:
-            # 既存のスケーリング済み行列を再利用して、bだけを新たにスケーリング
             if self.scaling_method is not None and self.scaler is not None:
-                # スケーリング情報からbをスケーリング
                 if hasattr(self.scaler, 'scale_b_only'):
-                    # scale_b_onlyメソッドがあればそれを使用
                     b_scaled = self.scaler.scale_b_only(b_gpu, self.scaling_info)
                 else:
-                    # なければ完全なスケーリングを実行しA_scaled_gpuは無視
                     _, b_scaled, _, _ = self.scaler.scale(self.A_gpu, b_gpu)
             else:
                 b_scaled = b_gpu
         
-        # モニタリングコールバック
-        if self.monitor_convergence:
-            def callback(xk):
-                residual = cp.linalg.norm(b_scaled - self.A_scaled_gpu @ xk) / cp.linalg.norm(b_scaled)
-                residuals.append(float(residual))
-                if len(residuals) % 10 == 0:
-                    print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
-        else:
-            callback = None
-            
-        # GPU で計算を実行
+        # GPU で計算実行
         try:
-            x_gpu, iterations = self._solve_gpu(self.A_scaled_gpu, b_scaled, callback)
+            x_gpu, iterations = self._solve_system(self.A_scaled_gpu, b_scaled, residuals)
+            
+            # スケーリングを戻す
+            if self.scaling_info is not None and self.scaler is not None:
+                x_gpu = self.scaler.unscale(x_gpu, self.scaling_info)
+                
+            # 結果をCPUに転送
+            x = x_gpu.get()
         except Exception as e:
-            print(f"GPU処理でエラー: {e}")
-            print("CPU (SciPy) に切り替えて計算を実行します...")
-            # エラー時はGPUメモリを解放して再試行を容易にする
-            self.clear_gpu_memory()
+            print(f"GPU処理エラー: {e}、CPUに切り替えます")
             return CPULinearSolver(self.method, self.options, self.scaling_method).solve(A, b)
         
-        # スケーリングを戻す
-        if self.scaling_info is not None and self.scaler is not None:
-            x_gpu = self.scaler.unscale(x_gpu, self.scaling_info)
-            
-        # 結果をCPUに転送
-        x = x_gpu.get()
-        
+        # ログと可視化
         elapsed = time.time() - start_time
         self.last_iterations = iterations
+        print(f"GPU解法: {self.method}, 時間: {elapsed:.4f}秒" + (f", 反復: {iterations}" if iterations else ""))
         
-        print(f"GPU (CuPy) 解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
-        if iterations:
-            print(f"反復回数: {iterations}")
-            
         if self.monitor_convergence and residuals:
             self._visualize_convergence(residuals)
         
         return x
+    
+    def _calculate_residual(self, A, b, x):
+        """GPU用の残差計算"""
+        return self.cp.linalg.norm(b - A @ x) / self.cp.linalg.norm(b)
+    
+    def _solve_direct(self, A, b, *args):
+        """CuPyの直接解法"""
+        return self.splinalg.spsolve(A, b), None
+    
+    def _solve_gmres(self, A, b, residuals):
+        """CuPyのGMRES法"""
+        tol = self.options.get("tol", 1e-10)
+        maxiter = self.options.get("maxiter", 1000)
+        restart = self.options.get("restart", 100)
+        x0 = self.cp.ones_like(b)
+        
+        callback = self._create_callback(A, b, residuals)
+        
+        return self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
+                                  restart=restart, callback=callback)
+    
+    def _solve_iterative(self, A, b, residuals):
+        """CuPy反復解法共通インターフェース"""
+        tol = self.options.get("tol", 1e-10)
+        maxiter = self.options.get("maxiter", 1000)
+        x0 = self.cp.ones_like(b)
+        
+        callback = self._create_callback(A, b, residuals)
+        solver_func = getattr(self.splinalg, self.method)
+        
+        return solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
+    
+    def _solve_least_squares(self, A, b, *args):
+        """CuPy最小二乗法ソルバー"""
+        maxiter = self.options.get("maxiter", 1000)
+        solver_func = getattr(self.splinalg, self.method)
+        
+        if self.method == "lsmr":
+            x0 = self.cp.ones_like(b)
+            x = solver_func(A, b, x0=x0, maxiter=maxiter)[0]
+        else:
+            x = solver_func(A, b)[0]
+            
+        return x, None
 
 
 class JAXLinearSolver(LinearSolver):
     """JAX を使用した線形方程式系ソルバー"""
     
     def __init__(self, method="direct", options=None, scaling_method=None):
-        """
-        JAX線形方程式系ソルバーを初期化
-        
-        Args:
-            method: 解法メソッド
-            options: ソルバーオプション辞書
-            scaling_method: スケーリング手法名
-        """
         super().__init__(method, options, scaling_method)
         self.last_matrix = None
         self.last_op = None
-    
-    def solve(self, A, b):
-        """
-        JAX を使用して線形方程式系を解く
         
-        Args:
-            A: システム行列 (SciPy CSR形式)
-            b: 右辺ベクトル (NumPy配列)
-            
-        Returns:
-            解ベクトル x (NumPy配列)
-        """
+        # JAXが利用可能か確認
         try:
             import jax
             import jax.numpy as jnp
-            from jax.experimental import sparse as jsparse
+            self.jax = jax
+            self.jnp = jnp
+            
+            # 解法メソッド辞書を拡張
+            self.solvers.update({
+                'cg': self._solve_cg,
+                'bicgstab': self._solve_bicgstab
+            })
         except ImportError:
-            print("JAXがインストールされていません。CPUソルバーに切り替えます。")
+            self.jax = None
+    
+    def solve(self, A, b):
+        """JAX を使用して線形方程式系を解く"""
+        if self.jax is None:
+            print("JAXが利用できません。CPUソルバーに切り替えます。")
             return CPULinearSolver(self.method, self.options, self.scaling_method).solve(A, b)
         
-        # 開始時間を記録
         start_time = time.time()
         residuals = []
         
-        # 行列と右辺ベクトルをJAXで処理できる形式に変換
-        data = jnp.array(A.data)
-        indices = jnp.array(A.indices)
-        indptr = jnp.array(A.indptr)
-        b_jax = jnp.array(b)
-        shape = A.shape
+        # JAX形式に変換
+        self._prepare_jax_matrix(A, b)
+        
+        # 解法実行
+        try:
+            x, iterations = self._solve_system(A, b, residuals)
+        except Exception as e:
+            print(f"JAX処理エラー: {e}、CPUに切り替えます")
+            return CPULinearSolver(self.method, self.options, self.scaling_method).solve(A, b)
+        
+        # ログと可視化
+        elapsed = time.time() - start_time
+        self.last_iterations = iterations
+        print(f"JAX解法: {self.method}, 時間: {elapsed:.4f}秒" + (f", 反復: {iterations}" if iterations else ""))
+        
+        if self.monitor_convergence and residuals:
+            self._visualize_convergence(residuals)
+        
+        return np.array(x)
+    
+    def _prepare_jax_matrix(self, A, b):
+        """JAX形式に行列を準備"""
+        from jax.experimental import sparse as jsparse
+        
+        # 行列と右辺ベクトルをJAX形式に変換
+        data = self.jnp.array(A.data)
+        indices = self.jnp.array(A.indices)
+        indptr = self.jnp.array(A.indptr)
+        self.b_jax = self.jnp.array(b)
+        self.shape = A.shape
         
         # 行列-ベクトル積を定義
         def matvec(x):
-            return jsparse.csr_matvec(data, indices, indptr, shape[1], x)
-        
-        # 新しい行列かどうかチェック
-        new_matrix = (self.last_matrix is None or 
-                      self.last_matrix[0] is not A or 
-                      self.last_matrix[1].shape != shape)
+            return jsparse.csr_matvec(data, indices, indptr, self.shape[1], x)
         
         # 新しい行列の場合、JAX操作をコンパイル
-        if new_matrix:
-            print("JAX MatVec関数をコンパイル中...")
-            self.last_op = jax.jit(matvec)
-            self.last_matrix = (A, A)  # 元の行列への参照を保存
+        if (self.last_matrix is None or self.last_matrix[0] is not A or 
+            self.last_matrix[1].shape != self.shape):
+            self.last_op = self.jax.jit(matvec)
+            self.last_matrix = (A, A)
         
-        # 解法選択
-        if self.method == "direct":
-            # JAXでは密行列に変換して直接解法
-            dense_A = A.toarray()
-            dense_A_jax = jnp.array(dense_A)
-            
-            try:
-                # JAXの直接解法で解く
-                x = jnp.linalg.solve(dense_A_jax, b_jax)
-                iterations = None
-            except Exception as e:
-                print(f"JAXの直接解法でエラー: {e}")
-                print("NumPy直接解法にフォールバックします。")
-                x = np.linalg.solve(dense_A, b)
-                iterations = None
+        # 密行列に変換（直接解法用）
+        self.dense_A = A.toarray()
+        self.dense_A_jax = self.jnp.array(self.dense_A)
+    
+    def _solve_direct(self, A, b, *args):
+        """JAXの直接解法を使用"""
+        try:
+            x = self.jnp.linalg.solve(self.dense_A_jax, self.b_jax)
+            return x, None
+        except Exception as e:
+            x = np.linalg.solve(self.dense_A, b)
+            return self.jnp.array(x), None
+    
+    def _solve_cg(self, A, b, residuals):
+        """JAX共役勾配法"""
+        tol = self.options.get("tol", 1e-10)
+        maxiter = self.options.get("maxiter", 1000)
         
-        elif self.method == "cg":
-            # 共役勾配法のパラメータ設定
-            tol = self.options.get("tol", 1e-10)
-            maxiter = self.options.get("maxiter", 1000)
+        # 初期値設定
+        x0 = self.jnp.ones_like(self.b_jax)
+        r0 = self.b_jax - self.last_op(x0)
+        p0 = r0
+        
+        # JAX CG実装
+        def cg_step(state):
+            x_k, r_k, p_k, k = state
+            Ap_k = self.last_op(p_k)
+            alpha_k = self.jnp.dot(r_k, r_k) / self.jnp.maximum(self.jnp.dot(p_k, Ap_k), 1e-15)
+            x_next = x_k + alpha_k * p_k
+            r_next = r_k - alpha_k * Ap_k
+            beta_k = self.jnp.dot(r_next, r_next) / self.jnp.maximum(self.jnp.dot(r_k, r_k), 1e-15)
+            p_next = r_next + beta_k * p_k
             
-            # 初期値設定
-            x0 = jnp.ones_like(b_jax)
-            r0 = b_jax - self.last_op(x0)
-            p0 = r0
-            
-            # モニタリングコールバック
-            if self.monitor_convergence:
-                def callback(state):
-                    x_k, _, _, iter_num = state
-                    residual = jnp.linalg.norm(b_jax - self.last_op(x_k)) / jnp.linalg.norm(b_jax)
-                    residuals.append(float(residual))
-                    if len(residuals) % 10 == 0:
-                        print(f"  反復 {iter_num}: 残差 = {residual:.6e}")
-                    return state
-            else:
-                callback = None
-            
-            # JAX特有の効率的CG実装
-            def cg_step(state):
-                x_k, r_k, p_k, k = state
-                Ap_k = self.last_op(p_k)
-                alpha_k = jnp.dot(r_k, r_k) / jnp.dot(p_k, Ap_k)
-                x_next = x_k + alpha_k * p_k
-                r_next = r_k - alpha_k * Ap_k
-                beta_k = jnp.dot(r_next, r_next) / jnp.dot(r_k, r_k)
-                p_next = r_next + beta_k * p_k
-                return x_next, r_next, p_next, k + 1
+            # 収束モニタリング
+            if residuals is not None and self.monitor_convergence:
+                residual = self.jnp.linalg.norm(r_next) / self.jnp.linalg.norm(self.b_jax)
+                self.jax.debug.callback(lambda r, i: residuals.append(float(r)) or print(f"  反復 {i}: 残差 = {r:.6e}") if i % 10 == 0 else None, residual, k)
                 
-            def cg_while_loop(val):
-                x_k, r_k, p_k, k = val
-                return (jnp.linalg.norm(r_k) > tol) & (k < maxiter)
+            return x_next, r_next, p_next, k + 1
             
-            # JITコンパイルされたCGループ
-            cg_loop = jax.jit(lambda state: jax.lax.while_loop(cg_while_loop, cg_step, state))
-            
-            # 初期状態を設定して実行
-            init_state = (x0, r0, p0, 0)
-            x_final, r_final, _, iterations = cg_loop(init_state)
-            
-            x = x_final
-            
-        else:
-            print(f"JAXでは{self.method}解法は実装されていません。CPUソルバーに切り替えます。")
-            return CPULinearSolver(self.method, self.options, self.scaling_method).solve(A, b)
+        def cg_cond(val):
+            x_k, r_k, p_k, k = val
+            return (self.jnp.linalg.norm(r_k) > tol) & (k < maxiter)
         
-        # 計算時間とログ出力
-        elapsed = time.time() - start_time
-        self.last_iterations = iterations
+        # JITコンパイルして実行
+        cg_loop = self.jax.jit(lambda state: self.jax.lax.while_loop(cg_cond, cg_step, state))
+        x_final, r_final, _, iterations = cg_loop((x0, r0, p0, 0))
         
-        print(f"JAX解法実行: {self.method}, 経過時間: {elapsed:.4f}秒")
-        if iterations:
-            print(f"反復回数: {iterations}")
+        return x_final, int(iterations)
+    
+    def _solve_bicgstab(self, A, b, residuals):
+        """JAX双共役勾配法安定化版"""
+        tol = self.options.get("tol", 1e-10)
+        maxiter = self.options.get("maxiter", 1000)
+        
+        # 初期値設定
+        x0 = self.jnp.ones_like(self.b_jax)
+        r0 = self.b_jax - self.last_op(x0)
+        r_hat = r0
+        v0 = self.last_op(r0)
+        
+        # JAX BiCGSTAB実装
+        def bicgstab_step(state):
+            x_k, r_k, p_k, v_k, r_hat, rho_prev, k, omega = state
             
-        # 残差の可視化
-        if self.monitor_convergence and residuals:
-            self._visualize_convergence(residuals)
+            rho = self.jnp.dot(r_hat, r_k)
+            beta = (rho / self.jnp.maximum(rho_prev, 1e-15)) * (omega / self.jnp.maximum(omega, 1e-15))
+            p_next = r_k + beta * (p_k - omega * v_k)
             
-        # JAX配列からNumPy配列に変換
-        return np.array(x)
+            v_next = self.last_op(p_next)
+            alpha = rho / self.jnp.maximum(self.jnp.dot(r_hat, v_next), 1e-15)
+            
+            s = r_k - alpha * v_next
+            t = self.last_op(s)
+            
+            omega_next = self.jnp.dot(t, s) / self.jnp.maximum(self.jnp.dot(t, t), 1e-15)
+            x_next = x_k + alpha * p_next + omega_next * s
+            r_next = s - omega_next * t
+            
+            # 収束モニタリング
+            if residuals is not None and self.monitor_convergence:
+                residual = self.jnp.linalg.norm(r_next) / self.jnp.linalg.norm(self.b_jax)
+                self.jax.debug.callback(lambda r, i: residuals.append(float(r)) or print(f"  反復 {i}: 残差 = {r:.6e}") if i % 10 == 0 else None, residual, k)
+                
+            return x_next, r_next, p_next, v_next, r_hat, rho, k + 1, omega_next
+            
+        def bicgstab_cond(val):
+            _, r_k, _, _, _, _, k, _ = val
+            return (self.jnp.linalg.norm(r_k) > tol) & (k < maxiter)
+        
+        # JITコンパイルして実行
+        bicgstab_loop = self.jax.jit(lambda state: self.jax.lax.while_loop(bicgstab_cond, bicgstab_step, state))
+        
+        try:
+            init_state = (x0, r0, r0, v0, r_hat, self.jnp.dot(r_hat, r0), 0, 1.0)
+            x_final, r_final, _, _, _, _, iterations, _ = bicgstab_loop(init_state)
+            return x_final, int(iterations)
+        except Exception as e:
+            # フォールバック
+            import scipy.sparse.linalg as splinalg
+            x_np, _ = splinalg.bicgstab(self.dense_A, b)
+            return self.jnp.array(x_np), None
 
 
 def create_solver(method="direct", options=None, scaling_method=None, backend="cuda"):
-    """
-    適切な線形ソルバーを作成するファクトリ関数
+    """適切な線形ソルバーを作成するファクトリ関数"""
+    # バックエンド設定
+    backend = options.get("backend", backend) if options else backend
     
-    Args:
-        method: 解法メソッド
-        options: ソルバーオプション辞書
-        scaling_method: スケーリング手法名
-        backend: 計算バックエンド ('cpu', 'cuda', 'jax')
-        
-    Returns:
-        LinearSolver: 指定されたバックエンドのソルバーインスタンス
-    """
-    # オプションからバックエンド指定を取得（引数のbackendが優先）
-    if options and "backend" in options:
-        backend = options.get("backend", backend)
+    # ソルバーマップ
+    solvers = {
+        "cpu": CPULinearSolver,
+        "cuda": GPULinearSolver,
+        "jax": JAXLinearSolver
+    }
     
-    if backend == "cpu":
-        # CPU (SciPy) ソルバーを使用
-        return CPULinearSolver(method, options, scaling_method)
-    elif backend == "jax":
-        # JAX ソルバーを使用
-        try:
-            import jax
-            return JAXLinearSolver(method, options, scaling_method)
-        except ImportError:
-            print("JAXが利用できません。CUDAソルバーを試行します。")
-            backend = "cuda"  # JAX利用不可の場合はCUDAにフォールバック
+    # 指定されたバックエンドのソルバー作成
+    solver_class = solvers.get(backend, CPULinearSolver)
     
-    # デフォルト: CUDAソルバーを試行
-    if backend == "cuda":
-        try:
-            import cupy
-            return GPULinearSolver(method, options, scaling_method)
-        except ImportError:
-            print("CuPyが利用できません。CPUソルバーに切り替えます。")
+    try:
+        return solver_class(method, options, scaling_method)
+    except Exception as e:
+        print(f"{backend}ソルバー初期化エラー: {e}")
+        if backend != "cpu":
             return CPULinearSolver(method, options, scaling_method)
-    
-    # 不明なバックエンドの場合はCPUソルバーを返す
-    print(f"未知のバックエンド '{backend}'。CPUソルバーを使用します。")
-    return CPULinearSolver(method, options, scaling_method)
+        raise

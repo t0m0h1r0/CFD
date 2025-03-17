@@ -29,8 +29,8 @@ def parse_args():
     parser.add_argument("--yrange", type=float, nargs=2, default=[-1.0, 1.0], help="y方向の範囲 (2Dのみ)")
     
     # ソルバー設定
-    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs', 'lsqr', 'minres', 'lsmr'], 
-                      default='direct', help="ソルバー手法")
+    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs', 'bicgstab', 'lsqr', 'minres', 'lsmr'], 
+                        default='direct', help="ソルバー手法")
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法")
     parser.add_argument("--analyze", action="store_true", help="行列を分析する")
     parser.add_argument("--monitor", action="store_true", help="収束過程をモニタリングする")
