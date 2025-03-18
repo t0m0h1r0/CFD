@@ -7,6 +7,8 @@
 
 from typing import Dict, Any, Tuple
 import logging
+import numpy as np
+import scipy.sparse as sp
 from .base import BaseScaling
 from .row_scaling import RowScaling
 from .column_scaling import ColumnScaling
@@ -22,14 +24,9 @@ class AdaptiveScaling(BaseScaling):
     または平衡化スケーリングのいずれが最も効果的かを判断して適用します。
     """
     
-    def __init__(self, backend='numpy'):
-        """
-        初期化
-        
-        Args:
-            backend: 計算バックエンド ('numpy', 'cupy', 'jax')
-        """
-        super().__init__(backend)
+    def __init__(self):
+        """初期化"""
+        super().__init__()
         self._logger = logging.getLogger(__name__)
         self.selected_strategy = None
         self.strategy_info = {}
@@ -88,9 +85,9 @@ class AdaptiveScaling(BaseScaling):
             properties['density'] = A.nnz / (m * n)
         else:
             if hasattr(A, 'toarray'):
-                nnz = self.array_utils.get_array_module().count_nonzero(A.toarray())
+                nnz = np.count_nonzero(A.toarray())
             else:
-                nnz = self.array_utils.get_array_module().count_nonzero(A)
+                nnz = np.count_nonzero(A)
             properties['nnz'] = nnz
             properties['density'] = nnz / (m * n)
         
@@ -99,8 +96,7 @@ class AdaptiveScaling(BaseScaling):
             if hasattr(A, 'toarray'):
                 # 疎行列の場合、サンプルの要素をチェック
                 sample_size = min(1000, m)
-                xp = self.array_utils.get_array_module()
-                indices = xp.random.choice(m, sample_size, replace=False)
+                indices = np.random.choice(m, sample_size, replace=False)
                 
                 symmetry_violations = 0
                 for i in indices:
@@ -113,8 +109,7 @@ class AdaptiveScaling(BaseScaling):
             else:
                 # 密行列の場合
                 try:
-                    xp = self.array_utils.get_array_module()
-                    properties['is_symmetric'] = xp.allclose(A, A.T)
+                    properties['is_symmetric'] = np.allclose(A, A.T)
                 except AttributeError:
                     properties['is_symmetric'] = False
         else:
@@ -124,40 +119,40 @@ class AdaptiveScaling(BaseScaling):
         row_norms = self._compute_row_norms(A)
         col_norms = self._compute_column_norms(A)
         
-        properties['row_norm_max'] = float(self.array_utils.max(row_norms))
-        properties['row_norm_min'] = float(self.array_utils.min(row_norms))
+        properties['row_norm_max'] = float(np.max(row_norms))
+        properties['row_norm_min'] = float(np.min(row_norms))
         properties['row_norm_ratio'] = float(properties['row_norm_max'] / max(properties['row_norm_min'], 1e-15))
         
-        properties['col_norm_max'] = float(self.array_utils.max(col_norms))
-        properties['col_norm_min'] = float(self.array_utils.min(col_norms))
+        properties['col_norm_max'] = float(np.max(col_norms))
+        properties['col_norm_min'] = float(np.min(col_norms))
         properties['col_norm_ratio'] = float(properties['col_norm_max'] / max(properties['col_norm_min'], 1e-15))
         
         # 対角優位性（正方行列の場合）
         if properties['is_square']:
             try:
                 diag = A.diagonal()
-                diag_abs = self.array_utils.abs(diag)
+                diag_abs = np.abs(diag)
                 
                 if hasattr(A, 'format') and A.format == 'csr':
                     # CSR行列の場合
-                    row_sums = self.array_utils.zeros_like(diag)
+                    row_sums = np.zeros_like(diag)
                     for i in range(m):
                         start, end = A.indptr[i], A.indptr[i+1]
-                        row_data = self.array_utils.abs(A.data[start:end])
-                        row_sums[i] = self.array_utils.sum(row_data) - diag_abs[i]
+                        row_data = np.abs(A.data[start:end])
+                        row_sums[i] = np.sum(row_data) - diag_abs[i]
                 else:
                     # 一般的なケース
                     if hasattr(A, 'toarray'):
-                        A_abs = self.array_utils.abs(A.toarray())
+                        A_abs = np.abs(A.toarray())
                     else:
-                        A_abs = self.array_utils.abs(A)
-                    row_sums = self.array_utils.sum(A_abs, axis=1) - diag_abs
+                        A_abs = np.abs(A)
+                    row_sums = np.sum(A_abs, axis=1) - diag_abs
                 
                 # 対角要素と非対角要素の比率
                 # 数値の安定性のためのエラー処理
-                diag_ratios = self.array_utils.where(row_sums < 1e-15, 0.0, diag_abs / row_sums)
+                diag_ratios = np.where(row_sums < 1e-15, 0.0, diag_abs / row_sums)
                 
-                properties['diag_dominance'] = float(self.array_utils.mean(diag_ratios))
+                properties['diag_dominance'] = float(np.mean(diag_ratios))
             except Exception as e:
                 self._logger.warning(f"対角優位性分析中にエラー: {e}")
                 properties['diag_dominance'] = 0.0
@@ -174,69 +169,66 @@ class AdaptiveScaling(BaseScaling):
         Returns:
             tuple: (scaling_strategy, strategy_name)
         """
-        # スケーリングオブジェクトを作成する際に自身のバックエンドを使用
-        backend = self.array_utils.backend
-        
         # 深刻な条件不良の行列には平衡化を使用
         if (properties.get('row_norm_ratio', 0) > 1e8 or 
             properties.get('col_norm_ratio', 0) > 1e8):
-            return EquilibrationScaling(max_iterations=5, backend=backend), "EquilibrationScaling"
+            return EquilibrationScaling(max_iterations=5), "EquilibrationScaling"
         
         # 対称行列には対称スケーリングが最適
         if properties.get('is_symmetric', False):
-            return SymmetricScaling(backend=backend), "SymmetricScaling"
+            return SymmetricScaling(), "SymmetricScaling"
         
         # 対角優位行列には行スケーリングが有効
         if properties.get('diag_dominance', 0) > 0.8:
-            return RowScaling(backend=backend), "RowScaling"
+            return RowScaling(), "RowScaling"
         
         # 行と列の変動を比較
         row_ratio = properties.get('row_norm_ratio', 1.0)
         col_ratio = properties.get('col_norm_ratio', 1.0)
         
         if row_ratio > 10 * col_ratio:
-            return RowScaling(backend=backend), "RowScaling"
+            return RowScaling(), "RowScaling"
         elif col_ratio > 10 * row_ratio:
-            return ColumnScaling(backend=backend), "ColumnScaling"
+            return ColumnScaling(), "ColumnScaling"
         
         # デフォルトでは平衡化を使用
-        return EquilibrationScaling(backend=backend), "EquilibrationScaling"
+        return EquilibrationScaling(), "EquilibrationScaling"
     
     def _compute_row_norms(self, A):
         """行列Aの行ノルムを計算"""
         m = A.shape[0]
-        row_norms = self.array_utils.zeros(m)
+        row_norms = np.zeros(m)
         
         if hasattr(A, 'format') and A.format == 'csr':
             for i in range(m):
                 start, end = A.indptr[i], A.indptr[i+1]
                 if end > start:
-                    row_norms[i] = self.array_utils.linalg_norm(A.data[start:end])
+                    row_norms[i] = np.linalg.norm(A.data[start:end])
         else:
             for i in range(m):
                 row = A[i, :]
                 if hasattr(row, 'toarray'):
                     row = row.toarray().flatten()
-                row_norms[i] = self.array_utils.linalg_norm(row)
+                row_norms[i] = np.linalg.norm(row)
         
         return row_norms
     
     def _compute_column_norms(self, A):
         """行列Aの列ノルムを計算"""
         n = A.shape[1]
-        col_norms = self.array_utils.zeros(n)
+        col_norms = np.zeros(n)
         
         if hasattr(A, 'format') and A.format == 'csc':
             for j in range(n):
                 start, end = A.indptr[j], A.indptr[j+1]
                 if end > start:
-                    col_norms[j] = self.array_utils.linalg_norm(A.data[start:end])
+                    col_norms[j] = np.linalg.norm(A.data[start:end])
         else:
             for j in range(n):
                 col = A[:, j]
                 if hasattr(col, 'toarray'):
                     col = col.toarray().flatten()
-                col_norms[j] = self.array_utils.linalg_norm(col)
+                col_norms[j] = np.linalg.norm(col)
         
         return col_norms
     
@@ -253,17 +245,16 @@ class AdaptiveScaling(BaseScaling):
         """
         # 選択された戦略を抽出
         selected_strategy = scale_info.get('selected_strategy')
-        backend = self.array_utils.backend
         
         # 適切なアンスケーリング方法に転送
         if selected_strategy == "RowScaling":
-            return RowScaling(backend=backend).unscale(x, scale_info)
+            return RowScaling().unscale(x, scale_info)
         elif selected_strategy == "ColumnScaling":
-            return ColumnScaling(backend=backend).unscale(x, scale_info)
+            return ColumnScaling().unscale(x, scale_info)
         elif selected_strategy == "SymmetricScaling":
-            return SymmetricScaling(backend=backend).unscale(x, scale_info)
+            return SymmetricScaling().unscale(x, scale_info)
         elif selected_strategy == "EquilibrationScaling":
-            return EquilibrationScaling(backend=backend).unscale(x, scale_info)
+            return EquilibrationScaling().unscale(x, scale_info)
         
         # デフォルト：列スケーリングが適用されている可能性
         col_scale = scale_info.get('col_scale')
@@ -284,17 +275,16 @@ class AdaptiveScaling(BaseScaling):
         """
         # 選択された戦略を抽出
         selected_strategy = scale_info.get('selected_strategy')
-        backend = self.array_utils.backend
         
         # 適切なスケーリング方法に転送
         if selected_strategy == "RowScaling":
-            return RowScaling(backend=backend).scale_b_only(b, scale_info)
+            return RowScaling().scale_b_only(b, scale_info)
         elif selected_strategy == "ColumnScaling":
-            return ColumnScaling(backend=backend).scale_b_only(b, scale_info)
+            return ColumnScaling().scale_b_only(b, scale_info)
         elif selected_strategy == "SymmetricScaling":
-            return SymmetricScaling(backend=backend).scale_b_only(b, scale_info)
+            return SymmetricScaling().scale_b_only(b, scale_info)
         elif selected_strategy == "EquilibrationScaling":
-            return EquilibrationScaling(backend=backend).scale_b_only(b, scale_info)
+            return EquilibrationScaling().scale_b_only(b, scale_info)
         
         # デフォルト：行スケーリング
         row_scale = scale_info.get('row_scale')

@@ -20,6 +20,13 @@ class JAXLinearSolver(LinearSolver):
             self.jnp = jnp
             self.has_jax = True
             
+            # 解法メソッド辞書 - 必ず最初に定義
+            self.solvers = {
+                "direct": self._solve_direct,
+                "cg": self._solve_cg,
+                "bicgstab": self._solve_bicgstab
+            }
+            
             # 行列をJAX形式に変換
             self.A, self.jit_matvec = self._to_jax_matrix(self.original_A)
             
@@ -29,14 +36,8 @@ class JAXLinearSolver(LinearSolver):
                 self.scaler = plugin_manager.get_plugin(self.scaling_method)
                 self._prepare_scaling()
             
-            # 解法メソッド辞書
-            self.solvers = {
-                "direct": self._solve_direct,
-                "cg": self._solve_cg,
-                "bicgstab": self._solve_bicgstab
-            }
-        except ImportError:
-            print("警告: JAXが利用できません。CPUソルバーを使用します。")
+        except ImportError as e:
+            print(f"警告: JAXが利用できません: {e}")
             self.has_jax = False
             self.cpu_solver = CPULinearSolver(
                 self.original_A, 
@@ -122,20 +123,45 @@ class JAXLinearSolver(LinearSolver):
         if not self.scaler or not self.has_jax:
             return
             
-        # ダミーベクトルでスケーリング情報を計算（JAX密行列を使用）
-        dummy_b = self.jnp.ones(self.A['shape'][0] if isinstance(self.A, dict) else self.A.shape[0])
+        # NumPy用ダミーベクトルでスケーリング情報を計算
+        dummy_b = np.ones(self.A['shape'][0] if isinstance(self.A, dict) else self.A.shape[0])
         
         # スケーリング情報を保存
         try:
+            # NumPy版の行列を作成
             if isinstance(self.A, dict) and 'dense' in self.A:
-                A_for_scaling = self.A['dense']
+                A_np = np.array(self.A['dense'])
             else:
-                A_for_scaling = self.A
+                A_np = self._to_numpy_matrix(self.A)
                 
-            _, _, self.scaling_info = self.scaler.scale(A_for_scaling, dummy_b)
+            # NumPyでスケーリング情報を計算
+            _, _, scale_info_np = self.scaler.scale(A_np, dummy_b)
+            
+            # スケーリング情報をJAXに変換
+            self.scaling_info = {}
+            for key, value in scale_info_np.items():
+                if isinstance(value, np.ndarray):
+                    self.scaling_info[key] = self.jnp.array(value)
+                else:
+                    self.scaling_info[key] = value
+                    
         except Exception as e:
             print(f"スケーリング前処理エラー: {e}")
             self.scaler = None
+    
+    def _to_numpy_matrix(self, A):
+        """行列をNumPy形式に変換"""
+        if isinstance(A, dict) and 'dense' in A:
+            return np.array(A['dense'])
+        elif isinstance(A, dict):
+            # 適切なCSR形式に変換
+            import scipy.sparse as sp
+            return sp.csr_matrix(
+                (np.array(A['data']), np.array(A['indices']), np.array(A['indptr'])),
+                shape=A['shape']
+            )
+        else:
+            return np.array(A)
     
     def solve(self, b, method="direct", options=None):
         """JAXを使用して線形方程式系を解く"""
@@ -154,7 +180,10 @@ class JAXLinearSolver(LinearSolver):
             b_scaled = b_jax
             if self.scaler and self.scaling_info:
                 try:
-                    b_scaled = self.scaler.scale_b_only(b_jax, self.scaling_info)
+                    # 右辺ベクトルのスケーリング - JAX版
+                    row_scale = self.scaling_info.get('row_scale')
+                    if row_scale is not None:
+                        b_scaled = b_jax * row_scale
                 except Exception as e:
                     print(f"スケーリングエラー: {e}")
             
@@ -169,7 +198,13 @@ class JAXLinearSolver(LinearSolver):
             
             # 結果のアンスケーリング
             if self.scaler and self.scaling_info:
-                x_jax = self.scaler.unscale(x_jax, self.scaling_info)
+                try:
+                    # 解のアンスケーリング - JAX版
+                    col_scale = self.scaling_info.get('col_scale')
+                    if col_scale is not None:
+                        x_jax = x_jax / col_scale
+                except Exception as e:
+                    print(f"アンスケーリングエラー: {e}")
                 
             # JAX結果をNumPyに変換
             x = np.array(x_jax)
@@ -209,20 +244,6 @@ class JAXLinearSolver(LinearSolver):
             import scipy.sparse.linalg as splinalg
             x = splinalg.spsolve(self._to_numpy_matrix(A), self._to_numpy_vector(b))
             return self.jnp.array(x), None
-    
-    def _to_numpy_matrix(self, A):
-        """行列をNumPy形式に変換"""
-        if isinstance(A, dict) and 'dense' in A:
-            return np.array(A['dense'])
-        elif isinstance(A, dict):
-            # 適切なCSR形式に変換
-            import scipy.sparse as sp
-            return sp.csr_matrix(
-                (np.array(A['data']), np.array(A['indices']), np.array(A['indptr'])),
-                shape=A['shape']
-            )
-        else:
-            return np.array(A)
     
     def _to_numpy_vector(self, b):
         """ベクトルをNumPy形式に変換"""

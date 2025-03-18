@@ -6,21 +6,15 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple, Union, Optional
 import numpy as np
 
-# Import our array utilities
-from .array_utils import ArrayBackend
-
 
 class BaseScaling(ABC):
     """Base class for matrix scaling techniques."""
     
-    def __init__(self, backend='numpy'):
+    def __init__(self):
         """
-        Initialize scaling with specified backend.
-        
-        Args:
-            backend: 'numpy', 'cupy', or 'jax'
+        Initialize scaling implementation.
         """
-        self.array_utils = ArrayBackend(backend)
+        pass
     
     @abstractmethod
     def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
@@ -80,12 +74,3 @@ class BaseScaling(ABC):
     def description(self) -> str:
         """Return the description of the scaling method."""
         pass
-    
-    def set_backend(self, backend: str):
-        """
-        Change the computational backend.
-        
-        Args:
-            backend: 'numpy', 'cupy', or 'jax'
-        """
-        self.array_utils = ArrayBackend(backend)

@@ -86,7 +86,7 @@ def create_solver_instance(args, equation_set, grid):
     # ソルバーオプション設定
     solver_options = {
         "tol": 1e-10,
-        "maxiter": 1000,
+        "maxiter": 10000,
         "monitor_convergence": args.monitor,
         "output_dir": args.out,
         "prefix": args.prefix,

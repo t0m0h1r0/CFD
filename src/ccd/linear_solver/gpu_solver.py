@@ -21,16 +21,7 @@ class GPULinearSolver(LinearSolver):
             self.splinalg = splinalg
             self.has_cupy = True
             
-            # 行列をCuPy形式に変換
-            self.A = self._to_cupy_matrix(self.original_A)
-            
-            # スケーリングの初期化
-            if self.scaling_method:
-                from scaling import plugin_manager
-                self.scaler = plugin_manager.get_plugin(self.scaling_method)
-                self._prepare_scaling()
-            
-            # 解法メソッド辞書
+            # 解法メソッド辞書 - 必ず最初に定義（エラー回避のため）
             self.solvers = {
                 "direct": self._solve_direct,
                 "gmres": self._solve_gmres,
@@ -41,8 +32,18 @@ class GPULinearSolver(LinearSolver):
                 "lsqr": self._solve_least_squares,
                 "lsmr": self._solve_least_squares
             }
-        except ImportError:
-            print("警告: CuPyが利用できません。CPUソルバーを使用します。")
+            
+            # 行列をCuPy形式に変換
+            self.A = self._to_cupy_matrix(self.original_A)
+            
+            # スケーリングの初期化
+            if self.scaling_method:
+                from scaling import plugin_manager
+                self.scaler = plugin_manager.get_plugin(self.scaling_method)
+                self._prepare_scaling()
+            
+        except ImportError as e:
+            print(f"警告: CuPyが利用できません: {e}")
             self.has_cupy = False
             self.cpu_solver = CPULinearSolver(
                 self.original_A, 
@@ -96,12 +97,24 @@ class GPULinearSolver(LinearSolver):
         if not self.scaler or not self.has_cupy:
             return
             
-        # ダミーベクトルでスケーリング情報を計算
-        dummy_b = self.cp.ones(self.A.shape[0])
+        # NumPy用ダミーベクトルでスケーリング情報を計算
+        dummy_b = np.ones(self.A.shape[0])
         
         # スケーリング情報を保存
         try:
-            _, _, self.scaling_info = self.scaler.scale(self.A, dummy_b)
+            # NumPy版の行列を作成
+            A_np = self._to_numpy_matrix(self.A)
+            # NumPyでスケーリング情報を計算
+            _, _, scale_info_np = self.scaler.scale(A_np, dummy_b)
+            
+            # スケーリング情報をCuPyに変換
+            self.scaling_info = {}
+            for key, value in scale_info_np.items():
+                if isinstance(value, np.ndarray):
+                    self.scaling_info[key] = self.cp.array(value)
+                else:
+                    self.scaling_info[key] = value
+                    
         except Exception as e:
             print(f"スケーリング前処理エラー: {e}")
             self.scaler = None
@@ -123,7 +136,10 @@ class GPULinearSolver(LinearSolver):
             b_scaled = b_gpu
             if self.scaler and self.scaling_info:
                 try:
-                    b_scaled = self.scaler.scale_b_only(b_gpu, self.scaling_info)
+                    # 右辺ベクトルのスケーリング - CuPy版
+                    row_scale = self.scaling_info.get('row_scale')
+                    if row_scale is not None:
+                        b_scaled = b_gpu * row_scale
                 except Exception as e:
                     print(f"スケーリングエラー: {e}")
             
@@ -138,7 +154,13 @@ class GPULinearSolver(LinearSolver):
             
             # 結果のアンスケーリング
             if self.scaler and self.scaling_info:
-                x_gpu = self.scaler.unscale(x_gpu, self.scaling_info)
+                try:
+                    # 解のアンスケーリング - CuPy版
+                    col_scale = self.scaling_info.get('col_scale')
+                    if col_scale is not None:
+                        x_gpu = x_gpu / col_scale
+                except Exception as e:
+                    print(f"アンスケーリングエラー: {e}")
                 
             # GPU結果をCPUに転送
             x = x_gpu.get()

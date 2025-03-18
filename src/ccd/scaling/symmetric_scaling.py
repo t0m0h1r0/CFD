@@ -3,20 +3,17 @@
 """
 
 from typing import Dict, Any, Tuple
+import numpy as np
+import scipy.sparse as sp
 from .base import BaseScaling
 
 
 class SymmetricScaling(BaseScaling):
     """対称スケーリング手法: A → D⁻¹/² A D⁻¹/², b → D⁻¹/² b (Dは対角要素の絶対値)"""
     
-    def __init__(self, backend='numpy'):
-        """
-        初期化
-        
-        Args:
-            backend: 計算バックエンド ('numpy', 'cupy', 'jax')
-        """
-        super().__init__(backend)
+    def __init__(self):
+        """初期化"""
+        super().__init__()
     
     def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
         """
@@ -33,11 +30,11 @@ class SymmetricScaling(BaseScaling):
         diag = A.diagonal()
         
         # 数値的安定性のための処理
-        D_sqrt_inv = self.array_utils.sqrt(1.0 / self.array_utils.where(
-            self.array_utils.abs(diag) < 1e-15, 1.0, self.array_utils.abs(diag)))
+        D_sqrt_inv = np.sqrt(1.0 / np.where(
+            np.abs(diag) < 1e-15, 1.0, np.abs(diag)))
         
         # スケーリング行列を構築
-        D_sqrt_inv_mat = self.array_utils.diags(D_sqrt_inv)
+        D_sqrt_inv_mat = sp.diags(D_sqrt_inv)
         
         # スケーリング適用
         scaled_A = D_sqrt_inv_mat @ A @ D_sqrt_inv_mat
@@ -50,7 +47,7 @@ class SymmetricScaling(BaseScaling):
         D_sqrt_inv = scale_info.get('D_sqrt_inv')
         if D_sqrt_inv is None:
             return x
-        return x / D_sqrt_inv
+        return x * D_sqrt_inv
     
     def scale_b_only(self, b, scale_info: Dict[str, Any]):
         """右辺ベクトルbのみをスケーリング"""
