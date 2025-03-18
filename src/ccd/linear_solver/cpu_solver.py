@@ -101,7 +101,7 @@ class CPULinearSolver(LinearSolver):
             solver_func = self.solvers[method]
             x, iterations = solver_func(self.A, b_scaled, options)
             
-            # 結果のアンスケーリング
+            # 結果のアンスケーリング - 修正: スケーラーのunscaleメソッドを使用
             if self.scaler and self.scaling_info:
                 x = self.scaler.unscale(x, self.scaling_info)
                 

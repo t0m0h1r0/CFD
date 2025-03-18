@@ -205,6 +205,7 @@ class AdaptiveScaling(BaseScaling):
                 if end > start:
                     row_norms[i] = np.linalg.norm(A.data[start:end])
         else:
+            # その他の形式
             for i in range(m):
                 row = A[i, :]
                 if hasattr(row, 'toarray'):
@@ -224,6 +225,7 @@ class AdaptiveScaling(BaseScaling):
                 if end > start:
                     col_norms[j] = np.linalg.norm(A.data[start:end])
         else:
+            # その他の形式
             for j in range(n):
                 col = A[:, j]
                 if hasattr(col, 'toarray'):
@@ -246,7 +248,7 @@ class AdaptiveScaling(BaseScaling):
         # 選択された戦略を抽出
         selected_strategy = scale_info.get('selected_strategy')
         
-        # 適切なアンスケーリング方法に転送
+        # 適切なアンスケーラーを作成し、そのunscaleメソッドを呼び出す
         if selected_strategy == "RowScaling":
             return RowScaling().unscale(x, scale_info)
         elif selected_strategy == "ColumnScaling":
@@ -256,10 +258,17 @@ class AdaptiveScaling(BaseScaling):
         elif selected_strategy == "EquilibrationScaling":
             return EquilibrationScaling().unscale(x, scale_info)
         
-        # デフォルト：列スケーリングが適用されている可能性
+        # 選択された戦略が不明の場合のフォールバック処理
+        # 列スケーリングの場合
         col_scale = scale_info.get('col_scale')
         if col_scale is not None:
             return x / col_scale
+        
+        # 対称スケーリングの場合
+        D_sqrt_inv = scale_info.get('D_sqrt_inv')
+        if D_sqrt_inv is not None:
+            return x * D_sqrt_inv
+            
         return x
     
     def scale_b_only(self, b, scale_info: Dict[str, Any]):
@@ -276,7 +285,7 @@ class AdaptiveScaling(BaseScaling):
         # 選択された戦略を抽出
         selected_strategy = scale_info.get('selected_strategy')
         
-        # 適切なスケーリング方法に転送
+        # 適切なスケーラーを作成し、そのscale_b_onlyメソッドを呼び出す
         if selected_strategy == "RowScaling":
             return RowScaling().scale_b_only(b, scale_info)
         elif selected_strategy == "ColumnScaling":
@@ -286,10 +295,17 @@ class AdaptiveScaling(BaseScaling):
         elif selected_strategy == "EquilibrationScaling":
             return EquilibrationScaling().scale_b_only(b, scale_info)
         
-        # デフォルト：行スケーリング
+        # 選択された戦略が不明の場合のフォールバック処理
+        # 行スケーリングの場合
         row_scale = scale_info.get('row_scale')
         if row_scale is not None:
             return b * row_scale
+        
+        # 対称スケーリングの場合
+        D_sqrt_inv = scale_info.get('D_sqrt_inv')
+        if D_sqrt_inv is not None:
+            return b * D_sqrt_inv
+            
         return b
     
     @property

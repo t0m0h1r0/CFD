@@ -180,10 +180,8 @@ class JAXLinearSolver(LinearSolver):
             b_scaled = b_jax
             if self.scaler and self.scaling_info:
                 try:
-                    # 右辺ベクトルのスケーリング - JAX版
-                    row_scale = self.scaling_info.get('row_scale')
-                    if row_scale is not None:
-                        b_scaled = b_jax * row_scale
+                    # 右辺ベクトルのスケーリング - スケーラーのscale_b_onlyメソッドを使用
+                    b_scaled = self.scaler.scale_b_only(b_jax, self.scaling_info)
                 except Exception as e:
                     print(f"スケーリングエラー: {e}")
             
@@ -196,13 +194,10 @@ class JAXLinearSolver(LinearSolver):
             solver_func = self.solvers[method]
             x_jax, iterations = solver_func(self.A, b_scaled, options)
             
-            # 結果のアンスケーリング
+            # 結果のアンスケーリング - 修正: スケーラーのunscaleメソッドを使用
             if self.scaler and self.scaling_info:
                 try:
-                    # 解のアンスケーリング - JAX版
-                    col_scale = self.scaling_info.get('col_scale')
-                    if col_scale is not None:
-                        x_jax = x_jax / col_scale
+                    x_jax = self.scaler.unscale(x_jax, self.scaling_info)
                 except Exception as e:
                     print(f"アンスケーリングエラー: {e}")
                 
