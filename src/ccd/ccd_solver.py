@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 
 from equation_system import EquationSystem
 from rhs_builder import RHSBuilder1D, RHSBuilder2D
+# 新しい線形ソルバーパッケージをインポート
 from linear_solver import create_solver
 
 
@@ -35,7 +36,16 @@ class BaseCCDSolver(ABC):
         
         # デフォルトソルバーとRHSビルダーを設定
         self._create_rhs_builder()
-        self.linear_solver = create_solver()
+        # 新しいAPIに合わせてLinearSolverを初期化
+        self.linear_solver = create_solver(
+            self.matrix_A,
+            enable_dirichlet=self.enable_dirichlet,
+            enable_neumann=self.enable_neumann,
+            backend="cuda"  # デフォルトバックエンド
+        )
+        
+        # デフォルト解法メソッド
+        self.method = "direct"
     
     @abstractmethod
     def _create_rhs_builder(self):
@@ -43,32 +53,45 @@ class BaseCCDSolver(ABC):
         pass
     
     def set_solver(self, method="direct", options=None, scaling_method=None):
-            """
-            ソルバーの設定
-            
-            Args:
-                method: 解法メソッド
-                options: ソルバーオプション辞書
-                scaling_method: スケーリング手法名
-            """
-            # バックエンド指定を取得
-            backend = options.get("backend", "cuda") if options else "cuda"
-            self.linear_solver = create_solver(method, options, scaling_method, backend)
+        """
+        ソルバーの設定
+        
+        Args:
+            method: 解法メソッド
+            options: ソルバーオプション辞書
+            scaling_method: スケーリング手法名
+        """
+        # バックエンド指定を取得
+        backend = options.get("backend", "cuda") if options else "cuda"
+        
+        # 新たにソルバーを作成
+        self.linear_solver = create_solver(
+            self.matrix_A, 
+            enable_dirichlet=self.enable_dirichlet,
+            enable_neumann=self.enable_neumann,
+            scaling_method=scaling_method,
+            backend=backend
+        )
+        
+        # 解法メソッドを保存
+        self.method = method
     
     @property
     def scaling_method(self):
         """スケーリング手法を取得"""
-        return self.linear_solver.scaling_method
+        return self.linear_solver.scaling_method if hasattr(self.linear_solver, 'scaling_method') else None
     
     @scaling_method.setter
     def scaling_method(self, value):
         """スケーリング手法を設定"""
-        self.linear_solver.scaling_method = value
+        # 新しいソルバーを作成する必要がある
+        backend = "cuda"  # デフォルトバックエンド
+        self.set_solver(method=self.method, scaling_method=value, options={"backend": backend})
     
     @property
     def last_iterations(self):
         """最後の反復回数を取得"""
-        return self.linear_solver.last_iterations
+        return self.linear_solver.last_iterations if hasattr(self.linear_solver, 'last_iterations') else None
     
     def get_boundary_settings(self):
         """境界条件の設定を取得"""
@@ -122,8 +145,8 @@ class BaseCCDSolver(ABC):
         # 右辺ベクトルbを構築
         b = self.rhs_builder.build_rhs_vector(f_values, **boundary_values)
         
-        # 線形システムを解く
-        sol = self.linear_solver.solve(self.matrix_A, b)
+        # 線形システムを解く（新しいAPIに合わせて更新）
+        sol = self.linear_solver.solve(b, method=self.method)
 
         # 解ベクトルから各要素を抽出
         return self._extract_solution(sol)

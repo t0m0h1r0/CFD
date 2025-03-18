@@ -1,128 +1,166 @@
 """
-Van der Sluis対角スケーリングの実装
+Van der Sluis diagonal scaling implementation
 
-このスケーリング手法はVan der Sluisの最適手法を実装し、行スケーリングにより
-行列の条件数を改善します。特に条件数の悪い行列に効果的で、多くの問題クラスに
-対して理論的に良好な結果を生み出すことが証明されています。
+This scaling method implements Van der Sluis's optimal technique for improving
+matrix condition number through row scaling. It's particularly effective for
+ill-conditioned matrices and is theoretically proven to produce good results
+for many problem classes.
 """
 
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Union
+import cupy as cp
+import cupyx.scipy.sparse as sp
 from .base import BaseScaling
 
 
 class VanDerSluisScaling(BaseScaling):
     """
-    Van der Sluis対角スケーリング
+    Van der Sluis diagonal scaling.
     
-    このスケーリング手法は行ノルムの幾何平均を使用して最適なスケーリング係数を
-    計算します。これは多くの行列クラスにおいて（ある意味で）条件数を最小化する
-    ことが証明されています。
+    This scaling strategy uses the geometric mean of row norms to compute
+    optimal scaling factors, which has been proven to minimize the condition
+    number (in a certain sense) for many matrix classes.
     
-    参考文献:
+    References:
         Van der Sluis, A. (1969). "Condition numbers and equilibration of matrices."
         Numerische Mathematik, 14(1), 14-23.
     """
     
-    def __init__(self, norm_type=2, backend='numpy'):
+    def __init__(self, norm_type=2):
         """
-        Van der Sluisスケーリングを初期化
+        Initialize Van der Sluis scaling.
         
         Args:
-            norm_type: 使用するノルムの種類 (2: ユークリッド、float('inf'): 最大)
-            backend: 計算バックエンド ('numpy', 'cupy', 'jax')
+            norm_type: Type of norm to use (2 for Euclidean, float('inf') for max)
         """
-        super().__init__(backend)
         self.norm_type = norm_type
     
-    def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
+    def scale(self, A: Union[sp.spmatrix, cp.ndarray], b: cp.ndarray) -> Tuple[Union[sp.spmatrix, cp.ndarray], cp.ndarray, Dict[str, Any]]:
         """
-        Van der Sluisの最適行スケーリングを行列Aと右辺ベクトルbに適用
+        Apply Van der Sluis optimal row scaling to matrix A and right-hand side b.
         
         Args:
-            A: スケーリングするシステム行列
-            b: 右辺ベクトル
+            A: System matrix to scale
+            b: Right-hand side vector
             
         Returns:
-            tuple: (scaled_A, scaled_b, scale_info)
+            Tuple of (scaled_A, scaled_b, scaling_info)
         """
         m, n = A.shape
         
-        # 効率的に行ノルムを計算
+        # Compute row norms efficiently
         is_csr = hasattr(A, 'format') and A.format == 'csr'
         row_norms = self._compute_row_norms(A, is_csr)
         
-        # 安定性のためにゼロおよび小さい値を1に置き換え
-        row_norms = self.array_utils.where(row_norms < 1e-15, 1.0, row_norms)
+        # Replace zeros and small values with ones for stability
+        row_norms = cp.where(row_norms < 1e-15, 1.0, row_norms)
         
-        # 最適スケーリング係数を計算
-        # van der Sluis法では、各行は1/row_normでスケーリングされる
+        # Compute optimal scaling factors
+        # In van der Sluis method, each row is scaled by 1/row_norm
         row_scale = 1.0 / row_norms
         
-        # 極端に条件数の悪い行列の場合、ダンピングを適用
-        # これによって極端な場合の破滅的な桁落ちを避ける
-        max_scale = self.array_utils.max(row_scale)
-        min_scale = self.array_utils.min(row_scale)
-        if max_scale / min_scale > 1e10:
-            row_scale = self.array_utils.sqrt(row_scale)  # スケーリングを緩和
+        # For very ill-conditioned matrices, apply dampening
+        # This helps avoid catastrophic cancellation in extreme cases
+        if cp.max(row_scale) / cp.min(row_scale) > 1e10:
+            row_scale = cp.sqrt(row_scale)  # Dampen the scaling
         
-        # 対角スケーリング行列を構築
-        D_row = self.array_utils.diags(row_scale)
+        # Apply scaling to the matrix based on its format
+        if hasattr(A, 'format'):
+            # Handle sparse matrices
+            if A.format == 'csr':
+                # For CSR format, we can directly scale the data by row
+                scaled_data = A.data.copy()
+                for i in range(m):
+                    start, end = A.indptr[i], A.indptr[i+1]
+                    scaled_data[start:end] = A.data[start:end] * row_scale[i]
+                scaled_A = sp.csr_matrix((scaled_data, A.indices, A.indptr), shape=A.shape)
+            elif A.format == 'csc':
+                # For CSC format, we need to convert indices to rows
+                A_csr = A.tocsr()
+                scaled_data = A_csr.data.copy()
+                for i in range(m):
+                    start, end = A_csr.indptr[i], A_csr.indptr[i+1]
+                    scaled_data[start:end] = A_csr.data[start:end] * row_scale[i]
+                scaled_A = sp.csr_matrix((scaled_data, A_csr.indices, A_csr.indptr), shape=A.shape)
+                # Convert back to original format if needed
+                if A.format == 'csc':
+                    scaled_A = scaled_A.tocsc()
+            else:
+                # For other formats, try direct matrix multiplication
+                try:
+                    D_row = sp.diags(row_scale)
+                    scaled_A = D_row @ A
+                except TypeError:
+                    # Fallback: convert to array, scale, then back to original format
+                    A_array = A.toarray()
+                    scaled_array = A_array * row_scale[:, cp.newaxis]
+                    if A.format == 'dia':
+                        scaled_A = sp.dia_matrix(scaled_array)
+                    else:
+                        scaled_A = sp.csr_matrix(scaled_array)
+                        if A.format != 'csr':
+                            # Try to convert back to original format
+                            conversion_method = getattr(scaled_A, f'to{A.format}', None)
+                            if conversion_method:
+                                scaled_A = conversion_method()
+        else:
+            # For dense matrices, use broadcasting
+            scaled_A = A * row_scale[:, cp.newaxis]
         
-        # 行列と右辺ベクトルにスケーリングを適用
-        scaled_A = D_row @ A
-        scaled_b = D_row @ b
+        # Apply scaling to the right-hand side
+        scaled_b = b * row_scale
         
         return scaled_A, scaled_b, {'row_scale': row_scale}
     
     def _compute_row_norms(self, A, is_csr=False):
-        """行列Aの行ノルムを効率的に計算"""
+        """Efficiently compute row norms of matrix A"""
         m = A.shape[0]
-        row_norms = self.array_utils.zeros(m)
+        row_norms = cp.zeros(m)
         
         if is_csr:
-            # CSRフォーマットでは行へのアクセスに効率的なindptrを使用
+            # For CSR format, use indptr for efficient row access
             for i in range(m):
                 start, end = A.indptr[i], A.indptr[i+1]
                 if end > start:
                     row_data = A.data[start:end]
                     if self.norm_type == float('inf'):
-                        row_norms[i] = self.array_utils.max(self.array_utils.abs(row_data))
+                        row_norms[i] = cp.max(cp.abs(row_data))
                     else:
-                        row_norms[i] = self.array_utils.linalg_norm(row_data, ord=self.norm_type)
+                        row_norms[i] = cp.linalg.norm(row_data, ord=self.norm_type)
         else:
-            # 一般的なケース
+            # General case
             for i in range(m):
                 row = A[i, :]
                 if hasattr(row, 'toarray'):
                     row = row.toarray().flatten()
-                row_norms[i] = self.array_utils.linalg_norm(row, ord=self.norm_type)
+                row_norms[i] = cp.linalg.norm(row, ord=self.norm_type)
         
         return row_norms
     
-    def unscale(self, x, scale_info: Dict[str, Any]):
+    def unscale(self, x: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
         """
-        解ベクトルをアンスケーリング
+        Unscale the solution vector.
         
         Args:
-            x: アンスケーリングする解ベクトル
-            scale_info: scaleメソッドからのスケーリング情報
+            x: Solution vector to unscale
+            scale_info: Scaling information from the scale method
             
         Returns:
-            アンスケーリングされた解ベクトル
+            Unscaled solution vector
         """
-        # Van der Sluisスケーリングは行のみに影響し、解ベクトルには影響しない
+        # Van der Sluis scaling only affects rows, not the solution vector
         return x
     
-    def scale_b_only(self, b, scale_info: Dict[str, Any]):
+    def scale_b_only(self, b: cp.ndarray, scale_info: Dict[str, Any]) -> cp.ndarray:
         """
-        右辺ベクトルのみをスケーリング
+        Scale only the right-hand side vector.
         
         Args:
-            b: スケーリングする右辺ベクトル
-            scale_info: scaleメソッドからのスケーリング情報
+            b: Right-hand side vector to scale
+            scale_info: Scaling information from the scale method
             
         Returns:
-            スケーリングされた右辺ベクトル
+            Scaled right-hand side vector
         """
         row_scale = scale_info.get('row_scale')
         if row_scale is None:
@@ -135,4 +173,4 @@ class VanDerSluisScaling(BaseScaling):
     
     @property
     def description(self) -> str:
-        return "条件数を最小化するVan der Sluisの最適行スケーリング"
+        return "Van der Sluis optimal row scaling to minimize condition number"
