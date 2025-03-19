@@ -62,6 +62,7 @@ class GPULinearSolver(LinearSolver):
             # SciPy疎行列からの変換
             if hasattr(A, 'tocsr'):
                 A = A.tocsr()
+                return A
                 
             if hasattr(A, 'data') and hasattr(A, 'indices') and hasattr(A, 'indptr'):
                 # CSR形式の疎行列として変換
