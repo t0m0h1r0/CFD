@@ -27,18 +27,33 @@ class SymmetricScaling(BaseScaling):
             tuple: (scaled_A, scaled_b, scale_info)
         """
         # 対角要素を取得
-        diag = A.diagonal()
+        if hasattr(A, 'toarray'):
+            # 疎行列の場合
+            A_dense = A.toarray()
+            diag = np.diag(A_dense)
+        elif hasattr(A, 'diagonal'):
+            # SciPy疎行列の場合
+            diag = A.diagonal()
+        else:
+            # 密行列の場合
+            diag = np.diag(A)
         
         # 数値的安定性のための処理
         D_sqrt_inv = np.sqrt(1.0 / np.where(
             np.abs(diag) < 1e-15, 1.0, np.abs(diag)))
         
         # スケーリング行列を構築
-        D_sqrt_inv_mat = sp.diags(D_sqrt_inv)
+        if hasattr(A, 'toarray') or hasattr(A, 'format'):
+            # 疎行列の場合
+            D_sqrt_inv_mat = sp.diags(D_sqrt_inv)
+            scaled_A = D_sqrt_inv_mat @ A @ D_sqrt_inv_mat
+        else:
+            # 密行列の場合
+            D_sqrt_inv_mat = np.diag(D_sqrt_inv)
+            scaled_A = D_sqrt_inv_mat @ A @ D_sqrt_inv_mat
         
-        # スケーリング適用
-        scaled_A = D_sqrt_inv_mat @ A @ D_sqrt_inv_mat
-        scaled_b = D_sqrt_inv_mat @ b
+        # 右辺ベクトルのスケーリング
+        scaled_b = b * D_sqrt_inv
         
         return scaled_A, scaled_b, {'D_sqrt_inv': D_sqrt_inv}
     

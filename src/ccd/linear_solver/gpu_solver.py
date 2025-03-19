@@ -140,6 +140,11 @@ class GPULinearSolver(LinearSolver):
                     row_scale = self.scaling_info.get('row_scale')
                     if row_scale is not None:
                         b_scaled = b_gpu * row_scale
+                    else:
+                        # 対称スケーリングの場合
+                        D_sqrt_inv = self.scaling_info.get('D_sqrt_inv')
+                        if D_sqrt_inv is not None:
+                            b_scaled = b_gpu * D_sqrt_inv
                 except Exception as e:
                     print(f"スケーリングエラー: {e}")
             
@@ -159,6 +164,11 @@ class GPULinearSolver(LinearSolver):
                     col_scale = self.scaling_info.get('col_scale')
                     if col_scale is not None:
                         x_gpu = x_gpu / col_scale
+                    else:
+                        # 対称スケーリングの場合
+                        D_sqrt_inv = self.scaling_info.get('D_sqrt_inv')
+                        if D_sqrt_inv is not None:
+                            x_gpu = x_gpu * D_sqrt_inv
                 except Exception as e:
                     print(f"アンスケーリングエラー: {e}")
                 
@@ -186,7 +196,8 @@ class GPULinearSolver(LinearSolver):
     def _solve_direct(self, A, b, options=None):
         """直接解法"""
         try:
-            return self.splinalg.spsolve(A, b), None
+            x = self.splinalg.spsolve(A, b)
+            return x, None
         except Exception as e:
             print(f"GPU直接解法エラー: {e}, CPUにフォールバック")
             # CPUにフォールバック

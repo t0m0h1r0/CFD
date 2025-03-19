@@ -163,6 +163,16 @@ class JAXLinearSolver(LinearSolver):
         else:
             return np.array(A)
     
+    def _to_numpy_scaling_info(self):
+        """スケーリング情報をNumPy形式に変換"""
+        numpy_info = {}
+        for key, value in self.scaling_info.items():
+            if hasattr(value, 'shape') and str(type(value)).find('jax') >= 0:
+                numpy_info[key] = np.array(value)
+            else:
+                numpy_info[key] = value
+        return numpy_info
+    
     def solve(self, b, method="direct", options=None):
         """JAXを使用して線形方程式系を解く"""
         # JAXが使えない場合はCPUソルバーにフォールバック
@@ -180,10 +190,10 @@ class JAXLinearSolver(LinearSolver):
             b_scaled = b_jax
             if self.scaler and self.scaling_info:
                 try:
-                    # 右辺ベクトルのスケーリング - JAX版
-                    row_scale = self.scaling_info.get('row_scale')
-                    if row_scale is not None:
-                        b_scaled = b_jax * row_scale
+                    # スケーリングAPIを使用して右辺ベクトルをスケーリング
+                    b_np = self._to_numpy_vector(b_jax)
+                    b_np_scaled = self.scaler.scale_b_only(b_np, self._to_numpy_scaling_info())
+                    b_scaled = self._to_jax_vector(b_np_scaled)
                 except Exception as e:
                     print(f"スケーリングエラー: {e}")
             
@@ -199,10 +209,10 @@ class JAXLinearSolver(LinearSolver):
             # 結果のアンスケーリング
             if self.scaler and self.scaling_info:
                 try:
-                    # 解のアンスケーリング - JAX版
-                    col_scale = self.scaling_info.get('col_scale')
-                    if col_scale is not None:
-                        x_jax = x_jax / col_scale
+                    # スケーリングAPIを使用して解ベクトルをアンスケーリング
+                    x_np = self._to_numpy_vector(x_jax)
+                    x_np_unscaled = self.scaler.unscale(x_np, self._to_numpy_scaling_info())
+                    x_jax = self._to_jax_vector(x_np_unscaled)
                 except Exception as e:
                     print(f"アンスケーリングエラー: {e}")
                 
