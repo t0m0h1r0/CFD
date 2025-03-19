@@ -30,6 +30,7 @@ class AdaptiveScaling(BaseScaling):
         self._logger = logging.getLogger(__name__)
         self.selected_strategy = None
         self.strategy_info = {}
+        self.selected_scaler = None
         
     def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
         """
@@ -47,6 +48,7 @@ class AdaptiveScaling(BaseScaling):
         
         # 分析結果に基づいてスケーリング戦略を選択
         strategy, strategy_name = self._select_strategy(properties)
+        self.selected_scaler = strategy
         
         # 選択された戦略を適用
         scaled_A, scaled_b, scale_info = strategy.scale(A, b)
@@ -95,17 +97,9 @@ class AdaptiveScaling(BaseScaling):
         if properties['is_square']:
             if hasattr(A, 'toarray'):
                 # 疎行列の場合、サンプルの要素をチェック
-                sample_size = min(1000, m)
-                indices = np.random.choice(m, sample_size, replace=False)
-                
-                symmetry_violations = 0
-                for i in indices:
-                    for j in indices:
-                        if i < j:  # 上三角部分のみチェック
-                            if A[i, j] != A[j, i]:
-                                symmetry_violations += 1
-                
-                properties['is_symmetric'] = symmetry_violations < sample_size * 0.05
+                A_dense = A.toarray()
+                # 上三角と下三角を比較
+                properties['is_symmetric'] = np.allclose(A_dense, A_dense.T)
             else:
                 # 密行列の場合
                 try:
@@ -130,23 +124,20 @@ class AdaptiveScaling(BaseScaling):
         # 対角優位性（正方行列の場合）
         if properties['is_square']:
             try:
-                diag = A.diagonal()
+                # 行列を密行列に変換
+                if hasattr(A, 'toarray'):
+                    A_dense = A.toarray()
+                else:
+                    A_dense = A
+                
+                diag = np.diag(A_dense)
                 diag_abs = np.abs(diag)
                 
-                if hasattr(A, 'format') and A.format == 'csr':
-                    # CSR行列の場合
-                    row_sums = np.zeros_like(diag)
-                    for i in range(m):
-                        start, end = A.indptr[i], A.indptr[i+1]
-                        row_data = np.abs(A.data[start:end])
-                        row_sums[i] = np.sum(row_data) - diag_abs[i]
-                else:
-                    # 一般的なケース
-                    if hasattr(A, 'toarray'):
-                        A_abs = np.abs(A.toarray())
-                    else:
-                        A_abs = np.abs(A)
-                    row_sums = np.sum(A_abs, axis=1) - diag_abs
+                # 対角要素を除く各行の絶対値和を計算
+                row_sums = np.zeros_like(diag)
+                for i in range(m):
+                    row_data = np.abs(A_dense[i, :])
+                    row_sums[i] = np.sum(row_data) - diag_abs[i]
                 
                 # 対角要素と非対角要素の比率
                 # 数値の安定性のためのエラー処理
@@ -205,11 +196,12 @@ class AdaptiveScaling(BaseScaling):
                 if end > start:
                     row_norms[i] = np.linalg.norm(A.data[start:end])
         else:
-            for i in range(m):
-                row = A[i, :]
-                if hasattr(row, 'toarray'):
-                    row = row.toarray().flatten()
-                row_norms[i] = np.linalg.norm(row)
+            # 密行列または他の形式の場合
+            if hasattr(A, 'toarray'):
+                A_dense = A.toarray()
+                row_norms = np.linalg.norm(A_dense, axis=1)
+            else:
+                row_norms = np.linalg.norm(A, axis=1)
         
         return row_norms
     
@@ -224,11 +216,12 @@ class AdaptiveScaling(BaseScaling):
                 if end > start:
                     col_norms[j] = np.linalg.norm(A.data[start:end])
         else:
-            for j in range(n):
-                col = A[:, j]
-                if hasattr(col, 'toarray'):
-                    col = col.toarray().flatten()
-                col_norms[j] = np.linalg.norm(col)
+            # 密行列または他の形式の場合
+            if hasattr(A, 'toarray'):
+                A_dense = A.toarray()
+                col_norms = np.linalg.norm(A_dense, axis=0)
+            else:
+                col_norms = np.linalg.norm(A, axis=0)
         
         return col_norms
     
@@ -246,6 +239,10 @@ class AdaptiveScaling(BaseScaling):
         # 選択された戦略を抽出
         selected_strategy = scale_info.get('selected_strategy')
         
+        # 使用したスケーラーがあればそれを使用
+        if self.selected_scaler is not None:
+            return self.selected_scaler.unscale(x, scale_info)
+        
         # 適切なアンスケーリング方法に転送
         if selected_strategy == "RowScaling":
             return RowScaling().unscale(x, scale_info)
@@ -260,6 +257,12 @@ class AdaptiveScaling(BaseScaling):
         col_scale = scale_info.get('col_scale')
         if col_scale is not None:
             return x / col_scale
+        
+        # 対称スケーリングが適用されている可能性
+        D_sqrt_inv = scale_info.get('D_sqrt_inv')
+        if D_sqrt_inv is not None:
+            return x * D_sqrt_inv
+            
         return x
     
     def scale_b_only(self, b, scale_info: Dict[str, Any]):
@@ -276,6 +279,10 @@ class AdaptiveScaling(BaseScaling):
         # 選択された戦略を抽出
         selected_strategy = scale_info.get('selected_strategy')
         
+        # 使用したスケーラーがあればそれを使用
+        if self.selected_scaler is not None:
+            return self.selected_scaler.scale_b_only(b, scale_info)
+        
         # 適切なスケーリング方法に転送
         if selected_strategy == "RowScaling":
             return RowScaling().scale_b_only(b, scale_info)
@@ -290,6 +297,12 @@ class AdaptiveScaling(BaseScaling):
         row_scale = scale_info.get('row_scale')
         if row_scale is not None:
             return b * row_scale
+            
+        # 対称スケーリングが適用されている可能性
+        D_sqrt_inv = scale_info.get('D_sqrt_inv')
+        if D_sqrt_inv is not None:
+            return b * D_sqrt_inv
+            
         return b
     
     @property

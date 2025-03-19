@@ -136,10 +136,15 @@ class GPULinearSolver(LinearSolver):
             b_scaled = b_gpu
             if self.scaler and self.scaling_info:
                 try:
-                    # スケーリングAPIを使用して右辺ベクトルをスケーリング
-                    b_np = self._to_numpy_vector(b_gpu)
-                    b_np_scaled = self.scaler.scale_b_only(b_np, self._to_numpy_scaling_info())
-                    b_scaled = self._to_cupy_vector(b_np_scaled)
+                    # 右辺ベクトルのスケーリング - CuPy版
+                    row_scale = self.scaling_info.get('row_scale')
+                    if row_scale is not None:
+                        b_scaled = b_gpu * row_scale
+                    else:
+                        # 対称スケーリングの場合
+                        D_sqrt_inv = self.scaling_info.get('D_sqrt_inv')
+                        if D_sqrt_inv is not None:
+                            b_scaled = b_gpu * D_sqrt_inv
                 except Exception as e:
                     print(f"スケーリングエラー: {e}")
             
@@ -155,10 +160,15 @@ class GPULinearSolver(LinearSolver):
             # 結果のアンスケーリング
             if self.scaler and self.scaling_info:
                 try:
-                    # スケーリングAPIを使用して解ベクトルをアンスケーリング
-                    x_np = self._to_numpy_vector(x_gpu)
-                    x_np_unscaled = self.scaler.unscale(x_np, self._to_numpy_scaling_info())
-                    x_gpu = self._to_cupy_vector(x_np_unscaled)
+                    # 解のアンスケーリング - CuPy版
+                    col_scale = self.scaling_info.get('col_scale')
+                    if col_scale is not None:
+                        x_gpu = x_gpu / col_scale
+                    else:
+                        # 対称スケーリングの場合
+                        D_sqrt_inv = self.scaling_info.get('D_sqrt_inv')
+                        if D_sqrt_inv is not None:
+                            x_gpu = x_gpu * D_sqrt_inv
                 except Exception as e:
                     print(f"アンスケーリングエラー: {e}")
                 
@@ -183,20 +193,11 @@ class GPULinearSolver(LinearSolver):
                 self.scaling_method
             ).solve(b, method, options)
     
-    def _to_numpy_scaling_info(self):
-        """スケーリング情報をNumPy形式に変換"""
-        numpy_info = {}
-        for key, value in self.scaling_info.items():
-            if hasattr(value, 'get'):
-                numpy_info[key] = value.get()
-            else:
-                numpy_info[key] = value
-        return numpy_info
-    
     def _solve_direct(self, A, b, options=None):
         """直接解法"""
         try:
-            return self.splinalg.spsolve(A, b), None
+            x = self.splinalg.spsolve(A, b)
+            return x, None
         except Exception as e:
             print(f"GPU直接解法エラー: {e}, CPUにフォールバック")
             # CPUにフォールバック
