@@ -1,5 +1,9 @@
 """
-CPU (SciPy) を使用した線形方程式系ソルバー（改良版）
+CPU (SciPy) を使用した線形方程式系ソルバー
+
+This module provides solvers for linear systems Ax = b using SciPy's
+sparse linear algebra solvers. It supports direct and iterative methods
+with various convergence options and scaling techniques.
 """
 
 import os
@@ -8,21 +12,28 @@ import numpy as np
 import scipy.sparse.linalg as splinalg
 from .base import LinearSolver
 
+
 class CPULinearSolver(LinearSolver):
-    """CPU (SciPy) を使用した線形方程式系ソルバー（改良版）"""
+    """CPU (SciPy) を使用した線形方程式系ソルバー
+    
+    This solver uses SciPy's sparse linear algebra functionality to solve
+    linear systems on the CPU. It supports direct solvers and iterative 
+    methods like GMRES, CG, BiCGSTAB, etc., along with various scaling 
+    techniques to improve numerical stability.
+    """
     
     def _initialize(self):
-        """CPU固有の初期化処理"""
-        # 行列をNumPy/SciPy形式に変換
-        self.A = self._to_numpy_matrix(self.original_A)
+        """Initialize CPU solver resources and configuration"""
+        # Convert matrix to NumPy/SciPy format
+        self.A = self._ensure_scipy_matrix(self.original_A)
         
-        # スケーリングの初期化
+        # Setup scaling if requested
         if self.scaling_method:
             from scaling import plugin_manager
             self.scaler = plugin_manager.get_plugin(self.scaling_method)
             self._prepare_scaling()
         
-        # 解法メソッド辞書
+        # Define available solvers - direct mapping to specialized methods
         self.solvers = {
             "direct": self._solve_direct,
             "gmres": self._solve_gmres,
@@ -30,145 +41,154 @@ class CPULinearSolver(LinearSolver):
             "cgs": self._solve_iterative,
             "bicgstab": self._solve_iterative,
             "minres": self._solve_iterative,
-            "lsqr": self._solve_least_squares,
-            "lsmr": self._solve_least_squares
+            "lsqr": self._solve_lsqr,
+            "lsmr": self._solve_lsmr
         }
     
-    def _to_numpy_matrix(self, A):
-        """行列をNumPy/SciPy形式に変換"""
-        # CuPy配列からNumPy配列への変換
+    def _ensure_scipy_matrix(self, A):
+        """Ensure matrix is in SciPy format
+        
+        Args:
+            A: Input matrix in any supported format
+            
+        Returns:
+            SciPy sparse matrix or ndarray
+        """
+        # Handle CuPy arrays
         if hasattr(A, 'get'):
-            return A.get()
+            A = A.get()
         
-        # JAX配列からNumPy配列への変換
+        # Handle JAX arrays
         if 'jax' in str(type(A)):
-            return np.array(A)
-        
-        # 既にNumPy/SciPyの場合はそのまま
+            A = np.array(A)
+            
+        # Handle case where A is already in correct format
         return A
     
-    def _to_numpy_vector(self, b):
-        """ベクトルをNumPy配列に変換"""
-        # CuPy配列からNumPy配列への変換
+    def _ensure_numpy_vector(self, b):
+        """Ensure vector is in NumPy format
+        
+        Args:
+            b: Input vector in any supported format
+            
+        Returns:
+            NumPy ndarray
+        """
+        # Handle CuPy arrays
         if hasattr(b, 'get'):
             return b.get()
         
-        # JAX配列からNumPy配列への変換
+        # Handle JAX arrays
         if 'jax' in str(type(b)):
             return np.array(b)
-        
-        # 既にNumPy配列の場合はそのまま
+            
+        # Already NumPy array
         return b
     
     def _prepare_scaling(self):
-        """
-        スケーリング前処理を改良
-        実際の計算に使用する行列と右辺ベクトルの特性を反映
-        """
+        """Initialize scaling for the linear system"""
         if not self.scaler:
             return
+            
+        # Create dummy vector for getting scaling information
+        dummy_b = np.ones(self.A.shape[0])
         
         try:
-            # ダミーの右辺ベクトルではなく、適切な初期化
-            dummy_b = np.ones(self.A.shape[0], dtype=float)
-            
-            # スケーリング情報を計算
-            self.scaled_A, self.scaled_b, self.scaling_info = self.scaler.scale(self.A, dummy_b)
+            # Calculate and store scaling information
+            _, _, self.scaling_info = self.scaler.scale(self.A, dummy_b)
         except Exception as e:
             print(f"スケーリング前処理エラー: {e}")
             self.scaler = None
-            self.scaled_A = self.A
-            self.scaled_b = dummy_b
-            self.scaling_info = {}
+            self.scaling_info = None
     
     def solve(self, b, method="direct", options=None):
-        """
-        線形方程式系を解く（改良版スケーリング処理）
+        """Solve linear system Ax = b
         
         Args:
-            b: 右辺ベクトル
-            method: 解法メソッド
-            options: オプション設定
-        
+            b: Right-hand side vector
+            method: Solution method ('direct', 'gmres', 'cg', etc.)
+            options: Solver-specific options
+            
         Returns:
-            解ベクトル
+            Solution vector x
         """
         start_time = time.time()
         options = options or {}
         
-        # 入力ベクトルをNumPy形式に変換
-        b_np = self._to_numpy_vector(b)
+        # Convert right-hand side to NumPy
+        b_np = self._ensure_numpy_vector(b)
         
-        # スケーリングの適用
+        # Apply scaling if requested
         b_scaled = b_np
-        if self.scaler and hasattr(self, 'scaling_info'):
+        if self.scaler and self.scaling_info:
             try:
-                # scale_b_onlyを使用して右辺ベクトルをスケーリング
                 b_scaled = self.scaler.scale_b_only(b_np, self.scaling_info)
             except Exception as e:
                 print(f"スケーリングエラー: {e}")
-                # スケーリングに失敗した場合、元の値を使用
-                b_scaled = b_np
         
-        # 解法メソッドの選択
+        # Choose solver method
         if method not in self.solvers:
             print(f"未対応の解法: {method}、directに切り替えます")
             method = "direct"
         
+        # Solve the system
         try:
-            # 線形システムを解く
             solver_func = self.solvers[method]
             x, iterations = solver_func(self.A, b_scaled, options)
             
-            # アンスケーリング
-            if self.scaler and hasattr(self, 'scaling_info'):
-                try:
-                    x = self.scaler.unscale(x, self.scaling_info)
-                except Exception as e:
-                    print(f"アンスケーリングエラー: {e}")
-            
-            # 計算結果の記録
+            # Apply unscaling if needed
+            if self.scaler and self.scaling_info:
+                x = self.scaler.unscale(x, self.scaling_info)
+                
+            # Record solver statistics
             self.last_iterations = iterations
             elapsed = time.time() - start_time
             print(f"CPU解法: {method}, 時間: {elapsed:.4f}秒" + 
                   (f", 反復: {iterations}" if iterations else ""))
-            
+                  
             return x
-        
-        except Exception as e:
-            print(f"解法エラー: {e}")
-            # フォールバック: 直接法
-            try:
-                x = splinalg.spsolve(self.A, b_scaled)
-                
-                # フォールバック時のアンスケーリング
-                if self.scaler and hasattr(self, 'scaling_info'):
-                    try:
-                        x = self.scaler.unscale(x, self.scaling_info)
-                    except Exception as scaling_error:
-                        print(f"フォールバック時のアンスケーリングエラー: {scaling_error}")
-                
-                return x
             
-            except Exception as fallback_error:
-                print(f"フォールバック解法エラー: {fallback_error}")
-                raise
+        except Exception as e:
+            print(f"CPU解法エラー: {e}")
+            # Fall back to direct solve on failure
+            x = splinalg.spsolve(self.A, b_scaled)
+            if self.scaler and self.scaling_info:
+                x = self.scaler.unscale(x, self.scaling_info)
+            return x
     
     def _solve_direct(self, A, b, options=None):
-        """直接解法"""
+        """Direct solver using factorization
+        
+        Args:
+            A: System matrix
+            b: Right-hand side vector
+            options: Solver options
+            
+        Returns:
+            tuple: (solution vector, None)
+        """
         return splinalg.spsolve(A, b), None
     
     def _solve_gmres(self, A, b, options=None):
-        """GMRES法"""
+        """GMRES iterative solver
+        
+        Args:
+            A: System matrix
+            b: Right-hand side vector
+            options: Solver options
+            
+        Returns:
+            tuple: (solution vector, iteration count)
+        """
         options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         restart = options.get("restart", 10000)
         
-        # 初期推定値
+        # Initial guess
         x0 = options.get("x0", np.ones_like(b))
         
-        # コールバック関数設定
+        # Setup convergence monitoring
         residuals = []
         callback = None
         if options.get("monitor_convergence", False):
@@ -178,27 +198,36 @@ class CPULinearSolver(LinearSolver):
                 if len(residuals) % 10 == 0:
                     print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
         
-        # GMRES実行
-        result = splinalg.gmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, 
-                                restart=restart, callback=callback)
+        # Run GMRES
+        result = splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
+                              restart=restart, callback=callback)
         
-        # 収束履歴を可視化（オプション）
+        # Visualize convergence history if requested
         if options.get("monitor_convergence", False) and residuals:
             self._visualize_convergence(residuals, "gmres", options)
         
-        return result[0], result[1]  # x, iterations
+        return result[0], result[1]  # solution, iterations
     
     def _solve_iterative(self, A, b, options=None):
-        """反復解法共通インターフェース"""
+        """Generic iterative solver interface
+        
+        Args:
+            A: System matrix
+            b: Right-hand side vector
+            options: Solver options
+            
+        Returns:
+            tuple: (solution vector, iteration count)
+        """
         options = options or {}
         method_name = options.get("method_name", "cg")
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         
-        # 初期推定値
+        # Initial guess
         x0 = options.get("x0", np.ones_like(b))
         
-        # コールバック関数設定
+        # Setup convergence monitoring
         residuals = []
         callback = None
         if options.get("monitor_convergence", False):
@@ -208,30 +237,102 @@ class CPULinearSolver(LinearSolver):
                 if len(residuals) % 10 == 0:
                     print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
         
-        # 指定した反復解法を実行
+        # Get the appropriate solver function
         solver_func = getattr(splinalg, method_name)
+        
+        # Run the solver
         result = solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
         
-        # 収束履歴を可視化（オプション）
+        # Visualize convergence history if requested
         if options.get("monitor_convergence", False) and residuals:
             self._visualize_convergence(residuals, method_name, options)
         
-        return result[0], result[1]  # x, iterations
+        return result[0], result[1]  # solution, iterations
     
-    def _solve_least_squares(self, A, b, options=None):
-        """最小二乗法ソルバー"""
+    def _solve_lsqr(self, A, b, options=None):
+        """LSQR最小二乗法ソルバー
+        
+        Args:
+            A: システム行列
+            b: 右辺ベクトル
+            options: ソルバーオプション
+                - damp: 正則化パラメータ
+                - atol, btol: 収束許容誤差
+                - conlim: 条件数の制限
+                - iter_lim, maxiter: 最大反復回数
+                - show: 反復過程を表示するかどうか
+        
+        Returns:
+            tuple: (解ベクトル, 反復回数)
+        """
         options = options or {}
-        method_name = options.get("method_name", "lsqr")
-        maxiter = options.get("maxiter", 1000)
         
-        # 指定した最小二乗法解法を実行
-        solver_func = getattr(splinalg, method_name)
-        result = solver_func(A, b, iter_lim=maxiter)
+        # LSQRパラメータを抽出
+        damp = options.get("damp", 0.0)
+        atol = options.get("atol", 1e-6)
+        btol = options.get("btol", 1e-6)
+        conlim = options.get("conlim", 1e8)
+        maxiter = options.get("maxiter", options.get("iter_lim", None))
+        show = options.get("show", False)
         
-        return result[0], None  # x, iterations
+        # scipy.sparse.linalg.lsqrを実行
+        result = splinalg.lsqr(A, b, damp=damp, atol=atol, btol=btol,
+                          conlim=conlim, iter_lim=maxiter, show=show)
+        
+        # 結果を解析
+        x = result[0]         # 解ベクトル
+        istop = result[1]     # 終了理由
+        itn = result[2]       # 反復回数
+        
+        return x, itn
+
+    def _solve_lsmr(self, A, b, options=None):
+        """LSMR最小二乗法ソルバー
+        
+        Args:
+            A: システム行列
+            b: 右辺ベクトル
+            options: ソルバーオプション
+                - x0: 初期解
+                - damp: 正則化パラメータ
+                - atol, btol: 収束許容誤差
+                - conlim: 条件数の制限
+                - maxiter: 最大反復回数
+                - show: 反復過程を表示するかどうか
+        
+        Returns:
+            tuple: (解ベクトル, 反復回数)
+        """
+        options = options or {}
+        
+        # LSMRパラメータを抽出
+        x0 = options.get("x0", None)
+        damp = options.get("damp", 0.0)
+        atol = options.get("atol", 1e-6)
+        btol = options.get("btol", 1e-6)
+        conlim = options.get("conlim", 1e8)
+        maxiter = options.get("maxiter", None)
+        show = options.get("show", False)
+        
+        # scipy.sparse.linalg.lsmrを実行
+        result = splinalg.lsmr(A, b, damp=damp, atol=atol, btol=btol,
+                          conlim=conlim, maxiter=maxiter, show=show, x0=x0)
+        
+        # 結果を解析
+        x = result[0]         # 解ベクトル
+        istop = result[1]     # 終了理由
+        itn = result[2]       # 反復回数
+        
+        return x, itn
     
     def _visualize_convergence(self, residuals, method_name, options):
-        """収束履歴を可視化"""
+        """Visualize convergence history
+        
+        Args:
+            residuals: List of residual values
+            method_name: Name of the solver method
+            options: Visualization options
+        """
         output_dir = options.get("output_dir", "results")
         os.makedirs(output_dir, exist_ok=True)
         
@@ -247,50 +348,3 @@ class CPULinearSolver(LinearSolver):
         filename = os.path.join(output_dir, f"{prefix}_convergence_{method_name}.png")
         plt.savefig(filename, dpi=150)
         plt.close()
-    
-    def debug_scaling(self, A=None, b=None):
-        """
-        スケーリングプロセスのデバッグ情報を出力
-        
-        Args:
-            A: 行列（指定しない場合は初期化時の行列を使用）
-            b: 右辺ベクトル（指定しない場合はダミーベクトルを使用）
-        """
-        # デフォルト値の設定
-        A = A if A is not None else self.A
-        b = b if b is not None else np.ones(A.shape[0], dtype=float)
-        
-        print("スケーリングデバッグ情報:")
-        print("=" * 40)
-        
-        # 初期行列の特性
-        print("元の行列の特性:")
-        try:
-            A_array = A.toarray() if hasattr(A, 'toarray') else A
-            print(f"  行列形状: {A.shape}")
-            print(f"  条件数: {np.linalg.cond(A_array)}")
-            print(f"  行列のランク: {np.linalg.matrix_rank(A_array)}")
-        except Exception as e:
-            print(f"  行列特性の取得中にエラー: {e}")
-        
-        # スケーリングの実行
-        if self.scaler:
-            try:
-                print(f"\nスケーリング手法: {self.scaler.name}")
-                scaled_A, scaled_b, scaling_info = self.scaler.scale(A, b)
-                
-                # スケーリング後の特性
-                scaled_A_array = scaled_A.toarray() if hasattr(scaled_A, 'toarray') else scaled_A
-                print("\nスケーリング後の行列特性:")
-                print(f"  スケーリング後の条件数: {np.linalg.cond(scaled_A_array)}")
-                print(f"  スケーリング後の行列のランク: {np.linalg.matrix_rank(scaled_A_array)}")
-                
-                # スケーリング情報の詳細
-                print("\nスケーリング情報:")
-                for key, value in scaling_info.items():
-                    print(f"  {key}: {value}")
-                
-            except Exception as e:
-                print(f"スケーリングの実行中にエラー: {e}")
-        else:
-            print("スケーリング手法が設定されていません。")
