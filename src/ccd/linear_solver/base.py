@@ -49,3 +49,13 @@ class LinearSolver(ABC):
             解ベクトル x
         """
         pass
+        
+    def get_available_solvers(self):
+        """
+        このソルバーでサポートされている解法の一覧を取得
+        
+        Returns:
+            list: サポートされている解法名のリスト
+        """
+        # solversがなければ空のリストを返す
+        return list(getattr(self, 'solvers', {}).keys())
