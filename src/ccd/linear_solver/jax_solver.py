@@ -1,5 +1,5 @@
 """
-JAX を使用した線形方程式系ソルバー
+JAX を使用した線形方程式系ソルバー（改善版）
 """
 
 import numpy as np
@@ -7,7 +7,7 @@ from .base import LinearSolver
 from .cpu_solver import CPULinearSolver
 
 class JAXLinearSolver(LinearSolver):
-    """JAX を使用した線形方程式系ソルバー"""
+    """JAX を使用した線形方程式系ソルバー（堅牢化）"""
     
     def _initialize(self):
         """JAX固有の初期化処理"""
@@ -15,6 +15,11 @@ class JAXLinearSolver(LinearSolver):
             import jax
             import jax.numpy as jnp
             import jax.scipy.sparse.linalg as splinalg
+            
+            # JAXの初期化設定
+            jax.config.update('jax_enable_x64', True)  # 倍精度演算を有効化
+            jax.config.update('jax_platform_name', 'gpu')  # GPUを優先使用
+            
             self.jax = jax
             self.jnp = jnp
             self.splinalg = splinalg
@@ -37,8 +42,8 @@ class JAXLinearSolver(LinearSolver):
                 "bicgstab": self._solve_bicgstab
             }
             
-        except ImportError as e:
-            print(f"警告: JAXが利用できません: {e}")
+        except (ImportError, Exception) as e:
+            print(f"警告: JAXが利用できないか初期化エラー: {e}")
             self.has_jax = False
             self.cpu_solver = CPULinearSolver(
                 self.original_A, 
@@ -46,29 +51,59 @@ class JAXLinearSolver(LinearSolver):
                 self.enable_neumann, 
                 self.scaling_method
             )
+            # CPU版のsolversをコピー
+            self.solvers = self.cpu_solver.solvers if hasattr(self.cpu_solver, 'solvers') else {}
     
     def _to_jax_matrix(self, A):
-        """行列をJAX形式に変換"""
+        """行列をJAX形式に変換（堅牢化）"""
         try:
             # JAXですでに処理されているか確認
-            if hasattr(A, 'shape') and hasattr(A, 'dtype') and str(type(A)).find('jax') >= 0:
+            if 'jax' in str(type(A)):
                 return A
                 
-            # 疎行列の場合は密行列に変換
+            # 密行列に変換（最も安全な方法）
             if hasattr(A, 'toarray'):
-                A = A.toarray()
-                
+                A_dense = A.toarray()
+            else:
+                A_dense = np.array(A)
+            
+            # 小さな値を切り捨て（数値的安定性のため）
+            A_dense[np.abs(A_dense) < 1e-15] = 0.0
+            
             # JAX配列に変換
-            return self.jnp.array(A)
+            try:
+                # 巨大行列の場合、分割して変換
+                if A_dense.size > 1e7:  # ~100MB以上
+                    print("大規模行列を分割処理中...")
+                    if len(A_dense.shape) == 2:
+                        rows = []
+                        chunk_size = min(1000, A_dense.shape[0])
+                        for i in range(0, A_dense.shape[0], chunk_size):
+                            end = min(i + chunk_size, A_dense.shape[0])
+                            rows.append(self.jnp.array(A_dense[i:end]))
+                        return self.jnp.vstack(rows)
+                    else:
+                        return self.jnp.array(A_dense)
+                else:
+                    return self.jnp.array(A_dense)
+            except Exception as e2:
+                print(f"JAX配列変換エラー: {e2}")
+                # JITコンパイルの問題がある場合は非JIT関数を使用
+                with self.jax.disable_jit():
+                    return self.jnp.array(A_dense)
+                
         except Exception as e:
             print(f"JAX行列変換エラー: {e}")
+            print(f"行列タイプ: {type(A)}, 形状: {A.shape if hasattr(A, 'shape') else 'unknown'}")
+            print("CPUソルバーにフォールバックします")
+            self.has_jax = False
             return A
     
     def _to_jax_vector(self, b):
-        """ベクトルをJAX配列に変換"""
+        """ベクトルをJAX配列に変換（堅牢化）"""
         try:
             # すでにJAX配列の場合
-            if str(type(b)).find('jax') >= 0:
+            if 'jax' in str(type(b)):
                 return b
                 
             # NumPy/CuPy配列からJAX配列に変換
@@ -78,10 +113,11 @@ class JAXLinearSolver(LinearSolver):
                 return self.jnp.array(b)
         except Exception as e:
             print(f"JAX変換エラー: {e}")
+            self.has_jax = False
             return b
     
     def _prepare_scaling(self):
-        """スケーリング前処理"""
+        """スケーリング前処理（堅牢化）"""
         if not self.scaler or not self.has_jax:
             return
             
@@ -103,15 +139,20 @@ class JAXLinearSolver(LinearSolver):
                     self.scaling_info[key] = value
         except Exception as e:
             print(f"スケーリング前処理エラー: {e}")
+            print("スケーリングを無効化します")
             self.scaler = None
     
-    def solve(self, b, method="direct", options=None):
-        """JAXを使用して線形方程式系を解く"""
+    def solve(self, b, method=None, options=None):
+        """JAXを使用して線形方程式系を解く（堅牢化）"""
         # JAXが使えない場合はCPUソルバーにフォールバック
         if not self.has_jax:
             return self.cpu_solver.solve(b, method, options)
         
-        options = options or {}
+        # メソッドとオプションを決定（引数で上書き可能）
+        actual_method = method if method is not None else self.solver_method
+        actual_options = self.solver_options.copy() if hasattr(self, 'solver_options') else {}
+        if options:
+            actual_options.update(options)
         
         try:
             # 右辺ベクトルbをJAX形式に変換
@@ -129,13 +170,20 @@ class JAXLinearSolver(LinearSolver):
                     print(f"スケーリングエラー: {e}")
             
             # 解法メソッドの選択
-            if method not in self.solvers:
-                print(f"JAXで未対応の解法: {method}、directに切り替えます")
-                method = "direct"
+            if actual_method not in self.solvers:
+                print(f"JAXで未対応の解法: {actual_method}、directに切り替えます")
+                actual_method = "direct"
             
             # 線形システムを解く
-            solver_func = self.solvers[method]
-            x_jax, iterations = solver_func(self.A, b_scaled, options)
+            try:
+                solver_func = self.solvers[actual_method]
+                x_jax, iterations = solver_func(self.A, b_scaled, actual_options)
+            except Exception as solver_error:
+                print(f"JAXソルバーエラー: {solver_error}")
+                print("非JITモードでリトライします...")
+                with self.jax.disable_jit():
+                    solver_func = self.solvers[actual_method]
+                    x_jax, iterations = solver_func(self.A, b_scaled, actual_options)
             
             # 結果のアンスケーリング
             if self.scaler and self.scaling_info:
@@ -157,13 +205,19 @@ class JAXLinearSolver(LinearSolver):
                 
         except Exception as e:
             print(f"JAX解法エラー: {e}, CPUに切り替えます")
-            # CPUソルバーにフォールバック
-            return CPULinearSolver(
+            # 動的にCPUソルバーを作成してフォールバック
+            cpu_solver = CPULinearSolver(
                 self.original_A, 
                 self.enable_dirichlet, 
                 self.enable_neumann, 
                 self.scaling_method
-            ).solve(b, method, options)
+            )
+            if hasattr(self, 'solver_method'):
+                cpu_solver.solver_method = self.solver_method
+            if hasattr(self, 'solver_options'):
+                cpu_solver.solver_options = self.solver_options
+            
+            return cpu_solver.solve(b, method, options)
     
     def _to_numpy_matrix(self, A):
         """JAX行列をNumPy形式に変換"""
@@ -177,7 +231,7 @@ class JAXLinearSolver(LinearSolver):
         """スケーリング情報をNumPy形式に変換"""
         numpy_info = {}
         for key, value in self.scaling_info.items():
-            if hasattr(value, 'shape') and str(type(value)).find('jax') >= 0:
+            if 'jax' in str(type(value)):
                 numpy_info[key] = np.array(value)
             else:
                 numpy_info[key] = value
@@ -187,7 +241,17 @@ class JAXLinearSolver(LinearSolver):
         """直接解法"""
         try:
             # JAXでの直接解法
-            x = self.jax.scipy.linalg.solve(A, b)
+            options = options or {}
+            tol = options.get("tol", 1e-12)
+            
+            # JAXはsparse.linalg.solveを持っていない場合がある
+            if hasattr(self.jax.scipy.linalg, 'solve'):
+                x = self.jax.scipy.linalg.solve(A, b, assume_a='gen')
+            else:
+                # 代替として線形最小二乗法や反復法を使用
+                print("JAX直接解法が利用できないため、CGにフォールバックします")
+                x, _ = self._solve_cg(A, b, {"tol": tol})
+            
             return x, None
         except Exception as e:
             print(f"JAX直接解法エラー: {e}, CPUにフォールバック")
@@ -200,45 +264,71 @@ class JAXLinearSolver(LinearSolver):
         """GMRES法"""
         options = options or {}
         tol = options.get("tol", 1e-10)
-        atol = options.get("atol", 1e-10)
+        atol = options.get("atol", tol)
         maxiter = options.get("maxiter", 1000)
         restart = options.get("restart", 20)
         
         # 初期推定値
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
-        # GMRES実行
-        result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, 
-                                     maxiter=maxiter, restart=restart)
-        
-        return result[0], result[1]  # x, iterations
+        try:
+            # GMRES実行
+            result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, 
+                                         maxiter=maxiter, restart=restart)
+            
+            return result[0], result[1]  # x, iterations
+        except Exception as e:
+            print(f"JAX GMRES解法エラー: {e}, CPUにフォールバック")
+            import scipy.sparse.linalg as splinalg
+            A_np = self._to_numpy_matrix(A)
+            b_np = self._to_numpy_vector(b)
+            x0_np = self._to_numpy_vector(x0)
+            result = splinalg.gmres(A_np, b_np, x0=x0_np, tol=tol, 
+                                   maxiter=maxiter, restart=restart)
+            return self.jnp.array(result[0]), result[1]
     
     def _solve_cg(self, A, b, options=None):
         """共役勾配法"""
         options = options or {}
         tol = options.get("tol", 1e-10)
-        atol = options.get("atol", 1e-10)
+        atol = options.get("atol", tol)
         maxiter = options.get("maxiter", 1000)
         
         # 初期推定値
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
-        # CG実行
-        result = self.splinalg.cg(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
-        
-        return result[0], result[1]  # x, iterations
+        try:
+            # CG実行
+            result = self.splinalg.cg(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
+            return result[0], result[1]  # x, iterations
+        except Exception as e:
+            print(f"JAX CG解法エラー: {e}, CPUにフォールバック")
+            import scipy.sparse.linalg as splinalg
+            A_np = self._to_numpy_matrix(A)
+            b_np = self._to_numpy_vector(b)
+            x0_np = self._to_numpy_vector(x0)
+            result = splinalg.cg(A_np, b_np, x0=x0_np, tol=tol, maxiter=maxiter)
+            return self.jnp.array(result[0]), result[1]
     
     def _solve_bicgstab(self, A, b, options=None):
         """BiCGSTAB法"""
         options = options or {}
         tol = options.get("tol", 1e-10)
-        atol = options.get("atol", 1e-10)
+        atol = options.get("atol", tol)
         maxiter = options.get("maxiter", 1000)
         
         # 初期推定値
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
-        # BiCGSTAB実行
-        result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
-        
-        return result[0], result[1]  # x, iterations
+        try:
+            # BiCGSTAB実行
+            result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
+            return result[0], result[1]  # x, iterations
+        except Exception as e:
+            print(f"JAX BiCGSTAB解法エラー: {e}, CPUにフォールバック")
+            import scipy.sparse.linalg as splinalg
+            A_np = self._to_numpy_matrix(A)
+            b_np = self._to_numpy_vector(b)
+            x0_np = self._to_numpy_vector(x0)
+            result = splinalg.bicgstab(A_np, b_np, x0=x0_np, tol=tol, maxiter=maxiter)
+            return self.jnp.array(result[0]), result[1]

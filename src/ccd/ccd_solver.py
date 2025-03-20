@@ -61,8 +61,18 @@ class BaseCCDSolver(ABC):
             options: ソルバーオプション辞書
             scaling_method: スケーリング手法名
         """
+        # オプションの初期化
+        options = options or {}
+        
         # バックエンド指定を取得
-        backend = options.get("backend", "cuda") if options else "cuda"
+        backend = options.get("backend", "cuda")
+        
+        # 直接線形ソルバーに渡すオプションを抽出
+        solver_options = {}
+        for key, value in options.items():
+            # LinearSolverで使用するオプションのみ抽出
+            if key in ["tol", "maxiter", "restart", "inner_m", "outer_k", "m", "k"]:
+                solver_options[key] = value
         
         # 新たにソルバーを作成
         self.linear_solver = create_solver(
@@ -72,6 +82,10 @@ class BaseCCDSolver(ABC):
             scaling_method=scaling_method,
             backend=backend
         )
+        
+        # LinearSolverにオプションとmehtodを実際に渡す
+        self.linear_solver.solver_method = method
+        self.linear_solver.solver_options = solver_options
         
         # 解法メソッドを保存
         self.method = method
@@ -111,12 +125,12 @@ class BaseCCDSolver(ABC):
         memory_dense_MB = (total_size * total_size * 8) / (1024 * 1024)
         memory_sparse_MB = (nnz * 12) / (1024 * 1024)
         
-        print("\n行列構造分析:")
-        print(f"  行列サイズ: {total_size} x {total_size}")
-        print(f"  非ゼロ要素数: {nnz}")
-        print(f"  疎性率: {sparsity:.6f}")
-        print(f"  メモリ使用量(密行列): {memory_dense_MB:.2f} MB")
-        print(f"  メモリ使用量(疎行列): {memory_sparse_MB:.2f} MB")
+        print("\nMatrix structure analysis:")
+        print(f"  Matrix size: {total_size} x {total_size}")
+        print(f"  Non-zero elements: {nnz}")
+        print(f"  Sparsity: {sparsity:.6f}")
+        print(f"  Memory usage (dense): {memory_dense_MB:.2f} MB")
+        print(f"  Memory usage (sparse): {memory_sparse_MB:.2f} MB")
         
         return {
             "matrix_size": total_size,
@@ -145,8 +159,8 @@ class BaseCCDSolver(ABC):
         # 右辺ベクトルbを構築
         b = self.rhs_builder.build_rhs_vector(f_values, **boundary_values)
         
-        # 線形システムを解く（新しいAPIに合わせて更新）
-        sol = self.linear_solver.solve(b, method=self.method)
+        # 線形システムを解く（既に設定済みのメソッドとオプションを使用）
+        sol = self.linear_solver.solve(b)
 
         # 解ベクトルから各要素を抽出
         return self._extract_solution(sol)
