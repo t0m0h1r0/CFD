@@ -61,53 +61,11 @@ class CPULinearSolver(LinearSolver):
         try:
             _, _, self.scaling_info = self.scaler.scale(self.A, dummy_b)
         except Exception as e:
-            print(f"スケーリング前処理エラー: {e}")
+            print(f"Scaling preprocessing error: {e}")
             self.scaler = None
     
-    def solve(self, b, method="direct", options=None):
-        """SciPy を使用して線形方程式系を解く"""
-        options = options or {}
-        
-        # 右辺ベクトルbをNumPy形式に変換
-        b_np = self._to_numpy_vector(b)
-        
-        # スケーリングの適用
-        b_scaled = b_np
-        if self.scaler and self.scaling_info:
-            try:
-                b_scaled = self.scaler.scale_b_only(b_np, self.scaling_info)
-            except Exception as e:
-                print(f"スケーリングエラー: {e}")
-        
-        # 解法メソッドの選択
-        if method not in self.solvers:
-            print(f"未対応の解法: {method}、directに切り替えます")
-            method = "direct"
-        
-        # 線形システムを解く
-        try:
-            solver_func = self.solvers[method]
-            x, iterations = solver_func(self.A, b_scaled, options)
-            
-            # 結果のアンスケーリング
-            if self.scaler and self.scaling_info:
-                x = self.scaler.unscale(x, self.scaling_info)
-                
-            # 計算結果の記録
-            self.last_iterations = iterations
-                  
-            return x
-            
-        except Exception as e:
-            print(f"CPU解法エラー: {e}")
-            # 直接解法にフォールバック
-            x = splinalg.spsolve(self.A, b_scaled)
-            if self.scaler and self.scaling_info:
-                x = self.scaler.unscale(x, self.scaling_info)
-            return x
-    
-    def _to_numpy_vector(self, b):
-        """ベクトルをNumPy配列に変換"""
+    def _preprocess_vector(self, b):
+        """ベクトルをNumPy形式に変換"""
         # CuPy配列からNumPy配列への変換
         if hasattr(b, 'get'):
             return b.get()

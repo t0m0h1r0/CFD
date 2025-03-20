@@ -20,6 +20,7 @@ class CCDTester(ABC):
         self.scaling_method = None
         self.equation_set = None
         self.results_dir = "results"
+        self.matrix_basename = None  # 行列可視化用のベース名
         os.makedirs(self.results_dir, exist_ok=True)
 
     def setup(self, equation="poisson", method="direct", options=None, scaling=None):
@@ -31,13 +32,32 @@ class CCDTester(ABC):
         return self
         
     def set_solver_options(self, method, options=None, analyze_matrix=False):
-        """cli.py との互換性のため"""
+        """ソルバーオプションを設定
+        
+        Args:
+            method: 解法メソッド名
+            options: ソルバーオプション辞書
+            analyze_matrix: 解く前に行列を分析するかどうか
+        
+        Returns:
+            self: メソッドチェーン用
+        """
         self.solver_method = method
         self.solver_options = options or {}
+        self.analyze_matrix = analyze_matrix
+        
+        # ソルバーがすでに作成されている場合は、オプションを設定
+        if hasattr(self, 'solver') and self.solver:
+            self.solver.set_solver(
+                method=self.solver_method, 
+                options=self.solver_options, 
+                scaling_method=self.scaling_method
+            )
+        
         return self
         
     def set_equation_set(self, equation_set_name):
-        """cli.py との互換性のため"""
+        """方程式セットを設定"""
         self.equation_set = EquationSet.create(equation_set_name, dimension=self.get_dimension())
         return self
 
@@ -50,6 +70,15 @@ class CCDTester(ABC):
             self.equation_set = EquationSet.create("poisson", dimension=self.get_dimension())
 
         self._init_solver()
+        
+        # ソルバーオプションの再適用（念のため）
+        if hasattr(self, 'solver') and self.solver:
+            self.solver.set_solver(
+                method=self.solver_method, 
+                options=self.solver_options, 
+                scaling_method=self.scaling_method
+            )
+        
         return self._process_solution(test_func)
     
     def run_test_with_options(self, test_func):
@@ -107,29 +136,31 @@ class CCDTester(ABC):
         # 外部ビジュアライザーを使用して可視化
         visualizer = MatrixVisualizer(self.results_dir)
         eq_name = self.equation_set.__class__.__name__.replace("EquationSet", "").replace("1D", "").replace("2D", "")
+        
+        # 標準化されたファイル名を使用
+        if self.matrix_basename:
+            title = self.matrix_basename
+        else:
+            title = f"{eq_name}_{test_func.name}"
+            
         return visualizer.visualize(
-            A, b, x, exact_x, f"{eq_name}_{test_func.name}",
+            A, b, x, exact_x, title,
             self.get_dimension(), self.scaling_method
         )
     
     def _solve_for_visualization(self, A, b):
         """可視化用に方程式系を解く"""
         try:
-            from linear_solver import create_solver
-            solver = create_solver(
-                method=self.solver_method, 
-                options=self.solver_options, 
-                scaling_method=self.scaling_method
-            )
-            return solver.solve(A, b)
+            # LinearSolverを使用
+            return self.solver.linear_solver.solve(b, method=self.solver_method, options=self.solver_options)
         except Exception as e:
-            print(f"解法エラー: {e}")
+            print(f"Solver error: {e}")
             # フォールバック: 直接SciPyを使用
             try:
                 from scipy.sparse.linalg import spsolve
                 return spsolve(A, b)
             except:
-                print("SciPyによるフォールバック解法も失敗しました")
+                print("SciPy fallback solver also failed")
                 return None
     
     def _init_solver(self):
@@ -194,6 +225,15 @@ class CCDTester1D(CCDTester):
     def _create_solver(self):
         """1D用ソルバー作成"""
         self.solver = CCDSolver1D(self.equation_set, self.grid)
+        
+        # ソルバーオプションを適用
+        if self.solver_method != "direct" or self.solver_options or self.scaling_method:
+            self.solver.set_solver(
+                method=self.solver_method, 
+                options=self.solver_options, 
+                scaling_method=self.scaling_method
+            )
+        
         # システム行列への参照を保持
         self.matrix_A = self.solver.matrix_A
             
@@ -208,7 +248,7 @@ class CCDTester1D(CCDTester):
         func = next((f for f in funcs if f.name == func_name), None)
         
         if not func:
-            print(f"警告: 1D関数 '{func_name}' が見つかりません。デフォルト関数を使用します。")
+            print(f"Warning: 1D function '{func_name}' not found. Using default function.")
             func = funcs[0]
             
         return func
@@ -230,7 +270,6 @@ class CCDTester1D(CCDTester):
         }
         
         self._init_solver()
-        # 新しいインターフェースを使用
         return self.solver.rhs_builder.build_rhs_vector(f_values=f_values, **boundary)
     
     def _compute_exact(self, test_func):
@@ -309,6 +348,15 @@ class CCDTester2D(CCDTester):
     def _create_solver(self):
         """2D用ソルバー作成"""
         self.solver = CCDSolver2D(self.equation_set, self.grid)
+        
+        # ソルバーオプションを適用
+        if self.solver_method != "direct" or self.solver_options or self.scaling_method:
+            self.solver.set_solver(
+                method=self.solver_method, 
+                options=self.solver_options, 
+                scaling_method=self.scaling_method
+            )
+        
         # システム行列への参照を保持
         self.matrix_A = self.solver.matrix_A
             
@@ -332,7 +380,7 @@ class CCDTester2D(CCDTester):
             return TestFunction.from_1d_to_2d(func_1d, method='product')
         
         # デフォルト
-        print(f"警告: 2D関数 '{func_name}' が見つかりません。デフォルト関数を使用します。")
+        print(f"Warning: 2D function '{func_name}' not found. Using default function.")
         return funcs[0]
     
     def _build_rhs(self, test_func):
@@ -362,7 +410,6 @@ class CCDTester2D(CCDTester):
         }
         
         self._init_solver()
-        # 新しいインターフェースを使用
         return self.solver.rhs_builder.build_rhs_vector(f_values=f_values, **boundary)
     
     def _compute_exact(self, test_func):
