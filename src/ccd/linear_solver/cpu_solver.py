@@ -2,8 +2,6 @@
 CPU (SciPy) を使用した線形方程式系ソルバー
 """
 
-import os
-import time
 import numpy as np
 import scipy.sparse.linalg as splinalg
 from .base import LinearSolver
@@ -14,7 +12,7 @@ class CPULinearSolver(LinearSolver):
     def _initialize(self):
         """CPU固有の初期化処理"""
         # 行列をNumPy/SciPy形式に変換
-        self.A = self._to_numpy_matrix(self.original_A)
+        self.A = self._ensure_scipy_matrix(self.original_A)
         
         # スケーリングの初期化
         if self.scaling_method:
@@ -26,39 +24,31 @@ class CPULinearSolver(LinearSolver):
         self.solvers = {
             "direct": self._solve_direct,
             "gmres": self._solve_gmres,
-            "cg": self._solve_iterative,
-            "cgs": self._solve_iterative,
-            "bicgstab": self._solve_iterative,
-            "minres": self._solve_iterative,
-            "lsqr": self._solve_least_squares,
-            "lsmr": self._solve_least_squares
+            "lgmres": self._solve_lgmres,
+            "cg": self._solve_cg,
+            "cgs": self._solve_cgs,
+            "bicg": self._solve_bicg,
+            "bicgstab": self._solve_bicgstab,
+            "qmr": self._solve_qmr,
+            "tfqmr": self._solve_tfqmr,
+            "minres": self._solve_minres,
+            "gcrotmk": self._solve_gcrotmk,
+            "lsqr": self._solve_lsqr,
+            "lsmr": self._solve_lsmr
         }
     
-    def _to_numpy_matrix(self, A):
-        """行列をNumPy/SciPy形式に変換"""
-        # CuPy配列からNumPy配列への変換
+    def _ensure_scipy_matrix(self, A):
+        """行列をSciPy形式に変換"""
+        # CuPy配列からの変換
         if hasattr(A, 'get'):
             return A.get()
         
-        # JAX配列からNumPy配列への変換
+        # JAX配列からの変換
         if 'jax' in str(type(A)):
             return np.array(A)
-        
+            
         # 既にNumPy/SciPyの場合はそのまま
         return A
-    
-    def _to_numpy_vector(self, b):
-        """ベクトルをNumPy配列に変換"""
-        # CuPy配列からNumPy配列への変換
-        if hasattr(b, 'get'):
-            return b.get()
-        
-        # JAX配列からNumPy配列への変換
-        if 'jax' in str(type(b)):
-            return np.array(b)
-        
-        # 既にNumPy配列の場合はそのまま
-        return b
     
     def _prepare_scaling(self):
         """スケーリング前処理"""
@@ -68,7 +58,6 @@ class CPULinearSolver(LinearSolver):
         # ダミーベクトルでスケーリング情報を計算
         dummy_b = np.ones(self.A.shape[0])
         
-        # スケーリング情報を保存
         try:
             _, _, self.scaling_info = self.scaler.scale(self.A, dummy_b)
         except Exception as e:
@@ -77,7 +66,6 @@ class CPULinearSolver(LinearSolver):
     
     def solve(self, b, method="direct", options=None):
         """SciPy を使用して線形方程式系を解く"""
-        start_time = time.time()
         options = options or {}
         
         # 右辺ベクトルbをNumPy形式に変換
@@ -107,9 +95,6 @@ class CPULinearSolver(LinearSolver):
                 
             # 計算結果の記録
             self.last_iterations = iterations
-            elapsed = time.time() - start_time
-            print(f"CPU解法: {method}, 時間: {elapsed:.4f}秒" + 
-                  (f", 反復: {iterations}" if iterations else ""))
                   
             return x
             
@@ -121,6 +106,19 @@ class CPULinearSolver(LinearSolver):
                 x = self.scaler.unscale(x, self.scaling_info)
             return x
     
+    def _to_numpy_vector(self, b):
+        """ベクトルをNumPy配列に変換"""
+        # CuPy配列からNumPy配列への変換
+        if hasattr(b, 'get'):
+            return b.get()
+        
+        # JAX配列からNumPy配列への変換
+        if 'jax' in str(type(b)):
+            return np.array(b)
+        
+        # 既にNumPy配列の場合はそのまま
+        return b
+    
     def _solve_direct(self, A, b, options=None):
         """直接解法"""
         return splinalg.spsolve(A, b), None
@@ -130,87 +128,178 @@ class CPULinearSolver(LinearSolver):
         options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
-        restart = options.get("restart", 10000)
+        restart = options.get("restart", 20)
         
         # 初期推定値
-        x0 = options.get("x0", np.ones_like(b))
-        
-        # コールバック関数設定
-        residuals = []
-        callback = None
-        if options.get("monitor_convergence", False):
-            def callback(xk):
-                residual = np.linalg.norm(b - A @ xk) / np.linalg.norm(b)
-                residuals.append(float(residual))
-                if len(residuals) % 10 == 0:
-                    print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
+        x0 = options.get("x0", np.zeros_like(b))
         
         # GMRES実行
-        result = splinalg.gmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, 
-                              restart=restart, callback=callback)
-        
-        # 収束履歴を可視化（オプション）
-        if options.get("monitor_convergence", False) and residuals:
-            self._visualize_convergence(residuals, "gmres", options)
+        result = splinalg.gmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, restart=restart)
         
         return result[0], result[1]  # x, iterations
     
-    def _solve_iterative(self, A, b, options=None):
-        """反復解法共通インターフェース"""
+    def _solve_lgmres(self, A, b, options=None):
+        """LGMRES法"""
         options = options or {}
-        method_name = options.get("method_name", "cg")
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        inner_m = options.get("inner_m", 30)
+        outer_k = options.get("outer_k", 3)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # LGMRES実行
+        result = splinalg.lgmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, 
+                                inner_m=inner_m, outer_k=outer_k)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_cg(self, A, b, options=None):
+        """共役勾配法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         
         # 初期推定値
-        x0 = options.get("x0", np.ones_like(b))
+        x0 = options.get("x0", np.zeros_like(b))
         
-        # コールバック関数設定
-        residuals = []
-        callback = None
-        if options.get("monitor_convergence", False):
-            def callback(xk):
-                residual = np.linalg.norm(b - A @ xk) / np.linalg.norm(b)
-                residuals.append(float(residual))
-                if len(residuals) % 10 == 0:
-                    print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
-        
-        # 指定した反復解法を実行
-        solver_func = getattr(splinalg, method_name)
-        result = solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
-        
-        # 収束履歴を可視化（オプション）
-        if options.get("monitor_convergence", False) and residuals:
-            self._visualize_convergence(residuals, method_name, options)
+        # CG実行
+        result = splinalg.cg(A, b, x0=x0, rtol=tol, maxiter=maxiter)
         
         return result[0], result[1]  # x, iterations
     
-    def _solve_least_squares(self, A, b, options=None):
-        """最小二乗法ソルバー"""
+    def _solve_bicg(self, A, b, options=None):
+        """BiCG法"""
         options = options or {}
-        method_name = options.get("method_name", "lsqr")
+        tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         
-        # 指定した最小二乗法解法を実行
-        solver_func = getattr(splinalg, method_name)
-        result = solver_func(A, b, iter_lim=maxiter)
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
         
-        return result[0], None  # x, iterations
+        # BiCG実行
+        result = splinalg.bicg(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
     
-    def _visualize_convergence(self, residuals, method_name, options):
-        """収束履歴を可視化"""
-        output_dir = options.get("output_dir", "results")
-        os.makedirs(output_dir, exist_ok=True)
+    def _solve_bicgstab(self, A, b, options=None):
+        """BiCGSTAB法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
         
-        import matplotlib.pyplot as plt
-        plt.figure(figsize=(8, 5))
-        plt.semilogy(range(1, len(residuals)+1), residuals, 'b-')
-        plt.grid(True, which="both", ls="--")
-        plt.xlabel('反復回数')
-        plt.ylabel('残差 (対数スケール)')
-        plt.title(f'{method_name.upper()} ソルバーの収束履歴')
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
         
-        prefix = options.get("prefix", "")
-        filename = os.path.join(output_dir, f"{prefix}_convergence_{method_name}.png")
-        plt.savefig(filename, dpi=150)
-        plt.close()
+        # BiCGSTAB実行
+        result = splinalg.bicgstab(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_cgs(self, A, b, options=None):
+        """CGS法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # CGS実行
+        result = splinalg.cgs(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_qmr(self, A, b, options=None):
+        """QMR法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # QMR実行
+        result = splinalg.qmr(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_tfqmr(self, A, b, options=None):
+        """TFQMR法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # TFQMR実行
+        result = splinalg.tfqmr(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_minres(self, A, b, options=None):
+        """MINRES法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # MINRES実行
+        result = splinalg.minres(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_gcrotmk(self, A, b, options=None):
+        """GCROT(m,k)法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        m = options.get("m", 20)
+        k = options.get("k", 10)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # GCROT(m,k)実行
+        result = splinalg.gcrotmk(A, b, x0=x0, rtol=tol, maxiter=maxiter, m=m, k=k)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_lsqr(self, A, b, options=None):
+        """LSQR最小二乗法ソルバー"""
+        options = options or {}
+        
+        # LSQRパラメータを抽出
+        damp = options.get("damp", 0.0)
+        atol = options.get("atol", 1e-6)
+        btol = options.get("btol", 1e-6)
+        conlim = options.get("conlim", 1e8)
+        iter_lim = options.get("maxiter", options.get("iter_lim", None))
+        
+        # LSQR実行
+        result = splinalg.lsqr(A, b, damp=damp, atol=atol, btol=btol,
+                             conlim=conlim, iter_lim=iter_lim)
+        
+        return result[0], result[2]  # x, iterations (itn)
+
+    def _solve_lsmr(self, A, b, options=None):
+        """LSMR最小二乗法ソルバー"""
+        options = options or {}
+        
+        # LSMRパラメータを抽出
+        damp = options.get("damp", 0.0)
+        atol = options.get("atol", 1e-6)
+        btol = options.get("btol", 1e-6)
+        conlim = options.get("conlim", 1e8)
+        maxiter = options.get("maxiter", None)
+        x0 = options.get("x0", None)
+        
+        # LSMR実行
+        result = splinalg.lsmr(A, b, damp=damp, atol=atol, btol=btol,
+                             conlim=conlim, maxiter=maxiter, x0=x0)
+        
+        return result[0], result[2]  # x, iterations (itn)

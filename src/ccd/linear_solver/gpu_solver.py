@@ -2,8 +2,6 @@
 GPU (CuPy) を使用した線形方程式系ソルバー
 """
 
-import os
-import time
 import numpy as np
 from .base import LinearSolver
 from .cpu_solver import CPULinearSolver
@@ -13,25 +11,12 @@ class GPULinearSolver(LinearSolver):
     
     def _initialize(self):
         """GPU固有の初期化処理"""
-        # CuPyが利用可能か確認
         try:
             import cupy as cp
             import cupyx.scipy.sparse.linalg as splinalg
             self.cp = cp
             self.splinalg = splinalg
             self.has_cupy = True
-            
-            # 解法メソッド辞書 - 必ず最初に定義（エラー回避のため）
-            self.solvers = {
-                "direct": self._solve_direct,
-                "gmres": self._solve_gmres,
-                "cg": self._solve_iterative,
-                "cgs": self._solve_iterative,
-                "bicgstab": self._solve_iterative,
-                "minres": self._solve_iterative,
-                "lsqr": self._solve_least_squares,
-                "lsmr": self._solve_least_squares
-            }
             
             # 行列をCuPy形式に変換
             self.A = self._to_cupy_matrix(self.original_A)
@@ -41,6 +26,17 @@ class GPULinearSolver(LinearSolver):
                 from scaling import plugin_manager
                 self.scaler = plugin_manager.get_plugin(self.scaling_method)
                 self._prepare_scaling()
+            
+            # 解法メソッド辞書
+            self.solvers = {
+                "direct": self._solve_direct,
+                "gmres": self._solve_gmres,
+                "cg": self._solve_cg,
+                "cgs": self._solve_cgs,
+                "minres": self._solve_minres,
+                "lsqr": self._solve_lsqr,
+                "lsmr": self._solve_lsmr
+            }
             
         except ImportError as e:
             print(f"警告: CuPyが利用できません: {e}")
@@ -97,10 +93,9 @@ class GPULinearSolver(LinearSolver):
         if not self.scaler or not self.has_cupy:
             return
             
-        # NumPy用ダミーベクトルでスケーリング情報を計算
+        # ダミーベクトルでスケーリング情報を計算
         dummy_b = np.ones(self.A.shape[0])
         
-        # スケーリング情報を保存
         try:
             # NumPy版の行列を作成
             A_np = self._to_numpy_matrix(self.A)
@@ -114,7 +109,6 @@ class GPULinearSolver(LinearSolver):
                     self.scaling_info[key] = self.cp.array(value)
                 else:
                     self.scaling_info[key] = value
-                    
         except Exception as e:
             print(f"スケーリング前処理エラー: {e}")
             self.scaler = None
@@ -125,7 +119,6 @@ class GPULinearSolver(LinearSolver):
         if not self.has_cupy:
             return self.cpu_solver.solve(b, method, options)
         
-        start_time = time.time()
         options = options or {}
         
         try:
@@ -136,12 +129,10 @@ class GPULinearSolver(LinearSolver):
             b_scaled = b_gpu
             if self.scaler and self.scaling_info:
                 try:
-                    # 右辺ベクトルのスケーリング - CuPy版
                     row_scale = self.scaling_info.get('row_scale')
                     if row_scale is not None:
                         b_scaled = b_gpu * row_scale
                     else:
-                        # 対称スケーリングの場合
                         D_sqrt_inv = self.scaling_info.get('D_sqrt_inv')
                         if D_sqrt_inv is not None:
                             b_scaled = b_gpu * D_sqrt_inv
@@ -160,12 +151,10 @@ class GPULinearSolver(LinearSolver):
             # 結果のアンスケーリング
             if self.scaler and self.scaling_info:
                 try:
-                    # 解のアンスケーリング - CuPy版
                     col_scale = self.scaling_info.get('col_scale')
                     if col_scale is not None:
                         x_gpu = x_gpu / col_scale
                     else:
-                        # 対称スケーリングの場合
                         D_sqrt_inv = self.scaling_info.get('D_sqrt_inv')
                         if D_sqrt_inv is not None:
                             x_gpu = x_gpu * D_sqrt_inv
@@ -177,33 +166,17 @@ class GPULinearSolver(LinearSolver):
             
             # 計算結果の記録
             self.last_iterations = iterations
-            elapsed = time.time() - start_time
-            print(f"GPU解法: {method}, 時間: {elapsed:.4f}秒" + 
-                  (f", 反復: {iterations}" if iterations else ""))
                   
             return x
                 
         except Exception as e:
             print(f"GPU解法エラー: {e}, CPUに切り替えます")
-            # CPUソルバーにフォールバック
             return CPULinearSolver(
                 self.original_A, 
                 self.enable_dirichlet, 
                 self.enable_neumann, 
                 self.scaling_method
             ).solve(b, method, options)
-    
-    def _solve_direct(self, A, b, options=None):
-        """直接解法"""
-        try:
-            x = self.splinalg.spsolve(A, b)
-            return x, None
-        except Exception as e:
-            print(f"GPU直接解法エラー: {e}, CPUにフォールバック")
-            # CPUにフォールバック
-            import scipy.sparse.linalg as splinalg
-            x = splinalg.spsolve(self._to_numpy_matrix(A), self._to_numpy_vector(b))
-            return self.cp.array(x), None
     
     def _to_numpy_matrix(self, A):
         """行列をNumPy形式に変換"""
@@ -217,91 +190,99 @@ class GPULinearSolver(LinearSolver):
             return b.get()
         return b
     
+    def _solve_direct(self, A, b, options=None):
+        """直接解法"""
+        try:
+            x = self.splinalg.spsolve(A, b)
+            return x, None
+        except Exception as e:
+            print(f"GPU直接解法エラー: {e}, CPUにフォールバック")
+            import scipy.sparse.linalg as splinalg
+            x = splinalg.spsolve(self._to_numpy_matrix(A), self._to_numpy_vector(b))
+            return self.cp.array(x), None
+    
     def _solve_gmres(self, A, b, options=None):
         """GMRES法"""
         options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
-        restart = options.get("restart", 10000)
+        restart = options.get("restart", 20)
         
         # 初期推定値
-        x0 = options.get("x0", self.cp.ones_like(b))
-        
-        # コールバック関数設定
-        residuals = []
-        callback = None
-        if options.get("monitor_convergence", False):
-            def callback(xk):
-                residual = float(self.cp.linalg.norm(b - A @ xk) / self.cp.linalg.norm(b))
-                residuals.append(residual)
-                if len(residuals) % 10 == 0:
-                    print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
+        x0 = options.get("x0", self.cp.zeros_like(b))
         
         # GMRES実行
-        result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
-                                    restart=restart, callback=callback)
-        
-        # 収束履歴を可視化（オプション）
-        if options.get("monitor_convergence", False) and residuals:
-            self._visualize_convergence(residuals, "gmres", options)
+        result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
         
         return result[0], result[1]  # x, iterations
     
-    def _solve_iterative(self, A, b, options=None):
-        """反復解法共通インターフェース"""
+    def _solve_cg(self, A, b, options=None):
+        """共役勾配法"""
         options = options or {}
-        method_name = options.get("method_name", "cg")
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         
         # 初期推定値
-        x0 = options.get("x0", self.cp.ones_like(b))
+        x0 = options.get("x0", self.cp.zeros_like(b))
         
-        # コールバック関数設定
-        residuals = []
-        callback = None
-        if options.get("monitor_convergence", False):
-            def callback(xk):
-                residual = float(self.cp.linalg.norm(b - A @ xk) / self.cp.linalg.norm(b))
-                residuals.append(residual)
-                if len(residuals) % 10 == 0:
-                    print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
-        
-        # 指定した反復解法を実行
-        solver_func = getattr(self.splinalg, method_name)
-        result = solver_func(A, b, x0=x0, tol=tol, maxiter=maxiter, callback=callback)
-        
-        # 収束履歴を可視化（オプション）
-        if options.get("monitor_convergence", False) and residuals:
-            self._visualize_convergence(residuals, method_name, options)
+        # CG実行
+        result = self.splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter)
         
         return result[0], result[1]  # x, iterations
     
-    def _solve_least_squares(self, A, b, options=None):
-        """最小二乗法ソルバー"""
+    def _solve_cgs(self, A, b, options=None):
+        """CGS法"""
         options = options or {}
-        method_name = options.get("method_name", "lsqr")
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
         
-        # 最小二乗法解法を実行
-        solver_func = getattr(self.splinalg, method_name)
-        result = solver_func(A, b)
+        # 初期推定値
+        x0 = options.get("x0", self.cp.zeros_like(b))
         
-        return result[0], None  # x, iterations
+        # CGS実行
+        result = self.splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
     
-    def _visualize_convergence(self, residuals, method_name, options):
-        """収束履歴を可視化"""
-        output_dir = options.get("output_dir", "results")
-        os.makedirs(output_dir, exist_ok=True)
+    def _solve_minres(self, A, b, options=None):
+        """MINRES法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
         
-        import matplotlib.pyplot as plt
-        plt.figure(figsize=(8, 5))
-        plt.semilogy(range(1, len(residuals)+1), residuals, 'b-')
-        plt.grid(True, which="both", ls="--")
-        plt.xlabel('反復回数')
-        plt.ylabel('残差 (対数スケール)')
-        plt.title(f'{method_name.upper()} ソルバーの収束履歴 (GPU)')
+        # 初期推定値
+        x0 = options.get("x0", self.cp.zeros_like(b))
         
-        prefix = options.get("prefix", "")
-        filename = os.path.join(output_dir, f"{prefix}_convergence_gpu_{method_name}.png")
-        plt.savefig(filename, dpi=150)
-        plt.close()
+        # MINRES実行
+        result = self.splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_lsqr(self, A, b, options=None):
+        """LSQR最小二乗法ソルバー"""
+        try:
+            result = self.splinalg.lsqr(A, b)
+            return result[0], None
+        except Exception as e:
+            print(f"GPU LSQR解法エラー: {e}, CPUにフォールバック")
+            import scipy.sparse.linalg as splinalg
+            A_np = self._to_numpy_matrix(A)
+            b_np = self._to_numpy_vector(b)
+            result = splinalg.lsqr(A_np, b_np)
+            return self.cp.array(result[0]), None
+    
+    def _solve_lsmr(self, A, b, options=None):
+        """LSMR最小二乗法ソルバー"""
+        options = options or {}
+        maxiter = options.get("maxiter", None)
+        
+        try:
+            result = self.splinalg.lsmr(A, b, maxiter=maxiter)
+            return result[0], result[2]  # x, iterations
+        except Exception as e:
+            print(f"GPU LSMR解法エラー: {e}, CPUにフォールバック")
+            import scipy.sparse.linalg as splinalg
+            A_np = self._to_numpy_matrix(A)
+            b_np = self._to_numpy_vector(b)
+            result = splinalg.lsmr(A_np, b_np, maxiter=maxiter)
+            return self.cp.array(result[0]), result[2]

@@ -1,5 +1,5 @@
 """
-行と列のスケーリングを組み合わせた平衡化スケーリング実装
+行と列のスケーリングを組み合わせた平衡化スケーリング実装（修正版）
 """
 
 from typing import Dict, Any, Tuple
@@ -25,7 +25,7 @@ class EquilibrationScaling(BaseScaling):
     
     def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
         """
-        反復的平衡化スケーリングを適用
+        反復的平衡化スケーリングを適用（安定化版）
         
         Args:
             A: システム行列
@@ -35,7 +35,7 @@ class EquilibrationScaling(BaseScaling):
             tuple: (scaled_A, scaled_b, scale_info)
         """
         m, n = A.shape
-        scaled_A = A.copy() if not hasattr(A, 'copy') else A.copy()
+        scaled_A = A.copy() if hasattr(A, 'copy') else A.copy()
         
         # スケーリングベクトルを初期化
         row_scale = np.ones(m)
@@ -45,24 +45,53 @@ class EquilibrationScaling(BaseScaling):
         is_csr = hasattr(scaled_A, 'format') and scaled_A.format == 'csr'
         is_csc = hasattr(scaled_A, 'format') and scaled_A.format == 'csc'
         
+        # 最大許容スケーリング係数（これより大きい値を避ける）
+        max_scale_factor = 1e3  # 経験的な値、調整可能
+        
         # 反復処理
-        for _ in range(self.max_iterations):
+        for iter_idx in range(self.max_iterations):
             # 行/列ノルムを計算
             row_norms = self._compute_row_norms(scaled_A, is_csr)
             col_norms = self._compute_column_norms(scaled_A, is_csc)
+            
+            # ノルム比率を確認（大きな不均衡を確認）
+            row_ratio = np.max(row_norms) / np.maximum(np.min(row_norms), 1e-10)
+            col_ratio = np.max(col_norms) / np.maximum(np.min(col_norms), 1e-10)
+            
+            # 不均衡が大きすぎる場合は早期終了
+            if row_ratio > 1e10 or col_ratio > 1e10:
+                print(f"警告: 不均衡が大きすぎます（行比率={row_ratio:.1e}, 列比率={col_ratio:.1e}）。スケーリングを制限します。")
+                break
             
             # 収束確認
             if (np.abs(row_norms - 1.0) < self.tolerance).all() and \
                (np.abs(col_norms - 1.0) < self.tolerance).all():
                 break
             
-            # スケーリング係数の更新（安定化のため平方根を使用）
-            row_scale_update = 1.0 / np.sqrt(np.where(row_norms < 1e-15, 1.0, row_norms))
-            col_scale_update = 1.0 / np.sqrt(np.where(col_norms < 1e-15, 1.0, col_norms))
+            # 最小ノルム値の保護（0に近い値の保護）
+            safe_row_norms = np.maximum(row_norms, 1e-10)
+            safe_col_norms = np.maximum(col_norms, 1e-10)
+            
+            # スケーリング係数の更新（安定化のため平方根を使用、かつ最大値制限）
+            row_scale_update = 1.0 / np.sqrt(safe_row_norms)
+            col_scale_update = 1.0 / np.sqrt(safe_col_norms)
+            
+            # スケーリング係数を制限してオーバーフローを避ける
+            row_scale_update = np.clip(row_scale_update, 1.0/max_scale_factor, max_scale_factor)
+            col_scale_update = np.clip(col_scale_update, 1.0/max_scale_factor, max_scale_factor)
+            
+            # 最終反復で激しい変化を避けるためのダンピング
+            if iter_idx == self.max_iterations - 1:
+                row_scale_update = np.sqrt(row_scale_update)  # 緩やかに変化
+                col_scale_update = np.sqrt(col_scale_update)  # 緩やかに変化
             
             # 合計スケーリング係数を更新
             row_scale *= row_scale_update
             col_scale *= col_scale_update
+            
+            # 累積スケーリング係数も制限
+            row_scale = np.clip(row_scale, 1.0/max_scale_factor, max_scale_factor)
+            col_scale = np.clip(col_scale, 1.0/max_scale_factor, max_scale_factor)
             
             # 行列をスケーリング
             DR = sp.diags(row_scale_update)
