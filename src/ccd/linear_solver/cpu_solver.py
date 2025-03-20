@@ -186,7 +186,7 @@ class CPULinearSolver(LinearSolver):
         restart = options.get("restart", 10000)
         
         # Initial guess
-        x0 = options.get("x0", np.ones_like(b))
+        x0 = options.get("x0", np.zeros_like(b))
         
         # Setup convergence monitoring
         residuals = []
@@ -199,7 +199,7 @@ class CPULinearSolver(LinearSolver):
                     print(f"  反復 {len(residuals)}: 残差 = {residual:.6e}")
         
         # Run GMRES
-        result = splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
+        result = splinalg.gmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, 
                               restart=restart, callback=callback)
         
         # Visualize convergence history if requested
