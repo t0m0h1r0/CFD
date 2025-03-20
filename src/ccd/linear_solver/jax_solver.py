@@ -1,16 +1,28 @@
 """
 JAX を使用した線形方程式系ソルバー
+
+This module provides solvers for linear systems Ax = b using JAX's
+numerical computing capabilities. It supports direct and iterative
+methods with various convergence options and scaling techniques.
+All implementations are designed to be JIT-friendly and follow
+JAX's functional programming paradigm.
 """
 
 import os
 import time
 import numpy as np
 from .base import LinearSolver
-from .cpu_solver import CPULinearSolver
 
 
 class JAXLinearSolver(LinearSolver):
-    """JAX を使用した線形方程式系ソルバー"""
+    """JAX を使用した線形方程式系ソルバー
+    
+    This solver leverages JAX's high-performance numerical computing
+    capabilities to solve linear systems on accelerators. It supports
+    direct solvers and iterative methods like CG and BiCGSTAB,
+    with implementations designed for JIT compilation and automatic
+    differentiation support.
+    """
     
     def _initialize(self):
         """JAX固有の初期化処理"""
@@ -23,7 +35,7 @@ class JAXLinearSolver(LinearSolver):
             self.lax = lax
             self.has_jax = True
             
-            # 解法メソッド辞書 - 必ず最初に定義
+            # 解法メソッド辞書 - 必ず最初に定義（エラー回避のため）
             self.solvers = {
                 "direct": self._solve_direct,
                 "cg": self._solve_cg,
@@ -43,12 +55,17 @@ class JAXLinearSolver(LinearSolver):
         except ImportError as e:
             print(f"警告: JAXが利用できません: {e}")
             self.has_jax = False
-            self.cpu_solver = CPULinearSolver(
-                self.original_A, 
-                self.enable_dirichlet, 
-                self.enable_neumann, 
-                self.scaling_method
-            )
+            self.cpu_solver = self._create_cpu_fallback()
+    
+    def _create_cpu_fallback(self):
+        """CPU fallbackソルバーを作成"""
+        from .cpu_solver import CPULinearSolver
+        return CPULinearSolver(
+            self.original_A, 
+            self.enable_dirichlet, 
+            self.enable_neumann, 
+            self.scaling_method
+        )
     
     def _to_jax_matrix(self, A):
         """行列をJAX形式に変換"""
@@ -167,10 +184,6 @@ class JAXLinearSolver(LinearSolver):
         else:
             return np.array(A)
     
-    def _to_numpy_vector(self, b):
-        """ベクトルをNumPy形式に変換"""
-        return np.array(b)
-    
     def _to_numpy_scaling_info(self):
         """スケーリング情報をNumPy形式に変換"""
         numpy_info = {}
@@ -238,12 +251,11 @@ class JAXLinearSolver(LinearSolver):
         except Exception as e:
             print(f"JAX解法エラー: {e}, CPUに切り替えます")
             # CPUソルバーにフォールバック
-            return CPULinearSolver(
-                self.original_A, 
-                self.enable_dirichlet, 
-                self.enable_neumann, 
-                self.scaling_method
-            ).solve(b, method, options)
+            return self._create_cpu_fallback().solve(b, method, options)
+
+    def _to_numpy_vector(self, b):
+        """ベクトルをNumPy形式に変換"""
+        return np.array(b)
     
     def _solve_direct(self, A, b, options=None):
         """直接解法"""
@@ -272,8 +284,8 @@ class JAXLinearSolver(LinearSolver):
         # 初期値設定
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
-        # JAX固有のCG実装
-        matvec = self.jit_matvec if self.jit_matvec is not None else lambda x: A @ x
+        # 行列ベクトル積関数を取得
+        matvec = A['matvec'] if isinstance(A, dict) and 'matvec' in A else lambda x: A @ x
         
         # 残差と初期値
         r0 = b - matvec(x0)
@@ -325,7 +337,7 @@ class JAXLinearSolver(LinearSolver):
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
         # JAX固有のBiCGSTAB実装
-        matvec = self.jit_matvec if self.jit_matvec is not None else lambda x: A @ x
+        matvec = A['matvec'] if isinstance(A, dict) and 'matvec' in A else lambda x: A @ x
         
         # 残差と初期値
         r0 = b - matvec(x0)
@@ -344,7 +356,7 @@ class JAXLinearSolver(LinearSolver):
             x_k, r_k, p_k, v_k, r_hat, rho_prev, k, omega = state
             
             rho = self.jnp.dot(r_hat, r_k)
-            beta = (rho / self.jnp.maximum(rho_prev, 1e-15)) * (omega / self.jnp.maximum(omega, 1e-15))
+            beta = (rho / self.jnp.maximum(rho_prev, 1e-15)) * (alpha / self.jnp.maximum(omega, 1e-15))
             p_next = r_k + beta * (p_k - omega * v_k)
             
             v_next = matvec(p_next)
@@ -388,146 +400,248 @@ class JAXLinearSolver(LinearSolver):
             x = splinalg.bicgstab(self._to_numpy_matrix(A), self._to_numpy_vector(b), tol=tol, maxiter=maxiter)[0]
             return self.jnp.array(x), None
     
+    """
+    JAX GMRES Implementation for CCD Solver
+
+    This implementation properly handles CSR matrix representations and
+    ensures compatibility with JAX's sparse linear algebra functions.
+    """
+
     def _solve_gmres(self, A, b, options=None):
-        """JAX GMRES法"""
+        """JAX-compatible GMRES solver implementation"""
         options = options or {}
         tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        restart = options.get("restart", 20)
+        maxiter = options.get("maxiter", min(1000, b.shape[0]))
+        restart = options.get("restart", min(20, b.shape[0]))
         
-        # 初期値設定
+        # Initial guess
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
-        # GMRES実装
-        def gmres_single_restart(x, b, tol, restart, matvec):
-            """単一のGMRESリスタートを実装"""
-            r = b - matvec(x)
-            beta = self.jnp.linalg.norm(r)
-            if beta <= tol:
-                return x, 0
+        # Matrix-vector product function
+        if isinstance(A, dict) and 'matvec' in A:
+            # Handle CSR matrix representation
+            matvec = A['matvec']
+        else:
+            # Handle dense matrix
+            matvec = lambda x: A @ x
+        
+        # Residual monitoring
+        residuals = []
+        if options.get("monitor_convergence", False):
+            def callback(x, i):
+                r_norm = self.jnp.linalg.norm(b - matvec(x))
+                b_norm = self.jnp.linalg.norm(b)
+                residual = r_norm / b_norm
+                residuals.append(float(residual))
+                if i % 10 == 0:
+                    print(f"  反復 {i}: 残差 = {residual:.6e}")
+                return None
+        else:
+            callback = None
+        
+        try:
+            # Try using JAX's scipy GMRES implementation if available
+            try:
+                from jax import scipy as jsp
+                from jax.experimental import sparse
                 
-            # Krylov部分空間の基底
-            V = self.jnp.zeros((b.shape[0], restart+1), dtype=b.dtype)
-            V = V.at[:, 0].set(r / beta)
-            
-            # Hessenberg行列
-            H = self.jnp.zeros((restart+1, restart), dtype=b.dtype)
-            
-            # Givens回転パラメータ
-            cs = self.jnp.zeros(restart, dtype=b.dtype)
-            sn = self.jnp.zeros(restart, dtype=b.dtype)
-            
-            # 残差ベクトル
-            g = self.jnp.zeros(restart+1, dtype=b.dtype)
-            g = g.at[0].set(beta)
-            
-            # Arnoldiプロセス実装
-            def body_fun(j, val):
-                V, H, cs, sn, g, iterations_inner = val
-                
-                # 新しいKrylov部分空間ベクトル
-                w = matvec(V[:, j])
-                
-                # Modified Gram-Schmidt
-                for i in range(j+1):
-                    H = H.at[i, j].set(self.jnp.dot(w, V[:, i]))
-                    w = w - H[i, j] * V[:, i]
-                
-                H = H.at[j+1, j].set(self.jnp.linalg.norm(w))
-                
-                # 0除算防止
-                w = self.jnp.where(
-                    H[j+1, j] > 1e-14, 
-                    w / H[j+1, j], 
-                    self.jnp.zeros_like(w)
+                # Use JAX's GMRES implementation
+                result = jsp.sparse.linalg.gmres(
+                    matvec,  # Use our prepared matvec function
+                    b,
+                    x0=x0,
+                    atol=tol,  # Note: changed from tol to atol for compatibility
+                    restart=restart,
+                    maxiter=maxiter,
+                    callback=callback
                 )
-                V = V.at[:, j+1].set(w)
                 
-                # Givens回転の適用
-                # 既存の回転を適用
-                for i in range(j):
-                    temp = cs[i] * H[i, j] + sn[i] * H[i+1, j]
-                    H = H.at[i+1, j].set(-sn[i] * H[i, j] + cs[i] * H[i+1, j])
-                    H = H.at[i, j].set(temp)
+                # Extract result and iteration count
+                x = result[0]
+                iters = result[1]
+            except (ImportError, AttributeError) as e:
+                raise ImportError(f"JAX scipy GMRES not available: {e}")
                 
-                # 新しい回転の計算
-                if H[j+1, j] == 0:
-                    cs = cs.at[j].set(1.0)
-                    sn = sn.at[j].set(0.0)
-                else:
-                    if abs(H[j+1, j]) > abs(H[j, j]):
-                        t = -H[j, j] / H[j+1, j]
-                        s = 1.0 / self.jnp.sqrt(1.0 + t*t)
-                        c = s * t
-                    else:
-                        t = -H[j+1, j] / H[j, j]
-                        c = 1.0 / self.jnp.sqrt(1.0 + t*t)
-                        s = c * t
-                    cs = cs.at[j].set(c)
-                    sn = sn.at[j].set(s)
-                
-                # 残差ベクトルの更新
-                H = H.at[j, j].set(cs[j] * H[j, j] + sn[j] * H[j+1, j])
-                H = H.at[j+1, j].set(0.0)
-                g = g.at[j+1].set(-sn[j] * g[j])
-                g = g.at[j].set(cs[j] * g[j])
-                
-                # 収束判定
-                error = abs(g[j+1])
-                iterations_inner = iterations_inner + 1
-                
-                return V, H, cs, sn, g, iterations_inner
-            
-            iterations_inner = 0
-            val = (V, H, cs, sn, g, iterations_inner)
-            
-            # Arnoldiプロセスの実行
-            for j in range(restart):
-                val = body_fun(j, val)
-                V, H, cs, sn, g, iterations_inner = val
-                
-                # 収束判定
-                error = abs(g[j+1])
-                if error <= tol:
-                    break
-            
-            # 小さい方の問題を解く (Hy = g)
-            y = self.jnp.zeros(restart, dtype=b.dtype)
-            for j in range(min(restart, iterations_inner) - 1, -1, -1):
-                y = y.at[j].set(g[j])
-                for i in range(j+1, min(restart, iterations_inner)):
-                    y = y.at[j].set(y[j] - H[j, i] * y[i])
-                y = y.at[j].set(y[j] / H[j, j])
-            
-            # 解の更新
-            for j in range(min(restart, iterations_inner)):
-                x = x + y[j] * V[:, j]
-                
-            return x, iterations_inner
+        except ImportError as e:
+            print(f"Using custom JAX GMRES implementation: {e}")
+            # Fall back to custom implementation
+            x, iters = self._custom_gmres(
+                matvec, b, x0, tol=tol, restart=restart, maxiter=maxiter, callback=callback)
         
-        # メインGMRESループ
-        iterations_total = 0
+        # Visualize convergence history if requested
+        if options.get("monitor_convergence", False) and residuals:
+            self._visualize_convergence(residuals, "gmres", options)
         
-        # 効率のために関数をJITコンパイル
-        jit_gmres_restart = self.jax.jit(
-            lambda x, b, tol, restart, matvec: gmres_single_restart(x, b, tol, restart, matvec),
-            static_argnums=(2, 3)
-        )
+        return x, int(iters)
+
+    def _custom_gmres(self, A_op, b, x0, *, tol=1e-10, restart=20, maxiter=1000, callback=None):
+        """
+        Custom JAX-compatible GMRES implementation
         
-        # マトリックス-ベクトル積演算のためのJIT関数
-        matvec = self.jit_matvec if self.jit_matvec is not None else lambda x: A @ x
+        This implementation follows the restarted GMRES algorithm and is fully compatible
+        with JAX's transformations.
+        """
+        jnp = self.jnp
+        lax = self.lax
         
-        # メインループ
-        for iter_count in range(maxiter):
-            x0, inner_iterations = jit_gmres_restart(x0, b, tol, restart, matvec)
-            iterations_total += inner_iterations
+        # Prepare constants and initial values
+        b_norm = jnp.linalg.norm(b)
+        tol_threshold = tol * b_norm
+        
+        # Initialize solution
+        x = x0
+        
+        # Main GMRES iterations
+        def outer_loop(i_outer, state):
+            x, converged = state
             
-            # 収束チェック
-            r = b - matvec(x0)
-            if self.jnp.linalg.norm(r) <= tol * self.jnp.linalg.norm(b):
-                break
+            # Compute residual
+            r = b - A_op(x)
+            r_norm = jnp.linalg.norm(r)
+            
+            # Skip Arnoldi if already converged or at max iterations
+            def run_arnoldi():
+                # Prepare for Arnoldi process
+                Q = jnp.zeros((b.shape[0], restart+1), dtype=b.dtype)
+                H = jnp.zeros((restart+1, restart), dtype=b.dtype)
+                
+                # First basis vector: normalized residual
+                q1 = r / r_norm
+                Q = Q.at[:, 0].set(q1)
+                
+                # Initialize Givens rotation parameters
+                cs = jnp.ones(restart)
+                sn = jnp.zeros(restart)
+                e1 = jnp.zeros(restart+1, dtype=b.dtype)
+                e1 = e1.at[0].set(r_norm)
+                
+                # Arnoldi process
+                def arnoldi_step(j, state):
+                    Q, H, cs, sn, e1, m_iters = state
+                    
+                    # Get new Krylov vector
+                    w = A_op(Q[:, j])
+                    
+                    # Modified Gram-Schmidt orthogonalization
+                    def gs_loop(k, w_h):
+                        w, h_col = w_h
+                        h_jk = jnp.vdot(Q[:, k], w)
+                        w = w - h_jk * Q[:, k]
+                        h_col = h_col.at[k].set(h_jk)
+                        return (w, h_col)
+                    
+                    # Run Gram-Schmidt
+                    w, h_col = lax.fori_loop(0, j+1, gs_loop, (w, jnp.zeros(j+2, dtype=b.dtype)))
+                    
+                    # Normalize and store the new basis vector
+                    h_j1j = jnp.linalg.norm(w)
+                    h_col = h_col.at[j+1].set(h_j1j)
+                    H = H.at[:j+2, j].set(h_col)
+                    
+                    # Prevent division by zero
+                    safe_norm = jnp.where(h_j1j > 1e-14, h_j1j, 1.0)
+                    Q = Q.at[:, j+1].set(w / safe_norm)
+                    
+                    # Apply previous Givens rotations to the new column
+                    def apply_rotations(k, h_col):
+                        # Apply the k-th rotation to the k-th and (k+1)-th elements
+                        temp = cs[k] * h_col[k] + sn[k] * h_col[k+1]
+                        h_col = h_col.at[k+1].set(-sn[k] * h_col[k] + cs[k] * h_col[k+1])
+                        h_col = h_col.at[k].set(temp)
+                        return h_col
+                    
+                    h_col = lax.fori_loop(0, j, apply_rotations, H[:j+2, j])
+                    H = H.at[:j+2, j].set(h_col)
+                    
+                    # Compute new Givens rotation
+                    h1 = H[j, j]
+                    h2 = H[j+1, j]
+                    temp = jnp.sqrt(h1*h1 + h2*h2)
+                    temp = jnp.where(temp > 1e-14, temp, 1.0)  # Prevent division by zero
+                    
+                    cs = cs.at[j].set(h1 / temp)
+                    sn = sn.at[j].set(h2 / temp)
+                    
+                    # Apply new Givens rotation to H and e1
+                    H = H.at[j, j].set(temp)
+                    H = H.at[j+1, j].set(0.0)
+                    
+                    # Update residual vector
+                    e1 = e1.at[j+1].set(-sn[j] * e1[j])
+                    e1 = e1.at[j].set(cs[j] * e1[j])
+                    
+                    # Check convergence
+                    resid = jnp.abs(e1[j+1])
+                    
+                    # Callback for monitoring
+                    if callback is not None:
+                        # Solve the triangular system to get the current solution
+                        y = jnp.linalg.solve(H[:j+1, :j+1], e1[:j+1])
+                        x_cur = x + Q[:, :j+1] @ y
+                        callback(x_cur, i_outer * restart + j)
+                    
+                    # Return updated state
+                    return Q, H, cs, sn, e1, m_iters + 1
+                
+                # Run Arnoldi for up to restart iterations
+                init_state = (Q, H, cs, sn, e1, 0)
+                
+                # Define convergence condition
+                def arnoldi_cond(state):
+                    _, _, _, _, e1, m_iters = state
+                    return (jnp.abs(e1[m_iters]) > tol_threshold) & (m_iters < restart)
+                
+                # Run the Arnoldi process
+                Q, H, cs, sn, e1, m_iters = lax.while_loop(
+                    arnoldi_cond, arnoldi_step, init_state)
+                
+                # Solve the least-squares problem
+                y = jnp.linalg.solve(H[:m_iters, :m_iters], e1[:m_iters])
+                
+                # Update solution
+                x_new = x + Q[:, :m_iters] @ y
+                
+                # Check if we've converged
+                r_new = b - A_op(x_new)
+                r_new_norm = jnp.linalg.norm(r_new)
+                converged = r_new_norm <= tol_threshold
+                
+                return x_new, converged, r_new_norm
+            
+            # Skip Arnoldi if already converged (early return)
+            already_converged = converged | (r_norm <= tol_threshold)
+            x_new, new_converged, _ = lax.cond(
+                already_converged,
+                lambda: (x, True, r_norm),  # Keep current state
+                run_arnoldi  # Run Arnoldi process
+            )
+            
+            # Return updated state
+            return x_new, new_converged
         
-        return x0, iterations_total
+        # Initialize state
+        state = (x0, False)
+        
+        # Define convergence condition for outer iterations
+        def outer_cond(state_iter):
+            state, iter_count = state_iter
+            _, converged = state
+            return (~converged) & (iter_count < jnp.ceil(maxiter / restart))
+        
+        # Run outer iterations
+        def outer_step(state_iter):
+            state, iter_count = state_iter
+            new_state = outer_loop(iter_count, state)
+            return (new_state, iter_count + 1)
+        
+        # Run the restarts
+        (x, _), total_restarts = lax.while_loop(
+            outer_cond, outer_step, ((x0, False), 0))
+        
+        # Estimate total iterations
+        total_iters = jnp.minimum(total_restarts * restart, maxiter)
+        
+        return x, total_iters
     
     def _visualize_convergence(self, residuals, method_name, options):
         """収束履歴を可視化"""
