@@ -29,13 +29,24 @@ def parse_args():
     parser.add_argument("--yrange", type=float, nargs=2, default=[-1.0, 1.0], help="y方向の範囲 (2Dのみ)")
     
     # ソルバー設定
-    parser.add_argument("--solver", type=str, choices=['direct', 'gmres', 'cg', 'cgs', 'bicgstab', 'lsqr', 'minres', 'lsmr'], 
-                        default='direct', help="ソルバー手法")
+    parser.add_argument("--solver", type=str, 
+                      choices=['direct', 'gmres', 'lgmres', 'cg', 'cgs', 'bicg', 'bicgstab', 
+                               'qmr', 'tfqmr', 'minres', 'gcrotmk', 'lsqr', 'lsmr'], 
+                      default='direct', help="ソルバー手法")
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法")
     parser.add_argument("--analyze", action="store_true", help="行列を分析する")
     parser.add_argument("--monitor", action="store_true", help="収束過程をモニタリングする")
     parser.add_argument("--backend", type=str, choices=['cpu', 'cuda', 'jax'], default='cuda',
                   help="計算バックエンド (cpu=SciPy, cuda=CuPy, jax=JAX)")
+    
+    # 追加のソルバーパラメータ
+    parser.add_argument("--tol", type=float, default=1e-10, help="収束許容誤差")
+    parser.add_argument("--maxiter", type=int, default=1000, help="最大反復回数")
+    parser.add_argument("--restart", type=int, default=20, help="GMRES再起動パラメータ")
+    parser.add_argument("--inner-m", type=int, default=30, help="LGMRESの内部次元")
+    parser.add_argument("--outer-k", type=int, default=3, help="LGMRESの外部次元")
+    parser.add_argument("--m", type=int, default=20, help="GCROT(m,k)のm値")
+    parser.add_argument("--k", type=int, default=10, help="GCROT(m,k)のk値")
     
     # テストモード
     parser.add_argument("--list", action="store_true", help="利用可能な関数一覧を表示")
@@ -62,8 +73,13 @@ def create_tester(args):
     
     # テスター設定
     solver_options = {
-        "tol": 1e-10, 
-        "maxiter": 100000,
+        "tol": args.tol, 
+        "maxiter": args.maxiter,
+        "restart": args.restart,
+        "inner_m": args.inner_m,
+        "outer_k": args.outer_k,
+        "m": args.m,
+        "k": args.k,
         "monitor_convergence": args.monitor,
         "output_dir": args.out,
         "prefix": args.prefix,
@@ -85,8 +101,13 @@ def create_solver_instance(args, equation_set, grid):
 
     # ソルバーオプション設定
     solver_options = {
-        "tol": 1e-10,
-        "maxiter": 10000,
+        "tol": args.tol,
+        "maxiter": args.maxiter,
+        "restart": args.restart,
+        "inner_m": args.inner_m,
+        "outer_k": args.outer_k,
+        "m": args.m,
+        "k": args.k,
         "monitor_convergence": args.monitor,
         "output_dir": args.out,
         "prefix": args.prefix,
@@ -143,7 +164,7 @@ def run_convergence_test(args):
     grid_sizes = [11, 21, 41, 81] if args.dim == 1 else [11, 21, 31, 41]
     
     print(f"\n{test_func.name}関数で格子収束性テスト実行中...")
-    results = tester.run_grid_convergence_test(
+    results = tester.run_convergence_test(
         test_func, grid_sizes, args.xrange, 
         args.yrange if args.dim == 2 else None
     )
@@ -256,7 +277,7 @@ def run_all_verifications(args, output_dir):
                 
                 # 共通設定
                 tester.set_equation_set(eq_type)
-                tester.set_solver_options(args.solver, {"tol": 1e-10, "maxiter": 1000})
+                tester.set_solver_options(args.solver, {"tol": args.tol, "maxiter": args.maxiter})
                 tester.results_dir = output_dir
                 
                 try:

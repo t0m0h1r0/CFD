@@ -24,10 +24,15 @@ class CPULinearSolver(LinearSolver):
         self.solvers = {
             "direct": self._solve_direct,
             "gmres": self._solve_gmres,
+            "lgmres": self._solve_lgmres,
             "cg": self._solve_cg,
             "cgs": self._solve_cgs,
+            "bicg": self._solve_bicg,
             "bicgstab": self._solve_bicgstab,
+            "qmr": self._solve_qmr,
+            "tfqmr": self._solve_tfqmr,
             "minres": self._solve_minres,
+            "gcrotmk": self._solve_gcrotmk,
             "lsqr": self._solve_lsqr,
             "lsmr": self._solve_lsmr
         }
@@ -129,7 +134,24 @@ class CPULinearSolver(LinearSolver):
         x0 = options.get("x0", np.zeros_like(b))
         
         # GMRES実行
-        result = splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
+        result = splinalg.gmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, restart=restart)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_lgmres(self, A, b, options=None):
+        """LGMRES法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        inner_m = options.get("inner_m", 30)
+        outer_k = options.get("outer_k", 3)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # LGMRES実行
+        result = splinalg.lgmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, 
+                                inner_m=inner_m, outer_k=outer_k)
         
         return result[0], result[1]  # x, iterations
     
@@ -143,7 +165,21 @@ class CPULinearSolver(LinearSolver):
         x0 = options.get("x0", np.zeros_like(b))
         
         # CG実行
-        result = splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        result = splinalg.cg(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_bicg(self, A, b, options=None):
+        """BiCG法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # BiCG実行
+        result = splinalg.bicg(A, b, x0=x0, rtol=tol, maxiter=maxiter)
         
         return result[0], result[1]  # x, iterations
     
@@ -157,7 +193,7 @@ class CPULinearSolver(LinearSolver):
         x0 = options.get("x0", np.zeros_like(b))
         
         # BiCGSTAB実行
-        result = splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        result = splinalg.bicgstab(A, b, x0=x0, rtol=tol, maxiter=maxiter)
         
         return result[0], result[1]  # x, iterations
     
@@ -171,7 +207,35 @@ class CPULinearSolver(LinearSolver):
         x0 = options.get("x0", np.zeros_like(b))
         
         # CGS実行
-        result = splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        result = splinalg.cgs(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_qmr(self, A, b, options=None):
+        """QMR法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # QMR実行
+        result = splinalg.qmr(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_tfqmr(self, A, b, options=None):
+        """TFQMR法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # TFQMR実行
+        result = splinalg.tfqmr(A, b, x0=x0, rtol=tol, maxiter=maxiter)
         
         return result[0], result[1]  # x, iterations
     
@@ -185,7 +249,23 @@ class CPULinearSolver(LinearSolver):
         x0 = options.get("x0", np.zeros_like(b))
         
         # MINRES実行
-        result = splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        result = splinalg.minres(A, b, x0=x0, rtol=tol, maxiter=maxiter)
+        
+        return result[0], result[1]  # x, iterations
+    
+    def _solve_gcrotmk(self, A, b, options=None):
+        """GCROT(m,k)法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        m = options.get("m", 20)
+        k = options.get("k", 10)
+        
+        # 初期推定値
+        x0 = options.get("x0", np.zeros_like(b))
+        
+        # GCROT(m,k)実行
+        result = splinalg.gcrotmk(A, b, x0=x0, rtol=tol, maxiter=maxiter, m=m, k=k)
         
         return result[0], result[1]  # x, iterations
     
