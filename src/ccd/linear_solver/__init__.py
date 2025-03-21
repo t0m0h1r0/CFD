@@ -5,6 +5,10 @@
 線形方程式系を効率的に解くためのクラス群を提供します。
 """
 
+# 明示的にエクスポートするクラスとモジュールを指定
+__all__ = ['LinearSolver', 'CPULinearSolver', 'GPULinearSolver', 'JAXLinearSolver', 'create_solver']
+
+# ベースクラスと実装クラスをインポート
 from .base import LinearSolver
 from .cpu_solver import CPULinearSolver
 from .gpu_solver import GPULinearSolver

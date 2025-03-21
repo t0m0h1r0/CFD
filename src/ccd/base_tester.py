@@ -303,8 +303,8 @@ class CCDTester(ABC):
             try:
                 from scipy.sparse.linalg import spsolve
                 return spsolve(A, b)
-            except:
-                print("SciPy fallback solver also failed")
+            except Exception as fallback_error:  # 具体的な例外に変更
+                print(f"SciPy fallback solver also failed: {fallback_error}")
                 return None
     
     def _init_solver(self):
