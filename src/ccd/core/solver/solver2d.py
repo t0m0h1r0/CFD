@@ -7,9 +7,9 @@
 
 import numpy as np
 
-from base_solver import BaseCCDSolver
-from equation_system2d import EquationSystem2D
-from rhs_builder2d import RHSBuilder2D
+from core.base.base_solver import BaseCCDSolver
+from core.equation_system.equation_system2d import EquationSystem2D
+from core.rhs_builder.rhs_builder2d import RHSBuilder2D
 
 
 class CCDSolver2D(BaseCCDSolver):

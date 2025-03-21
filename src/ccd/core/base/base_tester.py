@@ -9,10 +9,10 @@ from abc import ABC, abstractmethod
 import os
 import numpy as np
 
-from grid1d import Grid1D
-from grid2d import Grid2D
-from equation_sets import EquationSet
-from matrix_visualizer import MatrixVisualizer
+from core.grid.grid1d import Grid1D
+from core.grid.grid2d import Grid2D
+from equation_set.equation_sets import EquationSet
+from visualizer.matrix_visualizer import MatrixVisualizer
 
 
 class CCDTester(ABC):
@@ -246,7 +246,7 @@ class CCDTester(ABC):
         """
         if test_func is None:
             # デフォルトテスト関数
-            from test_function_factory import TestFunctionFactory
+            from test_function.test_function_factory import TestFunctionFactory
             if self.get_dimension() == 1:
                 test_func = TestFunctionFactory.create_standard_1d_functions()[3]  # Sine
             else:

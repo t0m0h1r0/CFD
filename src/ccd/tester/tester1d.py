@@ -6,10 +6,10 @@
 
 import numpy as np
 
-from base_tester import CCDTester
-from solver1d import CCDSolver1D
-from equation_sets import DerivativeEquationSet1D
-from test_function_factory import TestFunctionFactory
+from core.base.base_tester import CCDTester
+from core.solver.solver1d import CCDSolver1D
+from equation_set.equation_sets import DerivativeEquationSet1D
+from test_function.test_function_factory import TestFunctionFactory
 
 
 class CCDTester1D(CCDTester):

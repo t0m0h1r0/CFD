@@ -6,9 +6,9 @@
 """
 
 
-from base_solver import BaseCCDSolver
-from equation_system1d import EquationSystem1D
-from rhs_builder1d import RHSBuilder1D
+from core.base.base_solver import BaseCCDSolver
+from core.equation_system.equation_system1d import EquationSystem1D
+from core.rhs_builder.rhs_builder1d import RHSBuilder1D
 
 
 class CCDSolver1D(BaseCCDSolver):

@@ -8,7 +8,7 @@
 import numpy as np
 import scipy.sparse as sp_cpu
 
-from base_equation_system import BaseEquationSystem
+from core.base.base_equation_system import BaseEquationSystem
 
 class EquationSystem1D(BaseEquationSystem):
     """1次元方程式システムを管理するクラス"""

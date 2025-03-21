@@ -6,10 +6,10 @@
 
 import numpy as np
 
-from base_tester import CCDTester
-from solver2d import CCDSolver2D
-from equation_sets import DerivativeEquationSet2D
-from test_function_factory import TestFunctionFactory
+from core.base.base_tester import CCDTester
+from core.solver.solver2d import CCDSolver2D
+from equation_set.equation_sets import DerivativeEquationSet2D
+from test_function.test_function_factory import TestFunctionFactory
 
 
 class CCDTester2D(CCDTester):
@@ -70,7 +70,7 @@ class CCDTester2D(CCDTester):
         funcs_1d = TestFunctionFactory.create_standard_1d_functions()
         func_1d = next((f for f in funcs_1d if f.name == func_name), None)
         if func_1d:
-            from test_function2d import TestFunction2D
+            from test_function.test_function2d import TestFunction2D
             return TestFunction2D.from_1d(func_1d, method='product')
         
         # デフォルト関数を返す

@@ -8,7 +8,7 @@ sympyを使用した自動微分機能付きのテスト関数を定義します
 import sympy as sp
 from typing import List, Optional
 
-from base_test_function import BaseTestFunction
+from core.base.base_test_function import BaseTestFunction
 
 class TestFunction1D(BaseTestFunction):
     """1次元テスト関数クラス（自動微分機能付き）"""

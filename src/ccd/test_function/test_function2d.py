@@ -8,8 +8,8 @@ sympyを使用した自動微分機能付きのテスト関数を定義します
 import sympy as sp
 from typing import List, Optional
 
-from base_test_function import BaseTestFunction
-from test_function1d import TestFunction1D
+from core.base.base_test_function import BaseTestFunction
+from test_function.test_function1d import TestFunction1D
 
 class TestFunction2D(BaseTestFunction):
     """2次元テスト関数クラス（自動微分機能付き）"""
@@ -287,7 +287,7 @@ class TestFunction2DFactory:
         Returns:
             拡張された2Dテスト関数のリスト
         """
-        from test_function1d import TestFunction1DFactory
+        from test_function.test_function1d import TestFunction1DFactory
         
         # 1Dテスト関数を取得
         functions_1d = TestFunction1DFactory.create_standard_functions()

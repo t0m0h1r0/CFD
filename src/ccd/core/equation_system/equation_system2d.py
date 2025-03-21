@@ -9,7 +9,7 @@ import numpy as np
 import scipy.sparse as sp_cpu
 from typing import Dict, List, Any
 
-from base_equation_system import BaseEquationSystem
+from core.base.base_equation_system import BaseEquationSystem
 
 class EquationSystem2D(BaseEquationSystem):
     """2次元方程式システムを管理するクラス"""

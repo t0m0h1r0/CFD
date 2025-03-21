@@ -7,9 +7,9 @@
 
 from typing import List, Dict, Optional
 
-from base_test_function import BaseTestFunction
-from test_function1d import TestFunction1D, TestFunction1DFactory
-from test_function2d import TestFunction2D, TestFunction2DFactory
+from core.base.base_test_function import BaseTestFunction
+from test_function.test_function1d import TestFunction1D, TestFunction1DFactory
+from test_function.test_function2d import TestFunction2D, TestFunction2DFactory
 
 class TestFunctionFactory:
     """統合されたテスト関数生成ファクトリークラス"""
