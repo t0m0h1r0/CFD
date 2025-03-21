@@ -39,8 +39,10 @@ class MatrixVisualizer:
         
         # データ変換
         def to_numpy(arr):
-            if arr is None: return None
-            if hasattr(arr, 'toarray'): return arr.toarray() if not hasattr(arr, 'get') else arr.toarray()
+            if arr is None:
+                return None
+            if hasattr(arr, 'toarray'):
+                return arr.toarray() if not hasattr(arr, 'get') else arr.toarray()
             return arr.get() if hasattr(arr, 'get') else arr
         
         # 各データをNumPy形式に確実に変換
