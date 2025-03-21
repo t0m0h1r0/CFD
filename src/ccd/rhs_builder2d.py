@@ -230,9 +230,9 @@ class RHSBuilder2D(RHSBuilder):
             boundary_values: 境界条件の値の辞書
         """
         # 必要なクラスを遅延インポート
-        from equation.boundary import (
-            DirichletBoundaryEquation2D, NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
-        )
+        from equation.boundary import DirichletBoundaryEquation2D
+        from equation.equation_converter import DirectionalEquation2D
+        from equation.boundary import NeumannBoundaryEquation
         
         # 各行の方程式をチェック
         for row, eq in enumerate(assignments):
@@ -240,13 +240,15 @@ class RHSBuilder2D(RHSBuilder):
             if isinstance(eq, DirichletBoundaryEquation2D) and self.enable_dirichlet:
                 self._apply_dirichlet_condition(b, base_idx, row, location, i, j, boundary_values)
             
-            # X方向ノイマン条件
-            elif isinstance(eq, NeumannXBoundaryEquation2D) and self.enable_neumann:
-                self._apply_neumann_x_condition(b, base_idx, row, location, i, j, boundary_values)
-            
-            # Y方向ノイマン条件
-            elif isinstance(eq, NeumannYBoundaryEquation2D) and self.enable_neumann:
-                self._apply_neumann_y_condition(b, base_idx, row, location, i, j, boundary_values)
+            # DirectionalEquation2Dを使用したノイマン条件
+            elif isinstance(eq, DirectionalEquation2D) and self.enable_neumann:
+                # 内部方程式がNeumannBoundaryEquationかチェック
+                if hasattr(eq, 'equation_1d') and isinstance(eq.equation_1d, NeumannBoundaryEquation):
+                    # 方向に応じた処理
+                    if eq.direction == 'x':
+                        self._apply_neumann_x_condition(b, base_idx, row, location, i, j, boundary_values)
+                    elif eq.direction == 'y':
+                        self._apply_neumann_y_condition(b, base_idx, row, location, i, j, boundary_values)
     
     def _apply_dirichlet_condition(self, b: np.ndarray, base_idx: int, row: int, 
                                   location: str, i: int, j: int, 
