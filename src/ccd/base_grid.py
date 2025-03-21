@@ -6,8 +6,6 @@
 """
 
 from abc import ABC, abstractmethod
-import numpy as np
-from typing import Tuple, Union, List, Optional
 
 
 class BaseGrid(ABC):

@@ -6,8 +6,7 @@ sympyを使用した自動微分機能付きのテスト関数を定義します
 """
 
 import sympy as sp
-import numpy as np
-from typing import List, Dict, Tuple, Any, Callable, Optional, Union
+from typing import List, Optional
 
 from base_test_function import BaseTestFunction
 

@@ -6,9 +6,7 @@
 """
 
 from abc import ABC, abstractmethod
-import numpy as np
-import scipy.sparse as sp_cpu
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Dict, List, Any
 
 class BaseEquationSystem(ABC):
     """方程式システムの抽象基底クラス"""

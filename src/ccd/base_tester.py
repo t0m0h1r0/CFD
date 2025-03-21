@@ -7,12 +7,11 @@
 
 from abc import ABC, abstractmethod
 import os
-import time
 import numpy as np
 
-from grid import Grid
+from grid1d import Grid1D
+from grid2d import Grid2D
 from equation_sets import EquationSet
-from scaling import plugin_manager
 from matrix_visualizer import MatrixVisualizer
 
 
@@ -247,7 +246,7 @@ class CCDTester(ABC):
         """
         if test_func is None:
             # デフォルトテスト関数
-            from test_functions import TestFunctionFactory
+            from test_function_factory import TestFunctionFactory
             if self.get_dimension() == 1:
                 test_func = TestFunctionFactory.create_standard_1d_functions()[3]  # Sine
             else:
@@ -333,8 +332,8 @@ class CCDTester(ABC):
             生成したグリッド
         """
         if self.get_dimension() == 1:
-            return Grid(n, x_range=x_range)
-        return Grid(n, n, x_range=x_range, y_range=y_range or x_range)
+            return Grid1D(n, x_range=x_range)
+        return Grid2D(n, n, x_range=x_range, y_range=y_range or x_range)
     
     # NumPyに変換するユーティリティ関数
     def _to_numpy(self, arr):

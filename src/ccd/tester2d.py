@@ -5,11 +5,11 @@
 """
 
 import numpy as np
-from typing import List, Tuple, Dict, Any, Optional, Union
 
 from base_tester import CCDTester
 from solver2d import CCDSolver2D
 from equation_sets import DerivativeEquationSet2D
+from test_function_factory import TestFunctionFactory
 
 
 class CCDTester2D(CCDTester):
@@ -58,10 +58,8 @@ class CCDTester2D(CCDTester):
             func_name: テスト関数名
             
         Returns:
-            TestFunction: 取得したテスト関数
+            TestFunction2D: 取得したテスト関数
         """
-        from test_functions import TestFunctionFactory, TestFunction
-        
         # 基本2D関数を検索
         funcs = TestFunctionFactory.create_standard_2d_functions()
         func = next((f for f in funcs if f.name == func_name), None)
@@ -72,7 +70,8 @@ class CCDTester2D(CCDTester):
         funcs_1d = TestFunctionFactory.create_standard_1d_functions()
         func_1d = next((f for f in funcs_1d if f.name == func_name), None)
         if func_1d:
-            return TestFunction.from_1d_to_2d(func_1d, method='product')
+            from test_function2d import TestFunction2D
+            return TestFunction2D.from_1d(func_1d, method='product')
         
         # デフォルト関数を返す
         print(f"警告: 2D関数 '{func_name}' が見つかりません。デフォルト関数を使用します。")
@@ -207,7 +206,7 @@ class CCDTester2D(CCDTester):
 
         # 厳密解を初期値として使用する場合は、直接オプションを渡す
         if self.perturbation_level is not None and self.solver_method != 'direct' and self.exact_solution is not None:
-            print(f"直接x0を渡してsolve()を呼び出します")
+            print("直接x0を渡してsolve()を呼び出します")
             # オプションを作成して厳密解（摂動あり/なし）を含める
             solve_options = {
                 'tol': self.solver_options.get('tol', 1e-10),

@@ -3,8 +3,6 @@
 """
 
 from abc import ABC, abstractmethod
-import numpy as np
-import traceback
 
 class LinearSolver(ABC):
     """線形方程式系 Ax=b を解くための抽象基底クラス"""

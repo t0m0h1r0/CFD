@@ -67,7 +67,7 @@ class RuizScaling(BaseScaling):
             tuple: (scaled_A, scaled_b, scale_info)
         """
         n_rows, n_cols = A.shape
-        n_blocks = n_rows // block_size
+        n_rows // block_size
         
         # Copy A to avoid modifying the original
         if self.is_sparse(A):
@@ -381,7 +381,7 @@ class RuizScaling(BaseScaling):
     @property
     def name(self):
         """Return the name of the scaling method."""
-        return f"RuizScaling"
+        return "RuizScaling"
     
     @property
     def description(self):

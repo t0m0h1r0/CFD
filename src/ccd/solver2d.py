@@ -6,10 +6,10 @@
 """
 
 import numpy as np
-from typing import List, Tuple, Dict, Any, Optional, Union
 
 from base_solver import BaseCCDSolver
-from rhs_builder import RHSBuilder2D
+from equation_system2d import EquationSystem2D
+from rhs_builder2d import RHSBuilder2D
 
 
 class CCDSolver2D(BaseCCDSolver):
@@ -28,6 +28,18 @@ class CCDSolver2D(BaseCCDSolver):
             raise ValueError("2Dソルバーは1Dグリッドでは使用できません")
             
         super().__init__(equation_set, grid, backend)
+    
+    def _create_equation_system(self, grid):
+        """
+        2次元方程式システムを作成
+        
+        Args:
+            grid: 2Dグリッドオブジェクト
+            
+        Returns:
+            EquationSystem2D: 2次元方程式システム
+        """
+        return EquationSystem2D(grid)
     
     def _create_rhs_builder(self):
         """2次元RHSビルダーを作成"""

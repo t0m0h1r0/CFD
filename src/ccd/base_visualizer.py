@@ -9,7 +9,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Dict, Any, Optional, Union
+from typing import List
 
 
 class BaseVisualizer(ABC):
@@ -60,7 +60,7 @@ class BaseVisualizer(ABC):
         func_names = list(results_summary.keys())
         
         # 次元に応じたラベル設定
-        dim_label = self.get_dimension_label()
+        self.get_dimension_label()
         error_types = self.get_error_types()
         
         # 図とサブプロットの作成

@@ -19,11 +19,7 @@ try:
     from .no_scaling import NoScaling
     from .row_scaling import RowScaling
     from .column_scaling import ColumnScaling
-    from .symmetric_scaling import SymmetricScaling
     from .equilibration_scaling import EquilibrationScaling
-    from .vandersluis_scaling import VanDerSluisScaling
-    from .ruhe_scaling import RuheScaling
-    from .condition_minimizer import ConditionMinimizer
     from .adaptive_scaling import AdaptiveScaling
 except ImportError as e:
     print(f"Warning: Some scaling plugins couldn't be imported: {e}")

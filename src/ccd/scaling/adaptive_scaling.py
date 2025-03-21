@@ -349,7 +349,7 @@ class AdaptiveScaling(BaseScaling):
     
     @property
     def name(self):
-        return f"AdaptiveScaling"
+        return "AdaptiveScaling"
     
     @property
     def description(self):
