@@ -1,7 +1,16 @@
-import numpy as np
+"""
+高精度コンパクト差分法 (CCD) の計算格子モジュール
+
+このモジュールは、CCDソルバーで使用する計算格子の後方互換性を提供します。
+"""
+
+from base_grid import BaseGrid
+from grid1d import Grid1D
+from grid2d import Grid2D
+
 
 class Grid:
-    """統合計算格子クラス (1Dと2Dの機能を統合、CPU最適化版)"""
+    """統合計算格子クラス (1Dと2Dの機能を統合、後方互換性用)"""
     
     def __init__(self, nx_points, ny_points=None, x_range=None, y_range=None):
         """
@@ -16,39 +25,38 @@ class Grid:
         # 1Dか2Dかを判定
         self.is_2d = ny_points is not None
         
+        # デフォルト範囲の設定
+        if x_range is None:
+            x_range = (-1.0, 1.0)
+        
         if self.is_2d:
             # 2D格子の初期化
-            self.nx_points = nx_points
-            self.ny_points = ny_points
-            self.x_min, self.x_max = x_range
-            self.y_min, self.y_max = y_range
-            
-            self.hx = (self.x_max - self.x_min) / (self.nx_points - 1)
-            self.hy = (self.y_max - self.y_min) / (self.ny_points - 1)
-            
-            self.x = np.linspace(self.x_min, self.x_max, self.nx_points)
-            self.y = np.linspace(self.y_min, self.y_max, self.ny_points)
-            
-            # メッシュグリッド作成（ベクトル計算に便利）
-            self.X, self.Y = np.meshgrid(self.x, self.y, indexing='ij')
-            
-            # 後方互換性のため
-            self.n_points = max(nx_points, ny_points)
-            self.h = self.hx
+            if y_range is None:
+                y_range = x_range  # デフォルトではx範囲と同じにする
+                
+            self._grid = Grid2D(nx_points, ny_points, x_range, y_range)
         else:
             # 1D格子の初期化
-            self.n_points = nx_points
-            if x_range is None:
-                raise ValueError("1D格子にはx_rangeを指定する必要があります")
-            self.x_min, self.x_max = x_range
-            self.h = (self.x_max - self.x_min) / (self.n_points - 1)
-            self.x = np.linspace(self.x_min, self.x_max, self.n_points)
+            self._grid = Grid1D(nx_points, x_range)
+        
+        # 全ての属性をグリッドオブジェクトから取得するようにする
+        # __getattr__を使って自動的に処理
+    
+    def __getattr__(self, name):
+        """
+        属性アクセスを内部の1D/2Dグリッドオブジェクトに委譲
+        
+        Args:
+            name: 属性名
             
-            # 後方互換性のため
-            self.nx_points = nx_points
-            self.ny_points = 1
-            self.hx = self.h
-            self.hy = 1.0
+        Returns:
+            対応する属性値
+        """
+        if hasattr(self._grid, name):
+            return getattr(self._grid, name)
+        raise AttributeError(f"'Grid' オブジェクトには属性 '{name}' がありません")
+    
+    # 主要メソッドは明示的に委譲（補完のサポートのため）
     
     def get_point(self, i, j=None):
         """
@@ -62,12 +70,7 @@ class Grid:
             1D: x座標
             2D: (x, y)座標のタプル
         """
-        if self.is_2d:
-            if j is None:
-                raise ValueError("2D格子ではjインデックスを指定する必要があります")
-            return self.x[i], self.y[j]
-        else:
-            return self.x[i]
+        return self._grid.get_point(i, j)
     
     def get_points(self):
         """
@@ -77,10 +80,7 @@ class Grid:
             1D: x座標の配列
             2D: (X, Y)メッシュグリッドのタプル
         """
-        if self.is_2d:
-            return self.X, self.Y
-        else:
-            return self.x
+        return self._grid.get_points()
     
     def get_spacing(self):
         """
@@ -90,48 +90,7 @@ class Grid:
             1D: hスカラー
             2D: (hx, hy)タプル
         """
-        if self.is_2d:
-            return self.hx, self.hy
-        else:
-            return self.h
-    
-    # 2D特有のメソッド（1D互換性チェック付き）
-    def get_index(self, i, j=None):
-        """
-        2Dインデックスを平坦化された1Dインデックスに変換
-        
-        Args:
-            i: x方向/行インデックス
-            j: y方向/列インデックス (2Dの場合は必須)
-            
-        Returns:
-            1Dインデックス
-        """
-        if not self.is_2d:
-            return i
-        
-        if j is None:
-            raise ValueError("2D格子ではjインデックスを指定する必要があります")
-        
-        return i + j * self.nx_points
-    
-    def get_indices(self, flat_index):
-        """
-        平坦化された1Dインデックスを格子インデックスに変換
-        
-        Args:
-            flat_index: 1Dインデックス
-            
-        Returns:
-            1D: iインデックス
-            2D: (i, j)タプル
-        """
-        if not self.is_2d:
-            return flat_index
-        
-        j = flat_index // self.nx_points
-        i = flat_index % self.nx_points
-        return i, j
+        return self._grid.get_spacing()
     
     def is_boundary_point(self, i, j=None):
         """
@@ -144,34 +103,7 @@ class Grid:
         Returns:
             点が境界上にあるかどうかを示すブール値
         """
-        if not self.is_2d:
-            return i == 0 or i == self.n_points - 1
-        
-        if j is None:
-            raise ValueError("2D格子ではjインデックスを指定する必要があります")
-        
-        return (i == 0 or i == self.nx_points - 1 or 
-                j == 0 or j == self.ny_points - 1)
-    
-    def is_corner_point(self, i, j=None):
-        """
-        角点かどうかをチェック (2Dのみ)
-        
-        Args:
-            i: x方向/行インデックス
-            j: y方向/列インデックス (2Dの場合は必須)
-            
-        Returns:
-            点が角点かどうかを示すブール値
-        """
-        if not self.is_2d:
-            return i == 0 or i == self.n_points - 1
-        
-        if j is None:
-            raise ValueError("2D格子ではjインデックスを指定する必要があります")
-        
-        return ((i == 0 or i == self.nx_points - 1) and 
-                (j == 0 or j == self.ny_points - 1))
+        return self._grid.is_boundary_point(i, j)
     
     def is_interior_point(self, i, j=None):
         """
@@ -184,11 +116,8 @@ class Grid:
         Returns:
             点が内部にあるかどうかを示すブール値
         """
-        if not self.is_2d:
-            return 0 < i < self.n_points - 1
-        
-        if j is None:
-            raise ValueError("2D格子ではjインデックスを指定する必要があります")
-        
-        return (0 < i < self.nx_points - 1 and 
-                0 < j < self.ny_points - 1)
+        return self._grid.is_interior_point(i, j)
+
+
+# 後方互換性のためにエクスポート
+__all__ = ["BaseGrid", "Grid1D", "Grid2D", "Grid"]
