@@ -349,9 +349,6 @@ class AdaptiveScaling(BaseScaling):
     
     @property
     def name(self):
-        """Return the name of the scaling method."""
-        if self.selected_scaler:
-            return f"AdaptiveScaling({self.selected_scaler.name})"
         return f"AdaptiveScaling"
     
     @property
