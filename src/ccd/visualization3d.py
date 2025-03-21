@@ -118,7 +118,7 @@ class CCD3DVisualizer:
             else:
                 plt.close(fig)
         
-        # 3Dボリュームレンダリング（メインの解のみ）
+        # 3D表示（メインの解のみ）
         self._create_3d_visualization(grid, function_name, numerical[0], exact[0], errors[0], prefix, save, show, dpi)
         
         # 誤差サマリー図を作成
@@ -126,47 +126,97 @@ class CCD3DVisualizer:
         
         return True
     
-    def _create_3d_visualization(self, grid, function_name, numerical, exact, error, prefix="", save=True, show=False, dpi=150):
-        """3Dボリュームビジュアライゼーションを作成"""
+    def _create_3d_visualization(self, grid, function_name, numerical, exact, error_val, prefix="", save=True, show=False, dpi=150):
+        """3D可視化を作成（matplotlibのみを使用）"""
         nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
         
         # NumPyに変換
         numerical = numerical.get() if hasattr(numerical, "get") else numerical
-        exact = exact.get() if has等.a, "get") else exact
+        exact = exact.get() if hasattr(exact, "get") else exact
         error = np.abs(numerical - exact)
         
-        # 3D等値面の可視化
-        fig = plt.figure(figsize=(15, 5))
-        fig.suptitle(f"{function_name}: 3D Isosurfaces ({nx_points}x{ny_points}x{nz_points} points)", fontsize=14)
+        # 座標系の設定
+        x = np.linspace(grid.x_min, grid.x_max, nx_points)
+        y = np.linspace(grid.y_min, grid.y_max, ny_points)
+        z = np.linspace(grid.z_min, grid.z_max, nz_points)
+        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
         
-        # 値の範囲を取得
-        vmin = min(np.min(numerical), np.min(exact))
-        vmax = max(np.max(numerical), np.max(exact))
-        level = (vmin + vmax) / 2  # 中間値の等値面
+        # 3Dコンター図（スライス）の可視化
+        fig = plt.figure(figsize=(15, 10))
+        fig.suptitle(f"{function_name}: 3D Visualization ({nx_points}x{ny_points}x{nz_points} points)", fontsize=14)
         
-        # 数値解の等値面
-        ax1 = fig.add_subplot(131, projection='3d')
-        x, y, z = np.meshgrid(
-            np.linspace(0, 1, nx_points),
-            np.linspace(0, 1, ny_points),
-            np.linspace(0, 1, nz_points),
-            indexing='ij'
+        # 1. 3D散布図
+        ax1 = fig.add_subplot(231, projection='3d')
+        # サンプリング（全点ではなく間引いて表示）
+        sample_step = max(1, nx_points // 10)  # 表示点数を減らす
+        p1 = ax1.scatter(X[::sample_step, ::sample_step, ::sample_step], 
+                       Y[::sample_step, ::sample_step, ::sample_step], 
+                       Z[::sample_step, ::sample_step, ::sample_step], 
+                       c=numerical[::sample_step, ::sample_step, ::sample_step], 
+                       cmap='viridis', alpha=0.5, s=5)
+        ax1.set_title("Numerical (Scatter)")
+        fig.colorbar(p1, ax=ax1, shrink=0.5)
+        
+        # 2. X=中央でのYZスライス
+        ax2 = fig.add_subplot(232, projection='3d')
+        slice_x = nx_points // 2
+        Y_slice, Z_slice = np.meshgrid(y, z, indexing='ij')
+        surf2 = ax2.plot_surface(
+            np.ones_like(Y_slice) * x[slice_x],
+            Y_slice,
+            Z_slice,
+            facecolors=plt.cm.viridis(plt.Normalize()(numerical[slice_x, :, :])),
+            alpha=0.7
         )
-        ax1.scatter(x.flatten(), y.flatten(), z.flatten(), c=numerical.flatten(), 
-                   cmap='viridis', alpha=0.02, s=0.5)
-        ax1.set_title("Numerical Solution")
+        ax2.set_title(f"X-Slice (x={x[slice_x]:.2f})")
         
-        # 厳密解の等値面
-        ax2 = fig.add_subplot(132, projection='3d')
-        ax2.scatter(x.flatten(), y.flatten(), z.flatten(), c=exact.flatten(), 
-                   cmap='viridis', alpha=0.02, s=0.5)
-        ax2.set_title("Exact Solution")
+        # 3. Y=中央でのXZスライス
+        ax3 = fig.add_subplot(233, projection='3d')
+        slice_y = ny_points // 2
+        X_slice, Z_slice = np.meshgrid(x, z, indexing='ij')
+        surf3 = ax3.plot_surface(
+            X_slice,
+            np.ones_like(X_slice) * y[slice_y],
+            Z_slice,
+            facecolors=plt.cm.viridis(plt.Normalize()(numerical[:, slice_y, :])),
+            alpha=0.7
+        )
+        ax3.set_title(f"Y-Slice (y={y[slice_y]:.2f})")
         
-        # 誤差の等値面
-        ax3 = fig.add_subplot(133, projection='3d')
-        ax3.scatter(x.flatten(), y.flatten(), z.flatten(), c=error.flatten(), 
-                   cmap='hot', alpha=0.05, s=0.5)
-        ax3.set_title(f"Error (Max: {np.max(error):.2e})")
+        # 4. Z=中央でのXYスライス
+        ax4 = fig.add_subplot(234, projection='3d')
+        slice_z = nz_points // 2
+        X_slice, Y_slice = np.meshgrid(x, y, indexing='ij')
+        surf4 = ax4.plot_surface(
+            X_slice,
+            Y_slice,
+            np.ones_like(X_slice) * z[slice_z],
+            facecolors=plt.cm.viridis(plt.Normalize()(numerical[:, :, slice_z])),
+            alpha=0.7
+        )
+        ax4.set_title(f"Z-Slice (z={z[slice_z]:.2f})")
+        
+        # 5. コンター表示（2次元）- XY平面
+        ax5 = fig.add_subplot(235)
+        cont5 = ax5.contourf(X[:, :, slice_z], Y[:, :, slice_z], numerical[:, :, slice_z], 20, cmap='viridis')
+        ax5.set_title(f"XY Contour (z={z[slice_z]:.2f})")
+        fig.colorbar(cont5, ax=ax5)
+        
+        # 6. 誤差表示
+        ax6 = fig.add_subplot(236)
+        cont6 = ax6.contourf(X[:, :, slice_z], Y[:, :, slice_z], error[:, :, slice_z], 20, cmap='hot')
+        ax6.set_title(f"Error (Max: {np.max(error):.2e})")
+        fig.colorbar(cont6, ax=ax6)
+        
+        # 軸ラベルを設定
+        for ax in [ax1, ax2, ax3, ax4]:
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+        
+        for ax in [ax5, ax6]:
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
         
         plt.tight_layout()
         
@@ -174,6 +224,191 @@ class CCD3DVisualizer:
         if save:
             filepath = self.generate_filename(f"{function_name}_3d", nx_points, ny_points, nz_points, prefix)
             plt.savefig(filepath, dpi=dpi)
+        
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        
+        # ワイヤーフレーム表示 (別のビューとして)
+        self._create_wireframe_visualization(grid, function_name, numerical, exact, error, 
+                                          prefix, save, show, dpi)
+    
+    def _create_wireframe_visualization(self, grid, function_name, numerical, exact, error, 
+                                     prefix="", save=True, show=False, dpi=150):
+        """ワイヤーフレームを使った3D可視化"""
+        nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
+        
+        # 3D表示が大きいとパフォーマンスが落ちるのでダウンサンプリング
+        sample_step = max(1, min(nx_points, ny_points, nz_points) // 20)
+        
+        # 座標系の設定
+        x = np.linspace(grid.x_min, grid.x_max, nx_points)[::sample_step]
+        y = np.linspace(grid.y_min, grid.y_max, ny_points)[::sample_step]
+        z = np.linspace(grid.z_min, grid.z_max, nz_points)[::sample_step]
+        
+        # ダウンサンプリングしたデータ
+        num_sampled = numerical[::sample_step, ::sample_step, ::sample_step]
+        ex_sampled = exact[::sample_step, ::sample_step, ::sample_step]
+        err_sampled = error[::sample_step, ::sample_step, ::sample_step]
+        
+        # プロット用のメッシュグリッド
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        
+        # ワイヤーフレーム表示（Z方向に複数のスライス）
+        fig = plt.figure(figsize=(15, 10))
+        fig.suptitle(f"{function_name}: 3D Wireframe ({nx_points}x{ny_points}x{nz_points} points)", fontsize=14)
+        
+        # 1. 数値解のワイヤーフレーム
+        ax1 = fig.add_subplot(131, projection='3d')
+        for k, zi in enumerate(z):
+            ax1.plot_wireframe(X, Y, np.ones_like(X) * zi, 
+                             rstride=1, cstride=1, 
+                             linewidth=0.5,
+                             color=plt.cm.viridis(plt.Normalize(vmin=np.min(num_sampled), 
+                                                              vmax=np.max(num_sampled))(k/len(z))))
+        ax1.set_title("Numerical (Wireframe)")
+        
+        # 2. 厳密解のワイヤーフレーム
+        ax2 = fig.add_subplot(132, projection='3d')
+        for k, zi in enumerate(z):
+            ax2.plot_wireframe(X, Y, np.ones_like(X) * zi, 
+                             rstride=1, cstride=1, 
+                             linewidth=0.5,
+                             color=plt.cm.viridis(plt.Normalize(vmin=np.min(ex_sampled), 
+                                                              vmax=np.max(ex_sampled))(k/len(z))))
+        ax2.set_title("Exact (Wireframe)")
+        
+        # 3. 誤差のワイヤーフレーム
+        ax3 = fig.add_subplot(133, projection='3d')
+        for k, zi in enumerate(z):
+            ax3.plot_wireframe(X, Y, np.ones_like(X) * zi, 
+                             rstride=1, cstride=1, 
+                             linewidth=0.5,
+                             color=plt.cm.hot(plt.Normalize(vmin=0, 
+                                                          vmax=np.max(err_sampled))(k/len(z))))
+        ax3.set_title(f"Error (Max: {np.max(error):.2e})")
+        
+        # 軸ラベルを設定
+        for ax in [ax1, ax2, ax3]:
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+        
+        plt.tight_layout()
+        
+        # 保存ファイル名
+        if save:
+            wireframe_filepath = self.generate_filename(f"{function_name}_wireframe", 
+                                                     nx_points, ny_points, nz_points, prefix)
+            plt.savefig(wireframe_filepath, dpi=dpi)
+        
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        
+        # 3Dコンター表示
+        self._create_contour3d_visualization(grid, function_name, numerical, exact, error, 
+                                          prefix, save, show, dpi)
+    
+    def _create_contour3d_visualization(self, grid, function_name, numerical, exact, error, 
+                                     prefix="", save=True, show=False, dpi=150):
+        """3Dコンター表示を使った可視化"""
+        nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
+        
+        # 値の範囲を取得
+        vmin = min(np.min(numerical), np.min(exact))
+        vmax = max(np.max(numerical), np.max(exact))
+        
+        # 3Dコンター表示
+        fig = plt.figure(figsize=(15, 5))
+        fig.suptitle(f"{function_name}: 3D Contours ({nx_points}x{ny_points}x{nz_points} points)", fontsize=14)
+        
+        # 座標系の設定
+        x = np.linspace(grid.x_min, grid.x_max, nx_points)
+        y = np.linspace(grid.y_min, grid.y_max, ny_points)
+        z = np.linspace(grid.z_min, grid.z_max, nz_points)
+        
+        # 中央スライスのインデックス
+        slice_x = nx_points // 2
+        slice_y = ny_points // 2
+        slice_z = nz_points // 2
+        
+        # 1. 数値解の3Dコンター
+        ax1 = fig.add_subplot(131, projection='3d')
+        
+        # 各平面に対してコンター表示
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        ax1.contourf(X, Y, numerical[:, :, slice_z], 
+                    zdir='z', offset=z[slice_z], cmap='viridis', levels=10)
+        
+        X, Z = np.meshgrid(x, z, indexing='ij')
+        ax1.contourf(X, numerical[:, slice_y, :], Z, 
+                    zdir='y', offset=y[slice_y], cmap='viridis', levels=10)
+        
+        Y, Z = np.meshgrid(y, z, indexing='ij')
+        ax1.contourf(numerical[slice_x, :, :], Y, Z, 
+                    zdir='x', offset=x[slice_x], cmap='viridis', levels=10)
+        
+        ax1.set_title("Numerical")
+        ax1.set_xlim(x.min(), x.max())
+        ax1.set_ylim(y.min(), y.max())
+        ax1.set_zlim(z.min(), z.max())
+        
+        # 2. 厳密解の3Dコンター
+        ax2 = fig.add_subplot(132, projection='3d')
+        
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        ax2.contourf(X, Y, exact[:, :, slice_z], 
+                    zdir='z', offset=z[slice_z], cmap='viridis', levels=10)
+        
+        X, Z = np.meshgrid(x, z, indexing='ij')
+        ax2.contourf(X, exact[:, slice_y, :], Z, 
+                    zdir='y', offset=y[slice_y], cmap='viridis', levels=10)
+        
+        Y, Z = np.meshgrid(y, z, indexing='ij')
+        ax2.contourf(exact[slice_x, :, :], Y, Z, 
+                    zdir='x', offset=x[slice_x], cmap='viridis', levels=10)
+        
+        ax2.set_title("Exact")
+        ax2.set_xlim(x.min(), x.max())
+        ax2.set_ylim(y.min(), y.max())
+        ax2.set_zlim(z.min(), z.max())
+        
+        # 3. 誤差の3Dコンター
+        ax3 = fig.add_subplot(133, projection='3d')
+        
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        ax3.contourf(X, Y, error[:, :, slice_z], 
+                    zdir='z', offset=z[slice_z], cmap='hot', levels=10)
+        
+        X, Z = np.meshgrid(x, z, indexing='ij')
+        ax3.contourf(X, error[:, slice_y, :], Z, 
+                    zdir='y', offset=y[slice_y], cmap='hot', levels=10)
+        
+        Y, Z = np.meshgrid(y, z, indexing='ij')
+        ax3.contourf(error[slice_x, :, :], Y, Z, 
+                    zdir='x', offset=x[slice_x], cmap='hot', levels=10)
+        
+        ax3.set_title(f"Error (Max: {np.max(error):.2e})")
+        ax3.set_xlim(x.min(), x.max())
+        ax3.set_ylim(y.min(), y.max())
+        ax3.set_zlim(z.min(), z.max())
+        
+        # 軸ラベルを設定
+        for ax in [ax1, ax2, ax3]:
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+        
+        plt.tight_layout()
+        
+        # 保存ファイル名
+        if save:
+            contour3d_filepath = self.generate_filename(f"{function_name}_contour3d", 
+                                                     nx_points, ny_points, nz_points, prefix)
+            plt.savefig(contour3d_filepath, dpi=dpi)
         
         if show:
             plt.show()
