@@ -22,6 +22,8 @@ class CCDTester(ABC):
         self.backend = "cpu"  # デフォルトバックエンドをCPUに設定
         self.results_dir = "results"
         self.matrix_basename = None  # 行列可視化用のベース名
+        self.perturbation_level = None  # 厳密解に加える摂動レベル (None=厳密解を使用しない、0=摂動なし)
+        self.exact_solution = None  # 厳密解を保存
         os.makedirs(self.results_dir, exist_ok=True)
 
     def setup(self, equation="poisson", method="direct", options=None, scaling=None, backend="cpu"):
@@ -66,6 +68,34 @@ class CCDTester(ABC):
         """方程式セットを設定"""
         self.equation_set = EquationSet.create(equation_set_name, dimension=self.get_dimension())
         return self
+        
+    def _add_perturbation(self, exact_sol, level):
+        """厳密解に指定レベルの摂動を加える
+        
+        Args:
+            exact_sol: 厳密解ベクトル
+            level: 摂動レベル (0～1の間の値)
+            
+        Returns:
+            摂動が加えられた解ベクトル
+        """
+        if level == 0:
+            return exact_sol  # 摂動なし
+            
+        # ランダムシードを固定（再現性のため）
+        np.random.seed(42)
+        
+        # 摂動を加える（各要素に対して±levelの範囲で乱数を乗算）
+        # 例：level=0.1なら、各要素は厳密値の±10%の範囲で変動
+        perturbed_sol = exact_sol * (1.0 + level * (2.0 * np.random.random(exact_sol.shape) - 1.0))
+        
+        # どれくらい摂動したかの情報を表示
+        relative_change = np.abs(perturbed_sol - exact_sol) / (np.abs(exact_sol) + 1e-15)
+        avg_change = np.mean(relative_change) * 100
+        max_change = np.max(relative_change) * 100
+        print(f"摂動を加えました: 平均 {avg_change:.2f}%, 最大 {max_change:.2f}%")
+        
+        return perturbed_sol
 
     def run_test(self, test_func):
         """テスト実行"""
@@ -76,6 +106,25 @@ class CCDTester(ABC):
             self.equation_set = EquationSet.create("poisson", dimension=self.get_dimension())
 
         self._init_solver()
+        
+        # 厳密解を初期値として使用する場合、計算して摂動を加える
+        if self.perturbation_level is not None and self.solver_method != 'direct':
+            self.exact_solution = self._compute_exact(test_func)
+            
+            # 厳密解に摂動を加える
+            perturbed_solution = self._add_perturbation(self.exact_solution, self.perturbation_level)
+            
+            print(f"厳密解を初期値として使用 (サイズ: {perturbed_solution.shape}, メソッド: {self.solver_method})")
+            # self.solver_optionsにx0を設定（ここでは後のために保存するだけ）
+            options = self.solver_options.copy()
+            options['x0'] = perturbed_solution
+            self.solver.set_solver(
+                method=self.solver_method, 
+                options=options, 
+                scaling_method=self.scaling_method
+            )
+        else:
+            self.exact_solution = None
         
         # ソルバーオプションの再適用（念のため）
         if hasattr(self, 'solver') and self.solver:
@@ -102,7 +151,8 @@ class CCDTester(ABC):
             'options': self.solver_options,
             'equation_set': self.equation_set,
             'scaling': self.scaling_method,
-            'backend': self.backend
+            'backend': self.backend,
+            'perturbation_level': self.perturbation_level
         }
 
         for n in grid_sizes:
@@ -116,6 +166,7 @@ class CCDTester(ABC):
                 scaling=settings['scaling'],
                 backend=settings['backend']
             )
+            tester.perturbation_level = settings['perturbation_level']
             result = tester.run_test(test_func)
             results[n] = result["errors"]
 
@@ -320,10 +371,26 @@ class CCDTester1D(CCDTester):
             'right_neumann': test_func.df(x_max)
         }
 
-        # 解計算
-        psi, psi_prime, psi_second, psi_third = self.solver.solve(
-            analyze_before_solve=False, f_values=f_values, **boundary
-        )
+        # 厳密解を初期値として使用する場合は、直接オプションを渡す
+        if self.perturbation_level is not None and self.solver_method != 'direct' and self.exact_solution is not None:
+            print(f"直接x0を渡してsolve()を呼び出します")
+            # オプションを作成して厳密解（摂動あり/なし）を含める
+            solve_options = {
+                'tol': self.solver_options.get('tol', 1e-10),
+                'maxiter': self.solver_options.get('maxiter', 1000),
+                'x0': self.exact_solution  # 厳密解を直接渡す
+            }
+            
+            # 解計算（カスタムオプション付き）
+            psi, psi_prime, psi_second, psi_third = self.solver.solve_with_options(
+                analyze_before_solve=False, f_values=f_values, 
+                solve_options=solve_options, **boundary
+            )
+        else:
+            # 通常の解計算
+            psi, psi_prime, psi_second, psi_third = self.solver.solve(
+                analyze_before_solve=False, f_values=f_values, **boundary
+            )
 
         # NumPy配列に変換（CuPyの場合）
         psi = self._to_numpy(psi)
@@ -489,8 +556,27 @@ class CCDTester2D(CCDTester):
             'top_neumann': np.array([test_func.df_dy(x, y_max) for x in self.grid.x])
         }
 
-        # 解計算
-        sol = self.solver.solve(analyze_before_solve=False, f_values=f_values, **boundary)
+        # 厳密解を初期値として使用する場合は、直接オプションを渡す
+        if self.perturbation_level is not None and self.solver_method != 'direct' and self.exact_solution is not None:
+            print(f"直接x0を渡してsolve()を呼び出します")
+            # オプションを作成して厳密解（摂動あり/なし）を含める
+            solve_options = {
+                'tol': self.solver_options.get('tol', 1e-10),
+                'maxiter': self.solver_options.get('maxiter', 1000),
+                'x0': self.exact_solution  # 厳密解を直接渡す
+            }
+            
+            # 解計算（カスタムオプション付き）
+            sol = self.solver.solve_with_options(
+                analyze_before_solve=False, f_values=f_values, 
+                solve_options=solve_options, **boundary
+            )
+        else:
+            # 通常の解計算
+            sol = self.solver.solve(
+                analyze_before_solve=False, f_values=f_values, **boundary
+            )
+            
         psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy = sol
 
         # NumPy配列に変換（CuPyの場合）

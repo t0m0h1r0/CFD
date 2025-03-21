@@ -73,8 +73,12 @@ class BaseCCDSolver(ABC):
         solver_options = {}
         for key, value in options.items():
             # LinearSolverで使用するオプションのみ抽出
-            if key in ["tol", "maxiter", "restart", "inner_m", "outer_k", "m", "k"]:
+            if key in ["tol", "maxiter", "restart", "inner_m", "outer_k", "m", "k", "x0"]:
                 solver_options[key] = value
+        
+        # x0が含まれている場合は確認用に表示
+        if "x0" in solver_options:
+            print(f"x0が設定されました (shape: {solver_options['x0'].shape})")
         
         # 新たにソルバーを作成
         self.linear_solver = create_solver(
@@ -88,7 +92,7 @@ class BaseCCDSolver(ABC):
         # バックエンドを更新
         self.backend = backend
         
-        # LinearSolverにオプションとmehtodを実際に渡す
+        # LinearSolverにオプションとmethodを実際に渡す
         self.linear_solver.solver_method = method
         self.linear_solver.solver_options = solver_options
         
@@ -163,8 +167,42 @@ class BaseCCDSolver(ABC):
         # 右辺ベクトルbを構築
         b = self.rhs_builder.build_rhs_vector(f_values, **boundary_values)
         
+        # 現在のオプションを確認
+        if hasattr(self.linear_solver, 'solver_options'):
+            print(f"solveメソッド内のソルバーオプション: {self.linear_solver.solver_options}")
+        
         # 線形システムを解く（既に設定済みのメソッドとオプションを使用）
         sol = self.linear_solver.solve(b)
+
+        # 解ベクトルから各要素を抽出
+        return self._extract_solution(sol)
+    
+    def solve_with_options(self, analyze_before_solve=True, f_values=None, solve_options=None, **boundary_values):
+        """
+        カスタムオプションを使用してシステムを解く
+        
+        Args:
+            analyze_before_solve: 解く前に行列を分析するかどうか
+            f_values: 支配方程式の右辺値
+            solve_options: 直接渡すソルバーオプション
+            **boundary_values: 境界値の辞書（ディメンションに依存）
+            
+        Returns:
+            解コンポーネント
+        """
+        # 行列を分析（要求された場合）
+        if analyze_before_solve:
+            self.analyze_system()
+            
+        # 右辺ベクトルbを構築
+        b = self.rhs_builder.build_rhs_vector(f_values, **boundary_values)
+        
+        # オプションを確認
+        if solve_options and "x0" in solve_options:
+            print(f"solve_with_optionsメソッド内のx0: {solve_options['x0'].shape}")
+        
+        # 線形システムを解く（指定されたオプションとメソッドを使用）
+        sol = self.linear_solver.solve(b, method=self.method, options=solve_options)
 
         # 解ベクトルから各要素を抽出
         return self._extract_solution(sol)
