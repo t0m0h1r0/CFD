@@ -60,7 +60,7 @@ class BaseVisualizer(ABC):
         func_names = list(results_summary.keys())
         
         # 次元に応じたラベル設定
-        dim_label = self.get_dimension_label()
+        self.get_dimension_label()
         error_types = self.get_error_types()
         
         # 図とサブプロットの作成

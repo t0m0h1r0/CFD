@@ -274,8 +274,8 @@ class GPULinearSolver(LinearSolver):
     def _solve_lsqr(self, A, b, options=None):
         """LSQR最小二乗法ソルバー"""
         options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
+        options.get("tol", 1e-10)
+        options.get("maxiter", 1000)
         
         # CuPy cupyx.scipy.sparse.linalg.lsqr は引数が少ない
         result = self.splinalg.lsqr(A, b)

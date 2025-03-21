@@ -70,7 +70,7 @@ class RowScaling(BaseScaling):
         row_scale = np.ones(n_rows)
         
         # Apply scaling for each block separately
-        n_blocks = n_rows // block_size
+        n_rows // block_size
         for var_idx in range(block_size):
             # Extract the submatrix for this variable
             idx = list(range(var_idx, n_rows, block_size))
