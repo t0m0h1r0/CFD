@@ -18,16 +18,18 @@ from linear_solver import create_solver
 class BaseCCDSolver(ABC):
     """コンパクト差分法ソルバーの抽象基底クラス"""
 
-    def __init__(self, equation_set, grid):
+    def __init__(self, equation_set, grid, backend="cpu"):
         """
         ソルバーを初期化
         
         Args:
             equation_set: 使用する方程式セット
             grid: グリッドオブジェクト
+            backend: 計算バックエンド ('cpu', 'cuda', 'jax')
         """
         self.equation_set = equation_set
         self.grid = grid
+        self.backend = backend
         
         # システムを初期化し、行列Aを構築 (CPU処理)
         self.system = EquationSystem(grid)
@@ -41,7 +43,7 @@ class BaseCCDSolver(ABC):
             self.matrix_A,
             enable_dirichlet=self.enable_dirichlet,
             enable_neumann=self.enable_neumann,
-            backend="cuda"  # デフォルトバックエンド
+            backend=self.backend  # 指定されたバックエンドを使用
         )
         
         # デフォルト解法メソッド
@@ -65,7 +67,7 @@ class BaseCCDSolver(ABC):
         options = options or {}
         
         # バックエンド指定を取得
-        backend = options.get("backend", "cuda")
+        backend = options.get("backend", self.backend)
         
         # 直接線形ソルバーに渡すオプションを抽出
         solver_options = {}
@@ -83,6 +85,9 @@ class BaseCCDSolver(ABC):
             backend=backend
         )
         
+        # バックエンドを更新
+        self.backend = backend
+        
         # LinearSolverにオプションとmehtodを実際に渡す
         self.linear_solver.solver_method = method
         self.linear_solver.solver_options = solver_options
@@ -99,8 +104,7 @@ class BaseCCDSolver(ABC):
     def scaling_method(self, value):
         """スケーリング手法を設定"""
         # 新しいソルバーを作成する必要がある
-        backend = "cuda"  # デフォルトバックエンド
-        self.set_solver(method=self.method, scaling_method=value, options={"backend": backend})
+        self.set_solver(method=self.method, scaling_method=value, options={"backend": self.backend})
     
     @property
     def last_iterations(self):
@@ -180,18 +184,19 @@ class BaseCCDSolver(ABC):
 class CCDSolver1D(BaseCCDSolver):
     """1次元コンパクト差分法ソルバー"""
 
-    def __init__(self, equation_set, grid):
+    def __init__(self, equation_set, grid, backend="cpu"):
         """
         1Dソルバーを初期化
         
         Args:
             equation_set: 方程式セット
             grid: 1D グリッドオブジェクト
+            backend: 計算バックエンド
         """
         if grid.is_2d:
             raise ValueError("1Dソルバーは2Dグリッドでは使用できません")
             
-        super().__init__(equation_set, grid)
+        super().__init__(equation_set, grid, backend)
     
     def _create_rhs_builder(self):
         """1次元RHSビルダーを作成"""
@@ -216,18 +221,19 @@ class CCDSolver1D(BaseCCDSolver):
 class CCDSolver2D(BaseCCDSolver):
     """2次元コンパクト差分法ソルバー"""
 
-    def __init__(self, equation_set, grid):
+    def __init__(self, equation_set, grid, backend="cpu"):
         """
         2Dソルバーを初期化
         
         Args:
             equation_set: 方程式セット
             grid: 2D グリッドオブジェクト
+            backend: 計算バックエンド
         """
         if not grid.is_2d:
             raise ValueError("2Dソルバーは1Dグリッドでは使用できません")
             
-        super().__init__(equation_set, grid)
+        super().__init__(equation_set, grid, backend)
     
     def _create_rhs_builder(self):
         """2次元RHSビルダーを作成"""
