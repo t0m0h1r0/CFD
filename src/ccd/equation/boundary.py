@@ -1,6 +1,7 @@
 import numpy as np
 from .base1d import Equation
 from .base2d import Equation2D
+from .base3d import Equation3D
 
 class DirichletBoundaryEquation(Equation):
     """ディリクレ境界条件: psi(x) = value"""
@@ -235,3 +236,204 @@ class NeumannYBoundaryEquation2D(Equation2D):
             raise ValueError("y方向のグリッド点インデックスjを指定する必要があります。")
             
         return j == 0 or j == self.grid.ny_points - 1
+
+class DirichletBoundaryEquation3D(Equation3D):
+    """
+    3次元ディリクレ境界条件: ψ(x,y,z) = value
+    """
+    def __init__(self, grid=None):
+        """
+        初期化
+        
+        Args:
+            grid: 計算格子オブジェクト
+        """
+        super().__init__(grid)
+    
+    def get_stencil_coefficients(self, i=None, j=None, k=None):
+        """
+        格子点(i,j,k)におけるステンシル係数を取得
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            k: z方向のグリッド点インデックス
+            
+        Returns:
+            ステンシル係数の辞書
+        """
+        # ψ (インデックス0) に制約を設定
+        coeffs = {(0, 0, 0): np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0])}
+        return coeffs
+        
+    def is_valid_at(self, i=None, j=None, k=None):
+        """
+        この境界条件が有効かどうかをチェック
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            k: z方向のグリッド点インデックス
+            
+        Returns:
+            有効性を示すブール値
+        """
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
+            
+        if i is None or j is None or k is None:
+            raise ValueError("グリッド点のインデックスi, j, kを指定する必要があります。")
+        
+        return (i == 0 or i == self.grid.nx_points - 1 or 
+                j == 0 or j == self.grid.ny_points - 1 or 
+                k == 0 or k == self.grid.nz_points - 1)
+
+
+class NeumannXBoundaryEquation3D(Equation3D):
+    """
+    X方向（左右境界）のノイマン境界条件: ∂ψ/∂x(x,y,z) = value
+    """
+    def __init__(self, grid=None):
+        """
+        初期化
+        
+        Args:
+            grid: 計算格子オブジェクト
+        """
+        super().__init__(grid)
+    
+    def get_stencil_coefficients(self, i=None, j=None, k=None):
+        """
+        格子点(i,j,k)におけるステンシル係数を取得
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            k: z方向のグリッド点インデックス
+            
+        Returns:
+            ステンシル係数の辞書
+        """
+        # ψ_x (インデックス1) に制約を設定
+        coeffs = {(0, 0, 0): np.array([0, 1, 0, 0, 0, 0, 0, 0, 0, 0])}
+        return coeffs
+        
+    def is_valid_at(self, i=None, j=None, k=None):
+        """
+        この境界条件が有効かどうかをチェック
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            k: z方向のグリッド点インデックス
+            
+        Returns:
+            有効性を示すブール値
+        """
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
+            
+        if i is None:
+            raise ValueError("x方向のグリッド点インデックスiを指定する必要があります。")
+            
+        return i == 0 or i == self.grid.nx_points - 1
+
+
+class NeumannYBoundaryEquation3D(Equation3D):
+    """
+    Y方向（下上境界）のノイマン境界条件: ∂ψ/∂y(x,y,z) = value
+    """
+    def __init__(self, grid=None):
+        """
+        初期化
+        
+        Args:
+            grid: 計算格子オブジェクト
+        """
+        super().__init__(grid)
+    
+    def get_stencil_coefficients(self, i=None, j=None, k=None):
+        """
+        格子点(i,j,k)におけるステンシル係数を取得
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            k: z方向のグリッド点インデックス
+            
+        Returns:
+            ステンシル係数の辞書
+        """
+        # ψ_y (インデックス4) に制約を設定
+        coeffs = {(0, 0, 0): np.array([0, 0, 0, 0, 1, 0, 0, 0, 0, 0])}
+        return coeffs
+        
+    def is_valid_at(self, i=None, j=None, k=None):
+        """
+        この境界条件が有効かどうかをチェック
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            k: z方向のグリッド点インデックス
+            
+        Returns:
+            有効性を示すブール値
+        """
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
+            
+        if j is None:
+            raise ValueError("y方向のグリッド点インデックスjを指定する必要があります。")
+            
+        return j == 0 or j == self.grid.ny_points - 1
+
+
+class NeumannZBoundaryEquation3D(Equation3D):
+    """
+    Z方向（前後境界）のノイマン境界条件: ∂ψ/∂z(x,y,z) = value
+    """
+    def __init__(self, grid=None):
+        """
+        初期化
+        
+        Args:
+            grid: 計算格子オブジェクト
+        """
+        super().__init__(grid)
+    
+    def get_stencil_coefficients(self, i=None, j=None, k=None):
+        """
+        格子点(i,j,k)におけるステンシル係数を取得
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            k: z方向のグリッド点インデックス
+            
+        Returns:
+            ステンシル係数の辞書
+        """
+        # ψ_z (インデックス7) に制約を設定
+        coeffs = {(0, 0, 0): np.array([0, 0, 0, 0, 0, 0, 0, 1, 0, 0])}
+        return coeffs
+        
+    def is_valid_at(self, i=None, j=None, k=None):
+        """
+        この境界条件が有効かどうかをチェック
+        
+        Args:
+            i: x方向のグリッド点インデックス
+            j: y方向のグリッド点インデックス
+            k: z方向のグリッド点インデックス
+            
+        Returns:
+            有効性を示すブール値
+        """
+        if self.grid is None:
+            raise ValueError("gridが設定されていません。set_grid()で設定してください。")
+            
+        if k is None:
+            raise ValueError("z方向のグリッド点インデックスkを指定する必要があります。")
+            
+        return k == 0 or k == self.grid.nz_points - 1

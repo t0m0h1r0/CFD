@@ -47,7 +47,6 @@ class RHSBuilder(ABC):
             return arr.get()
         return arr
 
-
 class RHSBuilder1D(RHSBuilder):
     """1次元問題用の右辺ベクトル構築クラス"""
     
@@ -290,3 +289,183 @@ class RHSBuilder2D(RHSBuilder):
                     b[base_idx + row] = get_boundary_value(bottom_neumann, i)
                 elif 'top' in location and top_neumann is not None:
                     b[base_idx + row] = get_boundary_value(top_neumann, i)
+
+class RHSBuilder3D(RHSBuilder):
+    """3次元問題用の右辺ベクトル構築クラス"""
+    
+    def build_rhs_vector(self, f_values=None, left_dirichlet=None, right_dirichlet=None,
+                        bottom_dirichlet=None, top_dirichlet=None, front_dirichlet=None, back_dirichlet=None,
+                        left_neumann=None, right_neumann=None, bottom_neumann=None, top_neumann=None,
+                        front_neumann=None, back_neumann=None, **kwargs):
+        """
+        3D右辺ベクトルを構築
+        
+        Args:
+            f_values: ソース項の値 (nx×ny×nz配列)
+            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet, front_dirichlet, back_dirichlet: 境界値
+            left_neumann, right_neumann, bottom_neumann, top_neumann, front_neumann, back_neumann: 境界導関数
+            
+        Returns:
+            右辺ベクトル (NumPy配列)
+        """
+        nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
+        var_per_point = 10  # [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy, ψ_z, ψ_zz, ψ_zzz]
+        b = np.zeros(nx * ny * nz * var_per_point)
+        
+        # 入力値を NumPy に変換（必要な場合）
+        if f_values is not None:
+            f_values = self._to_numpy(f_values)
+            
+        # その他の境界値も同様に変換（必要な場合）
+        boundary_values = {
+            'left_dirichlet': self._to_numpy(left_dirichlet) if left_dirichlet is not None else None,
+            'right_dirichlet': self._to_numpy(right_dirichlet) if right_dirichlet is not None else None,
+            'bottom_dirichlet': self._to_numpy(bottom_dirichlet) if bottom_dirichlet is not None else None,
+            'top_dirichlet': self._to_numpy(top_dirichlet) if top_dirichlet is not None else None,
+            'front_dirichlet': self._to_numpy(front_dirichlet) if front_dirichlet is not None else None,
+            'back_dirichlet': self._to_numpy(back_dirichlet) if back_dirichlet is not None else None,
+            'left_neumann': self._to_numpy(left_neumann) if left_neumann is not None else None,
+            'right_neumann': self._to_numpy(right_neumann) if right_neumann is not None else None,
+            'bottom_neumann': self._to_numpy(bottom_neumann) if bottom_neumann is not None else None,
+            'top_neumann': self._to_numpy(top_neumann) if top_neumann is not None else None,
+            'front_neumann': self._to_numpy(front_neumann) if front_neumann is not None else None,
+            'back_neumann': self._to_numpy(back_neumann) if back_neumann is not None else None
+        }
+        
+        # 境界条件の状態を出力
+        self._print_boundary_info(**boundary_values)
+        
+        # 各格子点について処理
+        for k in range(nz):
+            for j in range(ny):
+                for i in range(nx):
+                    base_idx = ((k * ny + j) * nx + i) * var_per_point
+                    location = self.system._get_point_location(i, j, k)
+                    location_equations = self.system.equations[location]
+                    
+                    # 方程式を種類別に分類
+                    eq_by_type = {
+                        "governing": None, 
+                        "dirichlet": None, 
+                        "neumann_x": None, 
+                        "neumann_y": None, 
+                        "neumann_z": None, 
+                        "auxiliary": []
+                    }
+                    
+                    for eq in location_equations:
+                        eq_type = self.system._identify_equation_type(eq, i, j, k)
+                        if eq_type == "auxiliary":
+                            eq_by_type["auxiliary"].append(eq)
+                        elif eq_type:  # Noneでない場合
+                            eq_by_type[eq_type] = eq
+                    
+                    # 各行に割り当てる方程式を決定
+                    assignments = self.system._assign_equations_3d(eq_by_type, i, j, k)
+                    
+                    # ソース項の処理（支配方程式に対応する行）
+                    governing_row = self._find_governing_row(assignments)
+                    if governing_row is not None and f_values is not None:
+                        b[base_idx + governing_row] = f_values[i, j, k]
+                    
+                    # 境界条件の処理
+                    self._apply_boundary_values(
+                        b, base_idx, location, assignments,
+                        **boundary_values,
+                        i=i, j=j, k=k
+                    )
+        
+        return b
+    
+    def _print_boundary_info(self, left_dirichlet=None, right_dirichlet=None, 
+                          bottom_dirichlet=None, top_dirichlet=None,
+                          front_dirichlet=None, back_dirichlet=None,
+                          left_neumann=None, right_neumann=None, 
+                          bottom_neumann=None, top_neumann=None,
+                          front_neumann=None, back_neumann=None):
+        """境界条件の情報を出力"""
+        if self.enable_dirichlet:
+            print(f"[3Dソルバー] ディリクレ境界条件: "
+                  f"左={left_dirichlet is not None}, 右={right_dirichlet is not None}, "
+                  f"下={bottom_dirichlet is not None}, 上={top_dirichlet is not None}, "
+                  f"前={front_dirichlet is not None}, 後={back_dirichlet is not None}")
+        if self.enable_neumann:
+            print(f"[3Dソルバー] ノイマン境界条件: "
+                  f"左={left_neumann is not None}, 右={right_neumann is not None}, "
+                  f"下={bottom_neumann is not None}, 上={top_neumann is not None}, "
+                  f"前={front_neumann is not None}, 後={back_neumann is not None}")
+    
+    def _find_governing_row(self, assignments):
+        """支配方程式が割り当てられた行を見つける"""
+        from equation.poisson import PoissonEquation, PoissonEquation2D, PoissonEquation3D
+        from equation.original import OriginalEquation, OriginalEquation2D, OriginalEquation3D
+        
+        for row, eq in enumerate(assignments):
+            if isinstance(eq, (PoissonEquation, PoissonEquation2D, PoissonEquation3D, 
+                             OriginalEquation, OriginalEquation2D, OriginalEquation3D)):
+                return row
+        return None
+    
+    def _apply_boundary_values(self, b, base_idx, location, assignments,
+                           left_dirichlet=None, right_dirichlet=None, 
+                           bottom_dirichlet=None, top_dirichlet=None,
+                           front_dirichlet=None, back_dirichlet=None,
+                           left_neumann=None, right_neumann=None, 
+                           bottom_neumann=None, top_neumann=None,
+                           front_neumann=None, back_neumann=None,
+                           i=None, j=None, k=None):
+        """適切な場所に境界値を設定"""
+        # インポートは関数内で行い、依存関係をローカルに限定
+        from equation.boundary import (
+            DirichletBoundaryEquation3D, 
+            NeumannXBoundaryEquation3D, 
+            NeumannYBoundaryEquation3D,
+            NeumannZBoundaryEquation3D
+        )
+        
+        # 境界値の取得
+        def get_boundary_value(value, idx1, idx2=None):
+            if isinstance(value, (list, np.ndarray)):
+                if isinstance(value, np.ndarray) and value.ndim == 2 and idx1 < value.shape[0] and idx2 < value.shape[1]:
+                    return value[idx1, idx2]
+                elif idx1 < len(value):
+                    return value[idx1]
+            return value
+        
+        # 各行に割り当てられた方程式をチェック
+        for row, eq in enumerate(assignments):
+            # ディリクレ条件
+            if isinstance(eq, DirichletBoundaryEquation3D) and self.enable_dirichlet:
+                if 'left' in location and 'front' not in location and 'back' not in location and left_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(left_dirichlet, j, k)
+                elif 'right' in location and 'front' not in location and 'back' not in location and right_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(right_dirichlet, j, k)
+                elif 'bottom' in location and 'front' not in location and 'back' not in location and bottom_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(bottom_dirichlet, i, k)
+                elif 'top' in location and 'front' not in location and 'back' not in location and top_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(top_dirichlet, i, k)
+                elif 'front' in location and front_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(front_dirichlet, i, j)
+                elif 'back' in location and back_dirichlet is not None:
+                    b[base_idx + row] = get_boundary_value(back_dirichlet, i, j)
+            
+            # X方向ノイマン条件
+            elif isinstance(eq, NeumannXBoundaryEquation3D) and self.enable_neumann:
+                if 'left' in location and left_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(left_neumann, j, k)
+                elif 'right' in location and right_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(right_neumann, j, k)
+            
+            # Y方向ノイマン条件
+            elif isinstance(eq, NeumannYBoundaryEquation3D) and self.enable_neumann:
+                if 'bottom' in location and bottom_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(bottom_neumann, i, k)
+                elif 'top' in location and top_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(top_neumann, i, k)
+            
+            # Z方向ノイマン条件
+            elif isinstance(eq, NeumannZBoundaryEquation3D) and self.enable_neumann:
+                if 'front' in location and front_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(front_neumann, i, j)
+                elif 'back' in location and back_neumann is not None:
+                    b[base_idx + row] = get_boundary_value(back_neumann, i, j)
