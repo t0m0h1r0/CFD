@@ -1,314 +1,360 @@
 """
-行列の性質に基づいて最適なスケーリング手法を選択する適応的スケーリング
-
-このスケーリング手法は行列の特性を分析し、最も適切なスケーリング戦略を
-自動的に選択・組み合わせます。数値的安定性とパフォーマンスを最適化します。
+Adaptive scaling implementation that selects the best scaling method.
 """
 
-from typing import Dict, Any, Tuple
-import logging
 import numpy as np
-import scipy.sparse as sp
 from .base import BaseScaling
 from .row_scaling import RowScaling
 from .column_scaling import ColumnScaling
-from .symmetric_scaling import SymmetricScaling
-from .equilibration_scaling import EquilibrationScaling
+from .diagonal_scaling import DiagonalScaling
+from .ruiz_scaling import RuizScaling
+from .no_scaling import NoScaling
 
 
 class AdaptiveScaling(BaseScaling):
-    """
-    適応的スケーリング手法
+    """Adaptively choose the best scaling method based on matrix properties."""
     
-    行列の特性を分析し、行スケーリング、列スケーリング、対称スケーリング、
-    または平衡化スケーリングのいずれが最も効果的かを判断して適用します。
-    """
-    
-    def __init__(self):
-        """初期化"""
-        super().__init__()
-        self._logger = logging.getLogger(__name__)
-        self.selected_strategy = None
-        self.strategy_info = {}
-        self.selected_scaler = None
-        
-    def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
+    def __init__(self, strategy="auto"):
         """
-        行列Aを分析し、最適なスケーリング戦略を適用
+        Initialize adaptive scaling.
         
         Args:
-            A: システム行列
-            b: 右辺ベクトル
+            strategy: Strategy for choosing scaling method
+                     - "auto": Automatically choose based on matrix properties
+                     - "sparsity": Choose based on matrix sparsity
+                     - "condition": Choose based on approximate condition number
+        """
+        super().__init__()
+        self.strategy = strategy
+        self.selected_scaler = None
+        self.scalers = {
+            "none": NoScaling(),
+            "row": RowScaling(),
+            "column": ColumnScaling(),
+            "diagonal": DiagonalScaling(),
+            "ruiz": RuizScaling(max_iter=3)  # Limit iterations for efficiency
+        }
+    
+    def scale(self, A, b):
+        """
+        Scale matrix A and right-hand side vector b using the best scaling method.
+        
+        Args:
+            A: System matrix
+            b: Right-hand side vector
             
         Returns:
             tuple: (scaled_A, scaled_b, scale_info)
         """
-        # 行列の特性を分析
-        properties = self._analyze_matrix(A)
+        # Analyze matrix and choose best scaling method
+        self.selected_scaler = self._choose_scaling_method(A)
+        print(f"Adaptive scaling selected: {self.selected_scaler.name}")
         
-        # 分析結果に基づいてスケーリング戦略を選択
-        strategy, strategy_name = self._select_strategy(properties)
-        self.selected_scaler = strategy
+        # Apply selected scaling
+        scaled_A, scaled_b, scale_info = self.selected_scaler.scale(A, b)
         
-        # 選択された戦略を適用
-        scaled_A, scaled_b, scale_info = strategy.scale(A, b)
-        
-        # 選択された戦略に関する情報を保存
-        self.selected_strategy = strategy_name
-        self.strategy_info = properties
-        
-        # scale_infoにメタデータを追加
-        scale_info['selected_strategy'] = strategy_name
-        scale_info['matrix_properties'] = properties
+        # Add selected scaler name to scale_info
+        scale_info["selected_scaler"] = self.selected_scaler.name
         
         return scaled_A, scaled_b, scale_info
     
-    def _analyze_matrix(self, A) -> Dict[str, Any]:
+    def unscale(self, x, scale_info):
         """
-        スケーリング戦略の選択を導くための行列特性分析
+        Unscale the solution vector using the selected scaling method.
         
         Args:
-            A: 分析する行列
+            x: Solution vector
+            scale_info: Scaling information
             
         Returns:
-            行列特性の辞書
+            unscaled_x: Unscaled solution
         """
-        properties = {}
-        m, n = A.shape
+        # Get selected scaler name
+        scaler_name = scale_info.get("selected_scaler")
         
-        # 基本的な特性
-        properties['is_square'] = m == n
-        properties['size'] = max(m, n)
-        properties['shape'] = (m, n)
-        
-        # 疎性分析
-        if hasattr(A, 'nnz'):
-            properties['nnz'] = A.nnz
-            properties['density'] = A.nnz / (m * n)
+        # Use the correct scaler
+        if scaler_name and scaler_name in self.scalers:
+            scaler = self.scalers[scaler_name.split('_')[0].lower()]
+        elif self.selected_scaler:
+            scaler = self.selected_scaler
         else:
-            if hasattr(A, 'toarray'):
-                nnz = np.count_nonzero(A.toarray())
-            else:
-                nnz = np.count_nonzero(A)
-            properties['nnz'] = nnz
-            properties['density'] = nnz / (m * n)
+            # Default to no scaling
+            return x
         
-        # 対称性チェック（正方行列の場合）
-        if properties['is_square']:
-            if hasattr(A, 'toarray'):
-                # 疎行列の場合、サンプルの要素をチェック
-                A_dense = A.toarray()
-                # 上三角と下三角を比較
-                properties['is_symmetric'] = np.allclose(A_dense, A_dense.T)
-            else:
-                # 密行列の場合
-                try:
-                    properties['is_symmetric'] = np.allclose(A, A.T)
-                except AttributeError:
-                    properties['is_symmetric'] = False
-        else:
-            properties['is_symmetric'] = False
+        # Unscale using the selected scaler
+        return scaler.unscale(x, scale_info)
+    
+    def scale_b_only(self, b, scale_info):
+        """
+        Scale the right-hand side vector using the selected scaling method.
+        
+        Args:
+            b: Right-hand side vector
+            scale_info: Scaling information
             
-        # 行と列の変動を分析
-        row_norms = self._compute_row_norms(A)
-        col_norms = self._compute_column_norms(A)
+        Returns:
+            scaled_b: Scaled right-hand side
+        """
+        # Get selected scaler name
+        scaler_name = scale_info.get("selected_scaler")
         
-        properties['row_norm_max'] = float(np.max(row_norms))
-        properties['row_norm_min'] = float(np.min(row_norms))
-        properties['row_norm_ratio'] = float(properties['row_norm_max'] / max(properties['row_norm_min'], 1e-15))
+        # Use the correct scaler
+        if scaler_name and scaler_name in self.scalers:
+            scaler = self.scalers[scaler_name.split('_')[0].lower()]
+        elif self.selected_scaler:
+            scaler = self.selected_scaler
+        else:
+            # Default to no scaling
+            return b
         
-        properties['col_norm_max'] = float(np.max(col_norms))
-        properties['col_norm_min'] = float(np.min(col_norms))
-        properties['col_norm_ratio'] = float(properties['col_norm_max'] / max(properties['col_norm_min'], 1e-15))
+        # Scale using the selected scaler
+        return scaler.scale_b_only(b, scale_info)
+    
+    def _choose_scaling_method(self, A):
+        """
+        Choose the best scaling method based on matrix properties.
         
-        # 対角優位性（正方行列の場合）
-        if properties['is_square']:
-            try:
-                # 行列を密行列に変換
-                if hasattr(A, 'toarray'):
-                    A_dense = A.toarray()
+        Args:
+            A: System matrix
+            
+        Returns:
+            scaler: Selected scaling method
+        """
+        if self.strategy == "sparsity":
+            return self._choose_by_sparsity(A)
+        elif self.strategy == "condition":
+            return self._choose_by_condition(A)
+        else:  # "auto" or any other value
+            return self._choose_automatic(A)
+    
+    def _choose_by_sparsity(self, A):
+        """
+        Choose scaling method based on matrix sparsity.
+        
+        Args:
+            A: System matrix
+            
+        Returns:
+            scaler: Selected scaling method
+        """
+        # Check if A is a sparse matrix
+        is_sparse = self.is_sparse(A)
+        
+        # Get matrix size
+        n_rows, n_cols = A.shape
+        
+        if is_sparse:
+            # For large sparse matrices, prefer row scaling (memory efficient)
+            if n_rows > 10000 or n_cols > 10000:
+                return self.scalers["row"]
+            else:
+                # For moderate-sized sparse matrices, use Ruiz scaling
+                return self.scalers["ruiz"]
+        else:
+            # For small dense matrices, use diagonal scaling
+            if n_rows < 1000 and n_cols < 1000:
+                return self.scalers["diagonal"]
+            else:
+                # For larger dense matrices, use row scaling
+                return self.scalers["row"]
+    
+    def _choose_by_condition(self, A):
+        """
+        Choose scaling method based on approximate condition number.
+        
+        Args:
+            A: System matrix
+            
+        Returns:
+            scaler: Selected scaling method
+        """
+        # Check if A is square
+        n_rows, n_cols = A.shape
+        if n_rows != n_cols:
+            # For non-square matrices, use row scaling
+            return self.scalers["row"]
+        
+        # Estimate condition by comparing row norms
+        row_norms = self.compute_row_norms(A, "inf")
+        if row_norms.max() == 0:
+            return self.scalers["none"]
+            
+        row_ratio = row_norms.max() / row_norms[row_norms > 0].min()
+        
+        # Check column norms (using our helper)
+        col_norms = self._compute_column_norms(A, "inf")
+        if col_norms.max() == 0:
+            return self.scalers["none"]
+            
+        col_ratio = col_norms.max() / col_norms[col_norms > 0].min()
+        
+        # Choose based on the estimated conditioning
+        if max(row_ratio, col_ratio) > 1e6:
+            # Very ill-conditioned - use Ruiz scaling
+            return self.scalers["ruiz"]
+        elif max(row_ratio, col_ratio) > 1e3:
+            # Moderately ill-conditioned - use diagonal scaling
+            return self.scalers["diagonal"]
+        elif row_ratio > col_ratio * 10:
+            # Row scaling needed more
+            return self.scalers["row"]
+        elif col_ratio > row_ratio * 10:
+            # Column scaling needed more
+            return self.scalers["column"]
+        else:
+            # Balanced conditioning - use simple row scaling
+            return self.scalers["row"]
+    
+    def _choose_automatic(self, A):
+        """
+        Automatically choose scaling method based on matrix properties.
+        
+        Args:
+            A: System matrix
+            
+        Returns:
+            scaler: Selected scaling method
+        """
+        # Check if A is a sparse matrix
+        is_sparse = self.is_sparse(A)
+        
+        # Get matrix size
+        n_rows, n_cols = A.shape
+        
+        # For very small matrices, don't bother scaling
+        if n_rows < 10 and n_cols < 10:
+            return self.scalers["none"]
+        
+        # For non-square matrices, use row scaling
+        if n_rows != n_cols:
+            return self.scalers["row"]
+        
+        # Analyze matrix structure
+        if is_sparse:
+            # Check sparsity pattern
+            if self._is_diagonally_dominant(A):
+                # Diagonally dominant matrices work well with diagonal scaling
+                return self.scalers["diagonal"]
+            else:
+                # Otherwise use Ruiz for sparse matrices with moderate size
+                if n_rows < 5000:
+                    return self.scalers["ruiz"]
                 else:
-                    A_dense = A
-                
-                diag = np.diag(A_dense)
-                diag_abs = np.abs(diag)
-                
-                # 対角要素を除く各行の絶対値和を計算
-                row_sums = np.zeros_like(diag)
-                for i in range(m):
-                    row_data = np.abs(A_dense[i, :])
-                    row_sums[i] = np.sum(row_data) - diag_abs[i]
-                
-                # 対角要素と非対角要素の比率
-                # 数値の安定性のためのエラー処理
-                diag_ratios = np.where(row_sums < 1e-15, 0.0, diag_abs / row_sums)
-                
-                properties['diag_dominance'] = float(np.mean(diag_ratios))
-            except Exception as e:
-                self._logger.warning(f"対角優位性分析中にエラー: {e}")
-                properties['diag_dominance'] = 0.0
-        
-        return properties
-    
-    def _select_strategy(self, properties) -> Tuple[BaseScaling, str]:
-        """
-        行列特性に基づいて最適なスケーリング戦略を選択
-        
-        Args:
-            properties: 行列特性の辞書
-            
-        Returns:
-            tuple: (scaling_strategy, strategy_name)
-        """
-        # 深刻な条件不良の行列には平衡化を使用
-        if (properties.get('row_norm_ratio', 0) > 1e8 or 
-            properties.get('col_norm_ratio', 0) > 1e8):
-            return EquilibrationScaling(max_iterations=5), "EquilibrationScaling"
-        
-        # 対称行列には対称スケーリングが最適
-        if properties.get('is_symmetric', False):
-            return SymmetricScaling(), "SymmetricScaling"
-        
-        # 対角優位行列には行スケーリングが有効
-        if properties.get('diag_dominance', 0) > 0.8:
-            return RowScaling(), "RowScaling"
-        
-        # 行と列の変動を比較
-        row_ratio = properties.get('row_norm_ratio', 1.0)
-        col_ratio = properties.get('col_norm_ratio', 1.0)
-        
-        if row_ratio > 10 * col_ratio:
-            return RowScaling(), "RowScaling"
-        elif col_ratio > 10 * row_ratio:
-            return ColumnScaling(), "ColumnScaling"
-        
-        # デフォルトでは平衡化を使用
-        return EquilibrationScaling(), "EquilibrationScaling"
-    
-    def _compute_row_norms(self, A):
-        """行列Aの行ノルムを計算"""
-        m = A.shape[0]
-        row_norms = np.zeros(m)
-        
-        if hasattr(A, 'format') and A.format == 'csr':
-            for i in range(m):
-                start, end = A.indptr[i], A.indptr[i+1]
-                if end > start:
-                    row_norms[i] = np.linalg.norm(A.data[start:end])
+                    # For very large sparse matrices, use row scaling (memory efficient)
+                    return self.scalers["row"]
         else:
-            # 密行列または他の形式の場合
-            if hasattr(A, 'toarray'):
-                A_dense = A.toarray()
-                row_norms = np.linalg.norm(A_dense, axis=1)
-            else:
-                row_norms = np.linalg.norm(A, axis=1)
-        
-        return row_norms
+            # For dense matrices, check conditioning
+            return self._choose_by_condition(A)
     
-    def _compute_column_norms(self, A):
-        """行列Aの列ノルムを計算"""
-        n = A.shape[1]
-        col_norms = np.zeros(n)
+    def _is_diagonally_dominant(self, A):
+        """
+        Check if matrix A is diagonally dominant.
         
-        if hasattr(A, 'format') and A.format == 'csc':
-            for j in range(n):
-                start, end = A.indptr[j], A.indptr[j+1]
-                if end > start:
-                    col_norms[j] = np.linalg.norm(A.data[start:end])
+        Args:
+            A: System matrix
+            
+        Returns:
+            is_dominant: True if matrix is diagonally dominant
+        """
+        # Need square matrix
+        if A.shape[0] != A.shape[1]:
+            return False
+        
+        # Check if A is a sparse matrix
+        if self.is_sparse(A):
+            # Sparse matrix implementation
+            if hasattr(A, "tocsr"):
+                A_csr = A.tocsr()
+            else:
+                A_csr = A
+            
+            n = A.shape[0]
+            # Test a sample of rows for efficiency
+            sample_size = min(n, 100)
+            sample_rows = np.random.choice(n, sample_size, replace=False)
+            
+            dominant_count = 0
+            for i in sample_rows:
+                start, end = A_csr.indptr[i], A_csr.indptr[i+1]
+                row_data = A_csr.data[start:end]
+                row_indices = A_csr.indices[start:end]
+                
+                # Find diagonal element
+                diag_idx = np.where(row_indices == i)[0]
+                if len(diag_idx) == 0:
+                    continue
+                
+                diag_val = abs(row_data[diag_idx[0]])
+                
+                # Sum of off-diagonal elements
+                off_diag_sum = np.sum(np.abs(row_data)) - diag_val
+                
+                if diag_val >= off_diag_sum:
+                    dominant_count += 1
+            
+            # Consider diagonally dominant if majority of sampled rows are dominant
+            return dominant_count > sample_size // 2
         else:
-            # 密行列または他の形式の場合
-            if hasattr(A, 'toarray'):
-                A_dense = A.toarray()
-                col_norms = np.linalg.norm(A_dense, axis=0)
+            # Dense matrix implementation
+            diag = np.abs(np.diag(A))
+            row_sums = np.sum(np.abs(A), axis=1) - diag
+            
+            # Check if diagonal elements are >= sum of off-diagonal elements
+            return np.mean(diag >= row_sums) > 0.5
+    
+    def _compute_column_norms(self, A, norm_type="inf"):
+        """
+        Compute column norms of matrix A.
+        
+        Args:
+            A: Matrix
+            norm_type: Type of norm to use ("inf", "1", "2")
+            
+        Returns:
+            col_norms: Array of column norms
+        """
+        # Check if A is a sparse matrix
+        if self.is_sparse(A):
+            # Convert to CSC for column operations
+            if hasattr(A, "tocsc"):
+                A_csc = A.tocsc()
             else:
-                col_norms = np.linalg.norm(A, axis=0)
-        
-        return col_norms
-    
-    def unscale(self, x, scale_info: Dict[str, Any]):
-        """
-        解ベクトルをアンスケーリング
-        
-        Args:
-            x: アンスケーリングする解ベクトル
-            scale_info: scaleメソッドからのスケーリング情報
+                A_csc = A
+                
+            n_cols = A.shape[1]
+            col_norms = np.zeros(n_cols)
             
-        Returns:
-            アンスケーリングされた解ベクトル
-        """
-        # 選択された戦略を抽出
-        selected_strategy = scale_info.get('selected_strategy')
-        
-        # 使用したスケーラーがあればそれを使用
-        if self.selected_scaler is not None:
-            return self.selected_scaler.unscale(x, scale_info)
-        
-        # 適切なアンスケーリング方法に転送
-        if selected_strategy == "RowScaling":
-            return RowScaling().unscale(x, scale_info)
-        elif selected_strategy == "ColumnScaling":
-            return ColumnScaling().unscale(x, scale_info)
-        elif selected_strategy == "SymmetricScaling":
-            return SymmetricScaling().unscale(x, scale_info)
-        elif selected_strategy == "EquilibrationScaling":
-            return EquilibrationScaling().unscale(x, scale_info)
-        
-        # デフォルト：列スケーリングが適用されている可能性
-        col_scale = scale_info.get('col_scale')
-        if col_scale is not None:
-            return x / col_scale
-        
-        # 対称スケーリングが適用されている可能性
-        D_sqrt_inv = scale_info.get('D_sqrt_inv')
-        if D_sqrt_inv is not None:
-            return x * D_sqrt_inv
+            # For each column
+            for j in range(n_cols):
+                # Get column slice
+                start, end = A_csc.indptr[j], A_csc.indptr[j+1]
+                if start < end:
+                    col_data = A_csc.data[start:end]
+                    if norm_type == "inf":
+                        col_norms[j] = np.max(np.abs(col_data))
+                    elif norm_type == "1":
+                        col_norms[j] = np.sum(np.abs(col_data))
+                    else:  # default to "2"
+                        col_norms[j] = np.sqrt(np.sum(col_data * col_data))
             
-        return x
-    
-    def scale_b_only(self, b, scale_info: Dict[str, Any]):
-        """
-        右辺ベクトルのみをスケーリング
-        
-        Args:
-            b: スケーリングする右辺ベクトル
-            scale_info: scaleメソッドからのスケーリング情報
-            
-        Returns:
-            スケーリングされた右辺ベクトル
-        """
-        # 選択された戦略を抽出
-        selected_strategy = scale_info.get('selected_strategy')
-        
-        # 使用したスケーラーがあればそれを使用
-        if self.selected_scaler is not None:
-            return self.selected_scaler.scale_b_only(b, scale_info)
-        
-        # 適切なスケーリング方法に転送
-        if selected_strategy == "RowScaling":
-            return RowScaling().scale_b_only(b, scale_info)
-        elif selected_strategy == "ColumnScaling":
-            return ColumnScaling().scale_b_only(b, scale_info)
-        elif selected_strategy == "SymmetricScaling":
-            return SymmetricScaling().scale_b_only(b, scale_info)
-        elif selected_strategy == "EquilibrationScaling":
-            return EquilibrationScaling().scale_b_only(b, scale_info)
-        
-        # デフォルト：行スケーリング
-        row_scale = scale_info.get('row_scale')
-        if row_scale is not None:
-            return b * row_scale
-            
-        # 対称スケーリングが適用されている可能性
-        D_sqrt_inv = scale_info.get('D_sqrt_inv')
-        if D_sqrt_inv is not None:
-            return b * D_sqrt_inv
-            
-        return b
+            return col_norms
+        else:
+            # Handle dense matrix
+            if norm_type == "inf":
+                return np.max(np.abs(A), axis=0)
+            elif norm_type == "1":
+                return np.sum(np.abs(A), axis=0)
+            else:  # default to "2"
+                return np.sqrt(np.sum(A * A, axis=0))
     
     @property
-    def name(self) -> str:
-        return "AdaptiveScaling"
+    def name(self):
+        """Return the name of the scaling method."""
+        if self.selected_scaler:
+            return f"AdaptiveScaling({self.selected_scaler.name})"
+        return f"AdaptiveScaling"
     
     @property
-    def description(self) -> str:
-        return "最適な戦略を自動的に選択する適応的スケーリング"
+    def description(self):
+        """Return the description of the scaling method."""
+        return f"Adaptive scaling using {self.strategy} strategy."
