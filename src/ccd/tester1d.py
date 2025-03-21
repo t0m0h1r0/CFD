@@ -10,6 +10,9 @@ from typing import List, Tuple, Dict, Any, Optional, Union
 from base_tester import CCDTester
 from solver1d import CCDSolver1D
 from equation_sets import DerivativeEquationSet1D
+from grid1d import Grid1D
+from test_function_factory import TestFunctionFactory
+from test_function1d import TestFunction1D
 
 
 class CCDTester1D(CCDTester):
@@ -58,10 +61,8 @@ class CCDTester1D(CCDTester):
             func_name: テスト関数名
             
         Returns:
-            TestFunction: 取得したテスト関数
+            TestFunction1D: 取得したテスト関数
         """
-        from test_functions import TestFunctionFactory
-        
         funcs = TestFunctionFactory.create_standard_1d_functions()
         func = next((f for f in funcs if f.name == func_name), None)
         

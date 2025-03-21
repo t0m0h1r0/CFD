@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple, List, Optional, Union
 import numpy as np
 
-from equation_system import EquationSystem
+from base_equation_system import BaseEquationSystem
 # linear_solver パッケージからソルバー作成関数をインポート
 from linear_solver import create_solver
 
@@ -31,8 +31,8 @@ class BaseCCDSolver(ABC):
         self.grid = grid
         self.backend = backend
         
-        # システムを初期化し、行列Aを構築 (CPU処理)
-        self.system = EquationSystem(grid)
+        # 次元に応じたシステムを初期化し、行列Aを構築 (CPU処理)
+        self.system = self._create_equation_system(grid)
         self.enable_dirichlet, self.enable_neumann = equation_set.setup_equations(self.system, grid)
         self.matrix_A = self.system.build_matrix_system()
         
@@ -48,6 +48,19 @@ class BaseCCDSolver(ABC):
         
         # デフォルト解法メソッド
         self.method = "direct"
+    
+    @abstractmethod
+    def _create_equation_system(self, grid):
+        """
+        次元に応じた方程式システムを作成
+        
+        Args:
+            grid: グリッドオブジェクト
+            
+        Returns:
+            方程式システムオブジェクト
+        """
+        pass
     
     @abstractmethod
     def _create_rhs_builder(self):

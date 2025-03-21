@@ -3,11 +3,13 @@ import os
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-from grid import Grid
-from tester import CCDTester1D, CCDTester2D
-from test_functions import TestFunctionFactory
-from visualization1d import CCDVisualizer
-from visualization2d import CCD2DVisualizer
+from grid1d import Grid1D
+from grid2d import Grid2D
+from tester1d import CCDTester1D
+from tester2d import CCDTester2D
+from test_function_factory import TestFunctionFactory
+from visualizer1d import CCDVisualizer1D
+from visualizer2d import CCDVisualizer2D
 from scaling import plugin_manager
 from linear_solver import create_solver
 
@@ -46,7 +48,7 @@ def parse_args():
     return parser.parse_args()
 
 def create_tester(args):
-    grid = Grid(args.nx, args.ny if args.dim == 2 else None, 
+    grid = _create_grid(args.nx, args.ny if args.dim == 2 else None, 
               x_range=tuple(args.xrange), 
               y_range=tuple(args.yrange) if args.dim == 2 else None)
     
@@ -139,6 +141,24 @@ def generate_filename(args, func_name, solver, scaling, extension="png"):
         
     return os.path.join(args.out, filename)
 
+def _create_grid(nx, ny=None, x_range=(-1.0, 1.0), y_range=None):
+    """
+    次元に応じたグリッドを作成
+    
+    Args:
+        nx: x方向の格子点数
+        ny: y方向の格子点数（Noneの場合は1D）
+        x_range: xの範囲
+        y_range: yの範囲
+        
+    Returns:
+        Grid1DまたはGrid2Dオブジェクト
+    """
+    if ny is None:
+        return Grid1D(nx, x_range=x_range)
+    else:
+        return Grid2D(nx, ny, x_range=x_range, y_range=y_range or x_range)
+
 def run_tests(args):
     """関数・ソルバー・スケーリングでのテスト実行"""
     # テスト対象取得
@@ -195,7 +215,7 @@ def run_tests(args):
                     results.append(result_data)
                     
                     # 単一テスト時は可視化
-                    visualizer = CCDVisualizer(output_dir=args.out) if args.dim == 1 else CCD2DVisualizer(output_dir=args.out)
+                    visualizer = CCDVisualizer1D(output_dir=args.out) if args.dim == 1 else CCDVisualizer2D(output_dir=args.out)
                     # 標準化されたファイル名を生成
                     out_filename = generate_filename(args, func.name, solver, scaling, "png")
                     out_prefix = os.path.basename(out_filename).split('.')[0]
@@ -234,7 +254,7 @@ def run_convergence_test(args):
         )
         
         # 可視化
-        visualizer = CCDVisualizer(output_dir=args.out) if args.dim == 1 else CCD2DVisualizer(output_dir=args.out)
+        visualizer = CCDVisualizer1D(output_dir=args.out) if args.dim == 1 else CCDVisualizer2D(output_dir=args.out)
         # 標準化ファイル名
         out_filename = generate_filename(args, func.name, "convergence", args.scaling, "png")
         out_prefix = os.path.basename(out_filename).split('.')[0]
