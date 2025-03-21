@@ -1,5 +1,5 @@
 """
-GPU (CuPy) を使用した線形方程式系ソルバー（疎行列CSR最適化版）
+GPU (CuPy) を使用した線形方程式系ソルバー（簡潔版）
 """
 
 import numpy as np
@@ -18,11 +18,8 @@ class GPULinearSolver(LinearSolver):
             self.splinalg = splinalg
             self.has_cupy = True
             
-            # 行列をCuPy形式に変換（CSR最適化）
+            # 行列をCuPy形式に変換
             self.A = self._to_cupy_matrix(self.original_A)
-            
-            # メモリ使用量情報を表示（デバッグ用）
-            self._print_memory_info("初期化後")
             
             # スケーリングの初期化
             if self.scaling_method:
@@ -40,8 +37,6 @@ class GPULinearSolver(LinearSolver):
                 "lsqr": self._solve_lsqr,
                 "lsmr": self._solve_lsmr
             }
-            
-            # 追加のCuPy固有のソルバーがあればここに追加
             
         except ImportError as e:
             print(f"警告: CuPyが利用できません: {e}")
@@ -68,12 +63,7 @@ class GPULinearSolver(LinearSolver):
         return super().solve(b, method, options)
     
     def _to_cupy_matrix(self, A):
-        """
-        行列をCuPy CSR形式に効率的に変換
-        
-        SciPyのCSR形式から直接CuPyのCSR形式に変換し、
-        メモリ使用量を最小限に抑える
-        """
+        """行列をCuPy CSR形式に効率的に変換"""
         if not self.has_cupy:
             return A
             
@@ -82,155 +72,56 @@ class GPULinearSolver(LinearSolver):
             if hasattr(A, 'device') and str(type(A)).find('cupy') >= 0:
                 return A
                 
-            # 行列の特性を確認
-            is_sparse = hasattr(A, 'format')
-            matrix_size = A.shape[0] * A.shape[1]
-            large_matrix = matrix_size > 1e7  # ~80MB以上を大きいと判断
-            
-            # SciPyのCSR行列から直接CuPyのCSR行列に変換（メモリ効率が良い）
-            if is_sparse and hasattr(A, 'format') and A.format == 'csr':
-                print(f"CSR行列を直接変換（サイズ: {A.shape}, 非ゼロ要素: {A.nnz}）")
+            # 疎行列変換（CSR形式が最適）
+            if hasattr(A, 'format'):
+                # CSR形式への変換
+                if A.format != 'csr':
+                    A = A.tocsr()
                 
-                # 非ゼロ値、行インデックス、列インデックスを抽出
-                data = A.data
-                indices = A.indices
-                indptr = A.indptr
-                
-                # 非常に小さい値を切り捨てて疎性を高める
-                if len(data) > 0:
-                    small_values_mask = np.abs(data) < 1e-15
-                    if np.any(small_values_mask):
-                        # 値の数を削減してCSRを再構築
-                        data = data[~small_values_mask]
-                        indices = indices[~small_values_mask]
-                        # indptrの再計算は複雑なので、新しいCSRを構築
-                        from scipy import sparse
-                        A = sparse.csr_matrix((data, indices, indptr), shape=A.shape)
-                        data = A.data
-                        indices = A.indices
-                        indptr = A.indptr
-                
-                # CuPyのCSR行列に変換
-                cupy_data = self.cp.array(data)
-                cupy_indices = self.cp.array(indices)
-                cupy_indptr = self.cp.array(indptr)
-                
+                # CSR行列を直接CuPyに転送
                 return self.cp.sparse.csr_matrix(
-                    (cupy_data, cupy_indices, cupy_indptr),
+                    (self.cp.array(A.data), 
+                     self.cp.array(A.indices), 
+                     self.cp.array(A.indptr)),
                     shape=A.shape
                 )
-                
-            # 大きなCOO/CSC形式の行列の場合（直接変換可能な場合）
-            elif is_sparse and hasattr(A, 'format') and A.format in ['coo', 'csc']:
-                print(f"{A.format.upper()}行列をCSRに変換（サイズ: {A.shape}, 非ゼロ要素: {A.nnz}）")
-                # 一度SciPyのCSRに変換
-                from scipy import sparse
-                csr_A = A.tocsr()
-                
-                # CuPyのCSR行列に変換
-                cupy_data = self.cp.array(csr_A.data)
-                cupy_indices = self.cp.array(csr_A.indices)
-                cupy_indptr = self.cp.array(csr_A.indptr)
-                
-                return self.cp.sparse.csr_matrix(
-                    (cupy_data, cupy_indices, cupy_indptr),
-                    shape=A.shape
-                )
-                
-            # 大きな密行列の場合（分割処理が必要）
-            elif large_matrix and not is_sparse:
-                print(f"大きな密行列を分割処理（サイズ: {A.shape}）")
-                
-                # 密行列のCSR形式への変換（メモリ効率を考慮）
-                A_dense = np.array(A)
-                
-                # 小さな値を0に設定して疎性を高める
-                A_dense[np.abs(A_dense) < 1e-15] = 0.0
-                
-                # NumPyのCSRに変換してからCuPyのCSRに変換
-                from scipy import sparse
-                scipy_csr = sparse.csr_matrix(A_dense)
-                
-                # CuPyのCSR行列に変換
-                cupy_data = self.cp.array(scipy_csr.data)
-                cupy_indices = self.cp.array(scipy_csr.indices)
-                cupy_indptr = self.cp.array(scipy_csr.indptr)
-                
-                return self.cp.sparse.csr_matrix(
-                    (cupy_data, cupy_indices, cupy_indptr),
-                    shape=A.shape
-                )
-                
-            # その他の場合（小さな密行列など）
             else:
-                print(f"通常変換（サイズ: {A.shape}）")
-                
-                # 密行列に変換
-                if is_sparse:
-                    A_dense = A.toarray()
-                else:
-                    A_dense = np.array(A)
-                
-                # 小さな値を0に設定して疎性を高める
-                A_dense[np.abs(A_dense) < 1e-15] = 0.0
-                
-                # CuPyのCSR形式に変換
-                return self.cp.sparse.csr_matrix(self.cp.array(A_dense))
+                # 密行列の場合
+                if hasattr(A, 'toarray'):
+                    A = A.toarray()
+                # 密行列をCSR形式に変換
+                return self.cp.sparse.csr_matrix(self.cp.array(A))
             
         except Exception as e:
             print(f"GPU行列変換エラー: {e}")
-            import traceback
-            traceback.print_exc()
             print("CPUソルバーにフォールバックします")
             self.has_cupy = False
             self._init_cpu_fallback()
             return A
     
-    def _print_memory_info(self, label=""):
-        """CuPyのメモリ使用状況を出力（デバッグ用）"""
-        if not self.has_cupy:
-            return
-            
-        try:
-            mem_pool = self.cp.get_default_memory_pool()
-            mem_used = mem_pool.used_bytes()
-            mem_total = mem_pool.total_bytes()
-            
-            print(f"[GPU メモリ情報 {label}] 使用: {mem_used/1024/1024:.2f}MB, "
-                  f"合計プール: {mem_total/1024/1024:.2f}MB")
-                  
-            if hasattr(self, 'A') and hasattr(self.A, 'format') and self.A.format == 'csr':
-                nnz = self.A.nnz
-                shape = self.A.shape
-                density = nnz / (shape[0] * shape[1]) if shape[0] * shape[1] > 0 else 0
-                print(f"[行列情報] 形状: {shape}, 非ゼロ要素: {nnz}, 密度: {density:.6f}")
-        except Exception as e:
-            print(f"メモリ情報取得エラー: {e}")
-    
     def _prepare_scaling(self):
-        """スケーリング前処理（堅牢化）"""
+        """
+        スケーリング前処理（簡潔版）
+        
+        メモリ効率を維持しつつ、処理をシンプル化
+        """
         if not self.scaler or not self.has_cupy:
             return
             
         try:
-            # NumPy用ダミーベクトルでスケーリング情報を計算
+            # より単純なアプローチ：スケーリング係数のみを計算
             dummy_b = np.ones(self.A.shape[0])
-            
-            # NumPy版の行列を作成
             A_np = self._to_numpy_matrix(self.A)
-            # NumPyでスケーリング情報を計算
-            _, _, scale_info_np = self.scaler.scale(A_np, dummy_b)
+            _, _, scale_info = self.scaler.scale(A_np, dummy_b)
             
             # スケーリング情報をCuPyに変換
             self.scaling_info = {}
-            for key, value in scale_info_np.items():
+            for key, value in scale_info.items():
                 if isinstance(value, np.ndarray):
                     self.scaling_info[key] = self.cp.array(value)
                 else:
                     self.scaling_info[key] = value
                     
-            # メモリ情報出力
-            self._print_memory_info("スケーリング後")
         except Exception as e:
             print(f"スケーリング前処理エラー: {e}")
             self.scaler = None
@@ -295,14 +186,11 @@ class GPULinearSolver(LinearSolver):
             # CuPyの疎行列の場合
             if hasattr(A, 'format') and A.format == 'csr':
                 # CSR行列の各コンポーネントをNumPyに転送
-                data = A.data.get()
-                indices = A.indices.get()
-                indptr = A.indptr.get()
-                shape = A.shape
-                
-                # SciPyのCSR行列を構築
                 from scipy import sparse
-                return sparse.csr_matrix((data, indices, indptr), shape=shape)
+                return sparse.csr_matrix(
+                    (A.data.get(), A.indices.get(), A.indptr.get()),
+                    shape=A.shape
+                )
             else:
                 # その他の場合は.get()を使用
                 return A.get()
@@ -314,7 +202,7 @@ class GPULinearSolver(LinearSolver):
             return b.get()
         return b
     
-    # 各ソルバーメソッドからエラー処理を排除
+    # 各ソルバーメソッド
     
     def _solve_direct(self, A, b, options=None):
         """直接解法"""

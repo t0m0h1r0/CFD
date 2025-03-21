@@ -1,168 +1,285 @@
 """
-行と列のスケーリングを組み合わせた平衡化スケーリング実装（修正版）
+Equilibration scaling implementation.
 """
 
-from typing import Dict, Any, Tuple
 import numpy as np
-import scipy.sparse as sp
 from .base import BaseScaling
 
 
 class EquilibrationScaling(BaseScaling):
-    """行と列のスケーリングを組み合わせた平衡化スケーリング: A → D_r A D_c, b → D_r b"""
+    """Equilibration scaling for numerical stability."""
     
-    def __init__(self, max_iterations=5, tolerance=1e-8):
+    def __init__(self, epsilon=1e-10, max_ratio=1e8):
         """
-        反復パラメータを指定して初期化
+        Initialize equilibration scaling.
         
         Args:
-            max_iterations: 平衡化の最大反復回数
-            tolerance: 収束許容誤差
+            epsilon: Small value to avoid division by zero
+            max_ratio: Maximum allowed ratio between min and max scale factors
         """
         super().__init__()
-        self.max_iterations = max_iterations
-        self.tolerance = tolerance
+        self.epsilon = epsilon
+        self.max_ratio = max_ratio
     
-    def scale(self, A, b) -> Tuple[Any, Any, Dict[str, Any]]:
+    def scale(self, A, b):
         """
-        反復的平衡化スケーリングを適用（安定化版）
+        Scale matrix A and right-hand side vector b using equilibration.
+        This scaling attempts to make all rows have similar norms,
+        and all columns have similar norms, to improve the condition number.
         
         Args:
-            A: システム行列
-            b: 右辺ベクトル
+            A: System matrix
+            b: Right-hand side vector
             
         Returns:
             tuple: (scaled_A, scaled_b, scale_info)
         """
-        m, n = A.shape
-        scaled_A = A.copy() if hasattr(A, 'copy') else A.copy()
+        # Special case for CCD solver: Extract components from linear system
+        n_rows, n_cols = A.shape
         
-        # スケーリングベクトルを初期化
-        row_scale = np.ones(m)
-        col_scale = np.ones(n)
+        # Determine block size based on matrix shape
+        block_size = 4  # Default for 1D
+        if n_rows == n_cols and n_rows % 7 == 0:
+            block_size = 7  # For 2D
         
-        # 行列のフォーマットに応じた処理戦略を選択
-        is_csr = hasattr(scaled_A, 'format') and scaled_A.format == 'csr'
-        is_csc = hasattr(scaled_A, 'format') and scaled_A.format == 'csc'
+        # Check if matrix seems to be a CCD matrix (square with multiple of block_size)
+        is_ccd = (n_rows == n_cols) and (n_rows % block_size == 0)
         
-        # 最大許容スケーリング係数（これより大きい値を避ける）
-        max_scale_factor = 1e3  # 経験的な値、調整可能
+        if is_ccd:
+            # Use block-wise scaling for CCD matrices
+            return self._scale_ccd_system(A, b, block_size)
+        else:
+            # Use standard equilibration for general matrices
+            return self._scale_standard(A, b)
+    
+    def _scale_ccd_system(self, A, b, block_size):
+        """
+        Scale a CCD system with block structure.
         
-        # 反復処理
-        for iter_idx in range(self.max_iterations):
-            # 行/列ノルムを計算
-            row_norms = self._compute_row_norms(scaled_A, is_csr)
-            col_norms = self._compute_column_norms(scaled_A, is_csc)
+        Args:
+            A: System matrix
+            b: Right-hand side vector
+            block_size: Size of blocks (4 for 1D, 7 for 2D)
             
-            # ノルム比率を確認（大きな不均衡を確認）
-            row_ratio = np.max(row_norms) / np.maximum(np.min(row_norms), 1e-10)
-            col_ratio = np.max(col_norms) / np.maximum(np.min(col_norms), 1e-10)
-            
-            # 不均衡が大きすぎる場合は早期終了
-            if row_ratio > 1e10 or col_ratio > 1e10:
-                print(f"警告: 不均衡が大きすぎます（行比率={row_ratio:.1e}, 列比率={col_ratio:.1e}）。スケーリングを制限します。")
-                break
-            
-            # 収束確認
-            if (np.abs(row_norms - 1.0) < self.tolerance).all() and \
-               (np.abs(col_norms - 1.0) < self.tolerance).all():
-                break
-            
-            # 最小ノルム値の保護（0に近い値の保護）
-            safe_row_norms = np.maximum(row_norms, 1e-10)
-            safe_col_norms = np.maximum(col_norms, 1e-10)
-            
-            # スケーリング係数の更新（安定化のため平方根を使用、かつ最大値制限）
-            row_scale_update = 1.0 / np.sqrt(safe_row_norms)
-            col_scale_update = 1.0 / np.sqrt(safe_col_norms)
-            
-            # スケーリング係数を制限してオーバーフローを避ける
-            row_scale_update = np.clip(row_scale_update, 1.0/max_scale_factor, max_scale_factor)
-            col_scale_update = np.clip(col_scale_update, 1.0/max_scale_factor, max_scale_factor)
-            
-            # 最終反復で激しい変化を避けるためのダンピング
-            if iter_idx == self.max_iterations - 1:
-                row_scale_update = np.sqrt(row_scale_update)  # 緩やかに変化
-                col_scale_update = np.sqrt(col_scale_update)  # 緩やかに変化
-            
-            # 合計スケーリング係数を更新
-            row_scale *= row_scale_update
-            col_scale *= col_scale_update
-            
-            # 累積スケーリング係数も制限
-            row_scale = np.clip(row_scale, 1.0/max_scale_factor, max_scale_factor)
-            col_scale = np.clip(col_scale, 1.0/max_scale_factor, max_scale_factor)
-            
-            # 行列をスケーリング
-            DR = sp.diags(row_scale_update)
-            DC = sp.diags(col_scale_update)
-            scaled_A = DR @ scaled_A @ DC
+        Returns:
+            tuple: (scaled_A, scaled_b, scale_info)
+        """
+        n_rows, n_cols = A.shape
         
-        # bをスケーリング
+        # Prepare scaling factors
+        row_scale = np.ones(n_rows)
+        col_scale = np.ones(n_cols)
+        
+        # Apply scaling for each block separately
+        n_blocks = n_rows // block_size
+        for var_idx in range(block_size):
+            # Extract the submatrix for this variable
+            row_idx = list(range(var_idx, n_rows, block_size))
+            col_idx = list(range(var_idx, n_cols, block_size))
+            
+            # Get the submatrix
+            if self.is_sparse(A):
+                # For sparse matrices, we need to extract rows/columns
+                submatrix = A[row_idx, :][:, col_idx]
+            else:
+                # For dense matrices, we can slice directly
+                submatrix = A[np.ix_(row_idx, col_idx)]
+            
+            # Compute row and column norms
+            sub_row_norms = self.compute_row_norms(submatrix, norm_type="inf")
+            sub_col_norms = self._compute_column_norms(submatrix, norm_type="inf")
+            
+            # Create safe scaling factors
+            sub_row_scale = self._create_safe_scale(sub_row_norms)
+            sub_col_scale = self._create_safe_scale(sub_col_norms)
+            
+            # Apply the scaling factors to the appropriate rows/columns
+            for i, scale in enumerate(sub_row_scale):
+                row_scale[i * block_size + var_idx] = scale
+                
+            for j, scale in enumerate(sub_col_scale):
+                col_scale[j * block_size + var_idx] = scale
+        
+        # Scale matrix and right-hand side
+        scaled_A = self._scale_matrix(A, row_scale, col_scale)
         scaled_b = b * row_scale
         
-        return scaled_A, scaled_b, {'row_scale': row_scale, 'col_scale': col_scale}
+        # Return scaled matrix, vector, and scaling info
+        return scaled_A, scaled_b, {
+            "row_scale": row_scale, 
+            "col_scale": col_scale,
+            "block_size": block_size
+        }
     
-    def _compute_row_norms(self, A, is_csr=False):
-        """効率的な行ノルム計算"""
-        m = A.shape[0]
-        row_norms = np.zeros(m)
+    def _scale_standard(self, A, b):
+        """
+        Standard equilibration scaling for general matrices.
         
-        if is_csr:
-            # CSRフォーマットではindptrを使って行単位で処理
-            for i in range(m):
-                start, end = A.indptr[i], A.indptr[i+1]
-                if end > start:
-                    row_norms[i] = np.max(np.abs(A.data[start:end]))
-        else:
-            # その他の形式
-            for i in range(m):
-                row = A[i, :]
-                if hasattr(row, 'toarray'):
-                    row = row.toarray().flatten()
-                row_norms[i] = np.max(np.abs(row)) if row.size > 0 else 0.0
+        Args:
+            A: System matrix
+            b: Right-hand side vector
+            
+        Returns:
+            tuple: (scaled_A, scaled_b, scale_info)
+        """
+        # Compute row and column norms
+        row_norms = self.compute_row_norms(A, norm_type="inf")
+        col_norms = self._compute_column_norms(A, norm_type="inf")
         
-        return row_norms
+        # Create safe scaling factors
+        row_scale = self._create_safe_scale(row_norms)
+        col_scale = self._create_safe_scale(col_norms)
+        
+        # Scale matrix and right-hand side
+        scaled_A = self._scale_matrix(A, row_scale, col_scale)
+        scaled_b = b * row_scale
+        
+        # Return scaled matrix, vector, and scaling info
+        return scaled_A, scaled_b, {"row_scale": row_scale, "col_scale": col_scale}
     
-    def _compute_column_norms(self, A, is_csc=False):
-        """効率的な列ノルム計算"""
-        n = A.shape[1]
-        col_norms = np.zeros(n)
+    def unscale(self, x, scale_info):
+        """
+        Unscale the solution vector.
         
-        if is_csc:
-            # CSCフォーマットではindptrを使って列単位で処理
-            for j in range(n):
-                start, end = A.indptr[j], A.indptr[j+1]
-                if end > start:
-                    col_norms[j] = np.max(np.abs(A.data[start:end]))
-        else:
-            # その他の形式
-            for j in range(n):
-                col = A[:, j]
-                if hasattr(col, 'toarray'):
-                    col = col.toarray().flatten()
-                col_norms[j] = np.max(np.abs(col)) if col.size > 0 else 0.0
+        Args:
+            x: Solution vector
+            scale_info: Scaling information
+            
+        Returns:
+            unscaled_x: Unscaled solution
+        """
+        # Recover original solution: D_c^(-1) * x
+        col_scale = scale_info.get("col_scale")
+        if col_scale is not None:
+            return x / col_scale
+        return x
+    
+    def scale_b_only(self, b, scale_info):
+        """
+        Scale the right-hand side vector using the precomputed scaling factors.
         
-        return col_norms
-    
-    def unscale(self, x, scale_info: Dict[str, Any]):
-        """解ベクトルをアンスケーリング"""
-        col_scale = scale_info.get('col_scale')
-        if col_scale is None:
-            return x
-        return x / col_scale
-    
-    def scale_b_only(self, b, scale_info: Dict[str, Any]):
-        """右辺ベクトルbのみをスケーリング"""
-        row_scale = scale_info.get('row_scale')
+        Args:
+            b: Right-hand side vector
+            scale_info: Scaling information
+            
+        Returns:
+            scaled_b: Scaled right-hand side
+        """
+        row_scale = scale_info.get("row_scale")
         if row_scale is not None:
             return b * row_scale
         return b
     
+    def _create_safe_scale(self, norms):
+        """
+        Create safe scaling factors with limited dynamic range.
+        
+        Args:
+            norms: Array of norms
+            
+        Returns:
+            scale_factors: Array of scaling factors
+        """
+        # Avoid division by zero
+        safe_norms = norms.copy()
+        safe_norms[safe_norms == 0] = 1.0
+        
+        # Create scaling factors
+        scale_factors = 1.0 / safe_norms
+        
+        # Limit extreme scaling factors to improve numerical stability
+        if len(scale_factors) > 0:
+            max_scale = np.max(scale_factors[scale_factors < np.inf])
+            min_scale = np.min(scale_factors[scale_factors > 0])
+            
+            # Cap the ratio to max_ratio
+            if max_scale / min_scale > self.max_ratio:
+                scale_factors = np.minimum(scale_factors, min_scale * self.max_ratio)
+        
+        return scale_factors
+    
+    def _compute_column_norms(self, A, norm_type="inf"):
+        """
+        Compute column norms of matrix A.
+        
+        Args:
+            A: Matrix
+            norm_type: Type of norm to use ("inf", "1", "2")
+            
+        Returns:
+            col_norms: Array of column norms
+        """
+        # Check if A is a sparse matrix
+        if self.is_sparse(A):
+            # Convert to CSC for column operations
+            if hasattr(A, "tocsc"):
+                A_csc = A.tocsc()
+            else:
+                A_csc = A
+                
+            n_cols = A.shape[1]
+            col_norms = np.zeros(n_cols)
+            
+            # For each column
+            for j in range(n_cols):
+                # Get column slice
+                start, end = A_csc.indptr[j], A_csc.indptr[j+1]
+                if start < end:
+                    col_data = A_csc.data[start:end]
+                    if norm_type == "inf":
+                        col_norms[j] = np.max(np.abs(col_data))
+                    elif norm_type == "1":
+                        col_norms[j] = np.sum(np.abs(col_data))
+                    else:  # default to "2"
+                        col_norms[j] = np.sqrt(np.sum(col_data * col_data))
+            
+            return col_norms
+        else:
+            # Handle dense matrix
+            if norm_type == "inf":
+                return np.max(np.abs(A), axis=0)
+            elif norm_type == "1":
+                return np.sum(np.abs(A), axis=0)
+            else:  # default to "2"
+                return np.sqrt(np.sum(A * A, axis=0))
+    
+    def _scale_matrix(self, A, row_scale, col_scale):
+        """
+        Scale matrix A by row and column scaling factors.
+        
+        Args:
+            A: Matrix
+            row_scale: Row scaling factors
+            col_scale: Column scaling factors
+            
+        Returns:
+            scaled_A: Scaled matrix
+        """
+        # Check if A is a sparse matrix
+        if self.is_sparse(A):
+            # Handle sparse matrix efficiently
+            from scipy import sparse
+            D_r = sparse.diags(row_scale)
+            D_c = sparse.diags(col_scale)
+            
+            # Need both CSR and CSC format for efficiency
+            if hasattr(A, "tocsr"):
+                A_csr = A.tocsr()
+            else:
+                A_csr = A
+                
+            # D_r * A * D_c
+            return D_r @ A_csr @ D_c
+        else:
+            # Handle dense matrix
+            return (row_scale.reshape(-1, 1) * A) * col_scale
+    
     @property
-    def name(self) -> str:
+    def name(self):
+        """Return the name of the scaling method."""
         return "EquilibrationScaling"
     
     @property
-    def description(self) -> str:
-        return "行と列のノルムをバランスさせる反復的平衡化スケーリング"
+    def description(self):
+        """Return the description of the scaling method."""
+        return "Equilibration scaling for numerical stability, with CCD-aware block handling."
