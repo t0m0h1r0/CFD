@@ -88,7 +88,7 @@ class CPULinearSolver(LinearSolver):
         options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
-        restart = options.get("restart", 20)
+        restart = options.get("restart", 200)
         x0 = options.get("x0", np.zeros_like(b))
         
         result = splinalg.gmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, restart=restart)

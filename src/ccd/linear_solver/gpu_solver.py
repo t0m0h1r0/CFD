@@ -195,7 +195,7 @@ class GPULinearSolver(LinearSolver):
         options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
-        restart = options.get("restart", 20)
+        restart = options.get("restart", 200)
         x0 = options.get("x0", self.cp.zeros_like(b))
         
         # GMRES実行

@@ -19,16 +19,18 @@ class CCDTester(ABC):
         self.solver_options = {}
         self.scaling_method = None
         self.equation_set = None
+        self.backend = "cpu"  # デフォルトバックエンドをCPUに設定
         self.results_dir = "results"
         self.matrix_basename = None  # 行列可視化用のベース名
         os.makedirs(self.results_dir, exist_ok=True)
 
-    def setup(self, equation="poisson", method="direct", options=None, scaling=None):
+    def setup(self, equation="poisson", method="direct", options=None, scaling=None, backend="cpu"):
         """テスター設定のショートカット"""
         self.equation_set = EquationSet.create(equation, dimension=self.get_dimension())
         self.solver_method = method
         self.solver_options = options or {}
         self.scaling_method = scaling
+        self.backend = backend
         return self
         
     def set_solver_options(self, method, options=None, analyze_matrix=False):
@@ -45,6 +47,10 @@ class CCDTester(ABC):
         self.solver_method = method
         self.solver_options = options or {}
         self.analyze_matrix = analyze_matrix
+        
+        # バックエンドを保存（オプションから取得）
+        if options and "backend" in options:
+            self.backend = options["backend"]
         
         # ソルバーがすでに作成されている場合は、オプションを設定
         if hasattr(self, 'solver') and self.solver:
@@ -95,7 +101,8 @@ class CCDTester(ABC):
             'method': self.solver_method,
             'options': self.solver_options,
             'equation_set': self.equation_set,
-            'scaling': self.scaling_method
+            'scaling': self.scaling_method,
+            'backend': self.backend
         }
 
         for n in grid_sizes:
@@ -106,7 +113,8 @@ class CCDTester(ABC):
                 if settings['equation_set'] else "poisson",
                 method=settings['method'],
                 options=settings['options'],
-                scaling=settings['scaling']
+                scaling=settings['scaling'],
+                backend=settings['backend']
             )
             result = tester.run_test(test_func)
             results[n] = result["errors"]
@@ -224,7 +232,7 @@ class CCDTester1D(CCDTester):
     
     def _create_solver(self):
         """1D用ソルバー作成"""
-        self.solver = CCDSolver1D(self.equation_set, self.grid)
+        self.solver = CCDSolver1D(self.equation_set, self.grid, backend=self.backend)
         
         # ソルバーオプションを適用
         if self.solver_method != "direct" or self.solver_options or self.scaling_method:
@@ -347,7 +355,7 @@ class CCDTester2D(CCDTester):
     
     def _create_solver(self):
         """2D用ソルバー作成"""
-        self.solver = CCDSolver2D(self.equation_set, self.grid)
+        self.solver = CCDSolver2D(self.equation_set, self.grid, backend=self.backend)
         
         # ソルバーオプションを適用
         if self.solver_method != "direct" or self.solver_options or self.scaling_method:

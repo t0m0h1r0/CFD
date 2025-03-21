@@ -29,7 +29,7 @@ def parse_args():
     # ソルバー
     parser.add_argument("--solver", type=str, default='direct', help="解法('all'=全解法)")
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法('all'=全手法)")
-    parser.add_argument("--backend", type=str, choices=['cpu', 'cuda', 'jax'], default='cuda',
+    parser.add_argument("--backend", type=str, choices=['cpu', 'cuda', 'jax'], default='cpu',
                       help="計算バックエンド")
     parser.add_argument("--tol", type=float, default=1e-10, help="許容誤差")
     parser.add_argument("--maxiter", type=int, default=1000, help="最大反復数")
@@ -49,9 +49,20 @@ def create_tester(args):
               y_range=tuple(args.yrange) if args.dim == 2 else None)
     
     tester = CCDTester2D(grid) if args.dim == 2 else CCDTester1D(grid)
-    tester.set_solver_options(args.solver, {"tol": args.tol, "maxiter": args.maxiter, "backend": args.backend})
-    tester.scaling_method = args.scaling
     tester.set_equation_set(args.equation)
+    
+    # バックエンドを先に設定
+    tester.backend = args.backend
+    
+    # ソルバーオプションを設定
+    tester.set_solver_options(args.solver, {
+        "tol": args.tol, 
+        "maxiter": args.maxiter, 
+        "backend": args.backend
+    })
+    
+    # スケーリング設定
+    tester.scaling_method = args.scaling
     
     return tester
 
