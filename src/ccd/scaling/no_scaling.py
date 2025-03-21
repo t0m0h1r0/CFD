@@ -1,60 +1,58 @@
 """
-No scaling implementation - baseline for comparison.
+No scaling implementation (identity scaling).
 """
 
-import numpy as np
 from .base import BaseScaling
 
-
 class NoScaling(BaseScaling):
-    """No scaling is applied, identity scaling."""
+    """No scaling (identity scaling)"""
+    
+    def __init__(self):
+        super().__init__()
+        
+    @property
+    def name(self):
+        return "NoScaling"
+        
+    @property
+    def description(self):
+        return "No scaling (identity scaling)"
     
     def scale(self, A, b):
         """
-        Return A and b unchanged.
+        No scaling - return original matrix and vector
         
         Args:
             A: System matrix
             b: Right-hand side vector
             
         Returns:
-            tuple: (A, b, scale_info)
+            Tuple of (A, b, {})
         """
-        # Return original matrix and vector with empty scaling info
         return A, b, {}
     
     def unscale(self, x, scale_info):
         """
-        Return x unchanged.
+        No unscaling - return original solution
         
         Args:
             x: Solution vector
-            scale_info: Scaling information
+            scale_info: Empty dictionary
             
         Returns:
-            unscaled_x: Original solution (unchanged)
+            Original solution vector
         """
         return x
     
     def scale_b_only(self, b, scale_info):
         """
-        Return b unchanged.
+        No scaling of right-hand side
         
         Args:
             b: Right-hand side vector
-            scale_info: Scaling information
+            scale_info: Empty dictionary
             
         Returns:
-            scaled_b: Original vector (unchanged)
+            Original right-hand side vector
         """
         return b
-    
-    @property
-    def name(self):
-        """Return the name of the scaling method."""
-        return "NoScaling"
-    
-    @property
-    def description(self):
-        """Return the description of the scaling method."""
-        return "No scaling is applied (identity scaling)."
