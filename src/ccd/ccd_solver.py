@@ -1,7 +1,7 @@
 """
 高精度コンパクト差分法 (CCD) を用いた偏微分方程式ソルバーモジュール
 
-このモジュールは、ポアソン方程式および高階微分方程式を1次元・2次元で
+このモジュールは、ポアソン方程式および高階微分方程式を1次元・2次元・3次元で
 解くためのソルバークラスを提供します。方程式システムの構築や境界条件の
 適用も含め、高精度コンパクト差分法による数値解法の全体を担当します。
 """
@@ -10,7 +10,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 
 from equation_system import EquationSystem
-from rhs_builder import RHSBuilder1D, RHSBuilder2D
+from rhs_builder import RHSBuilder1D, RHSBuilder2D, RHSBuilder3D
 # 新しい線形ソルバーパッケージをインポート
 from linear_solver import create_solver
 
@@ -231,8 +231,8 @@ class CCDSolver1D(BaseCCDSolver):
             grid: 1D グリッドオブジェクト
             backend: 計算バックエンド
         """
-        if grid.is_2d:
-            raise ValueError("1Dソルバーは2Dグリッドでは使用できません")
+        if grid.is_2d or grid.is_3d:
+            raise ValueError("1Dソルバーは2D/3Dグリッドでは使用できません")
             
         super().__init__(equation_set, grid, backend)
     
@@ -268,8 +268,8 @@ class CCDSolver2D(BaseCCDSolver):
             grid: 2D グリッドオブジェクト
             backend: 計算バックエンド
         """
-        if not grid.is_2d:
-            raise ValueError("2Dソルバーは1Dグリッドでは使用できません")
+        if not grid.is_2d or grid.is_3d:
+            raise ValueError("2Dソルバーは1D/3Dグリッドでは使用できません")
             
         super().__init__(equation_set, grid, backend)
     
@@ -309,3 +309,65 @@ class CCDSolver2D(BaseCCDSolver):
                 psi_yyy[i, j] = sol[idx + 6]
         
         return psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy
+
+
+class CCDSolver3D(BaseCCDSolver):
+    """3次元コンパクト差分法ソルバー"""
+
+    def __init__(self, equation_set, grid, backend="cpu"):
+        """
+        3Dソルバーを初期化
+        
+        Args:
+            equation_set: 方程式セット
+            grid: 3D グリッドオブジェクト
+            backend: 計算バックエンド
+        """
+        if not grid.is_3d:
+            raise ValueError("3Dソルバーは非3Dグリッドでは使用できません")
+            
+        super().__init__(equation_set, grid, backend)
+    
+    def _create_rhs_builder(self):
+        """3次元RHSビルダーを作成"""
+        self.rhs_builder = RHSBuilder3D(
+            self.system, 
+            self.grid,
+            enable_dirichlet=self.enable_dirichlet, 
+            enable_neumann=self.enable_neumann
+        )
+
+    def _extract_solution(self, sol):
+        """解ベクトルから各成分を抽出"""
+        nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
+        n_unknowns = 10  # ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy, ψ_z, ψ_zz, ψ_zzz
+        
+        # 解配列を初期化 (NumPy配列)
+        psi = np.zeros((nx, ny, nz))
+        psi_x = np.zeros((nx, ny, nz))
+        psi_xx = np.zeros((nx, ny, nz))
+        psi_xxx = np.zeros((nx, ny, nz))
+        psi_y = np.zeros((nx, ny, nz))
+        psi_yy = np.zeros((nx, ny, nz))
+        psi_yyy = np.zeros((nx, ny, nz))
+        psi_z = np.zeros((nx, ny, nz))
+        psi_zz = np.zeros((nx, ny, nz))
+        psi_zzz = np.zeros((nx, ny, nz))
+        
+        # 各グリッド点の値を抽出
+        for k in range(nz):
+            for j in range(ny):
+                for i in range(nx):
+                    idx = ((k * ny + j) * nx + i) * n_unknowns
+                    psi[i, j, k] = sol[idx]
+                    psi_x[i, j, k] = sol[idx + 1]
+                    psi_xx[i, j, k] = sol[idx + 2]
+                    psi_xxx[i, j, k] = sol[idx + 3]
+                    psi_y[i, j, k] = sol[idx + 4]
+                    psi_yy[i, j, k] = sol[idx + 5]
+                    psi_yyy[i, j, k] = sol[idx + 6]
+                    psi_z[i, j, k] = sol[idx + 7]
+                    psi_zz[i, j, k] = sol[idx + 8]
+                    psi_zzz[i, j, k] = sol[idx + 9]
+        
+        return psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy, psi_z, psi_zz, psi_zzz
