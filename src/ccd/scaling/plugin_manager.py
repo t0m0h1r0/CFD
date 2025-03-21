@@ -6,6 +6,7 @@ import os
 import importlib
 import inspect
 import logging
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 from .base import BaseScaling
@@ -20,6 +21,12 @@ class ScalingPluginManager:
         self._plugins_loaded: bool = False
         self._logger = logging.getLogger(__name__)
         
+        # デバッグログを有効化
+        self._logger.setLevel(logging.DEBUG)
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.DEBUG)
+        self._logger.addHandler(handler)
+        
     def discover_plugins(self) -> Dict[str, BaseScaling]:
         """scalingパッケージ内のすべてのスケーリングプラグインを検出する"""
         if self._plugins_loaded:
@@ -27,26 +34,44 @@ class ScalingPluginManager:
             
         # scaling ディレクトリのパスを取得
         current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-        os.makedirs(current_dir, exist_ok=True)
+        self._logger.debug(f"Searching for plugins in: {current_dir}")
+        
+        # 追加: パスを表示
+        self._logger.debug(f"Python path: {sys.path}")
+        
+        # scaling ディレクトリの存在を確認
+        if not current_dir.exists():
+            self._logger.warning(f"Directory does not exist: {current_dir}")
+            return self._plugins
         
         # scaling ディレクトリ内のすべての .py ファイルを検索
-        for py_file in current_dir.glob("*.py"):
+        py_files = list(current_dir.glob("*.py"))
+        self._logger.debug(f"Found {len(py_files)} Python files in the directory")
+        
+        for py_file in py_files:
             # 特定のファイルは除外
             if py_file.name in ["__init__.py", "base.py", "plugin_manager.py", "array_utils.py"]:
+                self._logger.debug(f"Skipping special file: {py_file.name}")
                 continue
                 
             module_name = py_file.stem
+            self._logger.debug(f"Trying to import module: {module_name}")
             
             try:
                 # モジュールを動的にインポート
-                module = importlib.import_module(f"scaling.{module_name}")
+                # NOTE: パッケージ名を絶対パスで変更（相対インポートの問題対応）
+                full_module_name = f"scaling.{module_name}"
+                module = importlib.import_module(full_module_name)
                 
                 # モジュール内のすべてのクラスを検査
-                for _, obj in inspect.getmembers(module, inspect.isclass):
+                classes_found = 0
+                for name, obj in inspect.getmembers(module, inspect.isclass):
                     # BaseScalingのサブクラスを見つける
                     if issubclass(obj, BaseScaling) and obj is not BaseScaling:
+                        classes_found += 1
                         instance = obj()  # インスタンスを作成
                         self._plugins[instance.name] = instance
+                        self._logger.debug(f"Added plugin: {instance.name} from {module_name}")
                         
                         # デフォルトプラグイン設定
                         if self._default_plugin is None:
@@ -55,11 +80,23 @@ class ScalingPluginManager:
                         # NoScalingが見つかれば、それをデフォルトに設定
                         if instance.name.lower() == "noscaling":
                             self._default_plugin = instance
+                
+                self._logger.debug(f"Found {classes_found} plugin classes in {module_name}")
                             
             except Exception as e:
                 self._logger.warning(f"プラグイン {module_name} の読み込み中にエラーが発生しました: {e}")
-                
+                import traceback
+                self._logger.debug(traceback.format_exc())
+        
+        # 明示的にDefaultScalingを作成
+        if not self._plugins:
+            from .no_scaling import NoScaling
+            self._default_plugin = NoScaling()
+            self._plugins[self._default_plugin.name] = self._default_plugin
+            self._logger.debug("Created default NoScaling plugin")
+        
         self._plugins_loaded = True
+        self._logger.debug(f"Loaded {len(self._plugins)} plugins: {list(self._plugins.keys())}")
         return self._plugins
     
     def get_plugin(self, name: Optional[str] = None) -> BaseScaling:
@@ -76,6 +113,11 @@ class ScalingPluginManager:
             self.discover_plugins()
             
         if name is None:
+            if self._default_plugin is None:
+                self._logger.warning("Default plugin is None. Creating NoScaling plugin.")
+                from .no_scaling import NoScaling
+                self._default_plugin = NoScaling()
+                self._plugins[self._default_plugin.name] = self._default_plugin
             return self._default_plugin
         
         # 大文字小文字を区別せずに検索
@@ -85,6 +127,11 @@ class ScalingPluginManager:
                 
         # 見つからない場合はデフォルトを返す
         self._logger.warning(f"警告: スケーリングプラグイン '{name}' が見つかりません。デフォルトを使用します。")
+        if self._default_plugin is None:
+            self._logger.warning("Default plugin is None. Creating NoScaling plugin.")
+            from .no_scaling import NoScaling
+            self._default_plugin = NoScaling()
+            self._plugins[self._default_plugin.name] = self._default_plugin
         return self._default_plugin
     
     def get_available_plugins(self) -> List[str]:
@@ -97,4 +144,6 @@ class ScalingPluginManager:
         if not self._plugins_loaded:
             self.discover_plugins()
             
-        return list(self._plugins.keys())
+        plugin_names = list(self._plugins.keys())
+        self._logger.debug(f"Available plugins: {plugin_names}")
+        return plugin_names

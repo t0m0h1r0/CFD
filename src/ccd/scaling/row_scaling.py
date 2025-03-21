@@ -1,10 +1,8 @@
 """
-行スケーリング手法の実装
+行スケーリング手法の実装（バックエンド非依存版）
 """
 
 from typing import Dict, Any, Tuple
-import numpy as np
-import scipy.sparse as sp
 from .base import BaseScaling
 
 
@@ -32,40 +30,78 @@ class RowScaling(BaseScaling):
         Returns:
             tuple: (scaled_A, scaled_b, scale_info)
         """
+        # 配列モジュールの取得（NumPyまたはCuPy）
+        xp = self._get_array_module(A)
+        
         # 行ノルムを計算
         row_norms = self._compute_row_norms(A)
         
-        # 数値的安定性のための処理
-        row_scale = 1.0 / np.where(row_norms < 1e-15, 1.0, row_norms)
+        # 数値的安定性のための処理（0除算を避ける）
+        row_scale = 1.0 / self._maximum(row_norms, 1e-15)
         
-        # スケーリング適用
-        D_inv = sp.diags(row_scale)
+        # スケーリング行列を作成し、A に適用
+        D_inv = self._diags(row_scale)
         scaled_A = D_inv @ A
-        scaled_b = D_inv @ b
+        
+        # bのスケーリング
+        scaled_b = b * row_scale
         
         return scaled_A, scaled_b, {'row_scale': row_scale}
     
     def _compute_row_norms(self, A):
-        """行列の各行のノルムを計算"""
-        m = A.shape[0]
-        row_norms = np.zeros(m)
+        """
+        行列の各行のノルムを計算
         
-        # CSRフォーマットでより効率的に計算
-        if hasattr(A, 'format') and A.format == 'csr':
+        Args:
+            A: 行列（NumPyまたはCuPy）
+            
+        Returns:
+            row_norms: 各行のノルム
+        """
+        xp = self._get_array_module(A)
+        is_sparse = self._is_sparse(A)
+        m = A.shape[0]
+        
+        # 行ノームを保存する配列
+        row_norms = self._zeros(m, dtype=A.dtype if hasattr(A, 'dtype') else None, array_ref=A)
+        
+        if is_sparse and hasattr(A, 'format') and A.format == 'csr':
+            # CSR形式の効率的な処理
             for i in range(m):
                 start, end = A.indptr[i], A.indptr[i+1]
                 if end > start:
+                    row_data = A.data[start:end]
                     if self.norm_type == float('inf'):
-                        row_norms[i] = np.max(np.abs(A.data[start:end]))
+                        row_norms[i] = xp.max(xp.abs(row_data))
                     else:
-                        row_norms[i] = np.linalg.norm(A.data[start:end], ord=self.norm_type)
+                        # L2ノームなど
+                        if hasattr(xp, 'linalg') and hasattr(xp.linalg, 'norm'):
+                            row_norms[i] = xp.linalg.norm(row_data, ord=self.norm_type)
+                        else:
+                            # フォールバック
+                            if self.norm_type == 2:
+                                row_norms[i] = xp.sqrt(xp.sum(row_data * row_data))
+                            else:
+                                row_norms[i] = xp.sum(xp.abs(row_data) ** self.norm_type) ** (1.0 / self.norm_type)
         else:
-            # その他の形式
+            # 非CSR形式または密行列
             for i in range(m):
                 row = A[i, :]
                 if hasattr(row, 'toarray'):
                     row = row.toarray().flatten()
-                row_norms[i] = np.linalg.norm(row, ord=self.norm_type)
+                
+                if self.norm_type == float('inf'):
+                    row_norms[i] = xp.max(xp.abs(row))
+                else:
+                    # L2ノームなど
+                    if hasattr(xp, 'linalg') and hasattr(xp.linalg, 'norm'):
+                        row_norms[i] = xp.linalg.norm(row, ord=self.norm_type)
+                    else:
+                        # フォールバック
+                        if self.norm_type == 2:
+                            row_norms[i] = xp.sqrt(xp.sum(row * row))
+                        else:
+                            row_norms[i] = xp.sum(xp.abs(row) ** self.norm_type) ** (1.0 / self.norm_type)
         
         return row_norms
     
@@ -74,7 +110,7 @@ class RowScaling(BaseScaling):
         return x
     
     def scale_b_only(self, b, scale_info: Dict[str, Any]):
-        """右辺ベクトルbのみを効率的にスケーリング"""
+        """右辺ベクトルbのみをスケーリング"""
         row_scale = scale_info.get('row_scale')
         if row_scale is not None:
             return b * row_scale
