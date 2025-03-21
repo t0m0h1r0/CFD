@@ -33,6 +33,8 @@ def parse_args():
                       help="計算バックエンド")
     parser.add_argument("--tol", type=float, default=1e-10, help="許容誤差")
     parser.add_argument("--maxiter", type=int, default=1000, help="最大反復数")
+    parser.add_argument("--perturbation", type=float, default=None, 
+                      help="厳密解を初期値とし、この値の比率で乱数摂動を加える (0=摂動なし、None=厳密解を使用しない)")
     
     # モード
     parser.add_argument("--list", action="store_true", help="関数一覧表示")
@@ -63,6 +65,9 @@ def create_tester(args):
     
     # スケーリング設定
     tester.scaling_method = args.scaling
+    
+    # 摂動レベルを設定
+    tester.perturbation_level = args.perturbation
     
     return tester
 
@@ -123,9 +128,10 @@ def generate_filename(args, func_name, solver, scaling, extension="png"):
     """標準化されたファイル名を生成"""
     scaling_str = scaling if scaling else "no_scaling"
     size_str = f"{args.nx}x{args.ny}" if args.dim == 2 else f"{args.nx}"
+    perturbation_str = f"_pert{args.perturbation}" if args.perturbation is not None else ""
     
-    # 標準ファイル名パターン: バックエンド_解法_関数_スケーリング_サイズ
-    filename = f"{args.backend}_{solver}_{func_name}_{scaling_str}_{size_str}.{extension}"
+    # 標準ファイル名パターン: バックエンド_解法_関数_スケーリング_サイズ_摂動
+    filename = f"{args.backend}_{solver}_{func_name}_{scaling_str}_{size_str}{perturbation_str}.{extension}"
     
     # プレフィックスがある場合は追加
     if args.prefix:
@@ -158,7 +164,11 @@ def run_tests(args):
                 tester.solver_method = solver
                 
                 # 実行
-                print(f"\nFunction: {func.name}, Scaling: {scaling or 'None'}, Solver: {solver}")
+                perturbation_info = ""
+                if args.perturbation is not None:
+                    perturbation_info = f", Perturbation: {args.perturbation}"
+                
+                print(f"\nFunction: {func.name}, Scaling: {scaling or 'None'}, Solver: {solver}{perturbation_info}")
                 try:
                     start_time = time.time()
                     result = tester.run_test(func)

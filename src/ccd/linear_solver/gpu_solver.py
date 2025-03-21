@@ -210,14 +210,31 @@ class GPULinearSolver(LinearSolver):
         return x, None
     
     def _solve_gmres(self, A, b, options=None):
-        """GMRES法"""
+        """
+        GPU上でのGMRES解法の効率的な実装
+        
+        Args:
+            A: システム行列
+            b: 右辺ベクトル
+            options: 解法オプション
+        
+        Returns:
+            解ベクトルと反復回数のタプル
+        """
         options = options or {}
+        
+        # オプションから設定を取得（デフォルト値を最適化）
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
-        restart = options.get("restart", 200)
-        x0 = options.get("x0", self.cp.zeros_like(b))
+        restart = options.get("restart", min(200, max(20, b.size // 10)))
         
-        # GMRES実行
+        # 初期解ベクトルの安全な処理
+        x0 = options.get("x0")
+        x0 = (self.cp.asarray(x0) if x0 is not None else 
+            self.cp.zeros_like(b) if hasattr(b, 'size') and hasattr(x0, 'size') and x0.size != b.size else 
+            self.cp.zeros_like(b))
+        
+        # GMRES実行（オプションを最適化）
         result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
         return result[0], result[1]
     

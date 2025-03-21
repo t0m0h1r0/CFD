@@ -214,17 +214,33 @@ class JAXLinearSolver(LinearSolver):
             return self._solve_cg(A, b, {"tol": tol})
     
     def _solve_gmres(self, A, b, options=None):
-        """GMRES法"""
+        """
+        JAX上でのGMRES解法の効率的な実装
+        
+        Args:
+            A: システム行列
+            b: 右辺ベクトル
+            options: 解法オプション
+        
+        Returns:
+            解ベクトルと反復回数のタプル
+        """
         options = options or {}
+        
+        # オプションから設定を取得（デフォルト値を最適化）
         tol = options.get("tol", 1e-10)
         atol = options.get("atol", tol)
         maxiter = options.get("maxiter", 1000)
-        restart = options.get("restart", 20)
-        x0 = options.get("x0", self.jnp.zeros_like(b))
+        restart = options.get("restart", min(20, max(5, b.size // 20)))
         
-        # GMRES実行
-        result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, 
-                                    maxiter=maxiter, restart=restart)
+        # 初期解ベクトルの安全な処理
+        x0 = options.get("x0")
+        x0 = (self.jnp.asarray(x0) if x0 is not None else 
+            self.jnp.zeros_like(b) if hasattr(b, 'size') and hasattr(x0, 'size') and x0.size != b.size else 
+            self.jnp.zeros_like(b))
+        
+        # GMRES実行（オプションを最適化）
+        result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, restart=restart)
         return result[0], result[1]
     
     def _solve_cg(self, A, b, options=None):
