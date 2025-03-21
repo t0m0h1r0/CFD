@@ -37,82 +37,165 @@ class RHSBuilder2D(RHSBuilder):
         if f_values is not None:
             f_values = self._to_numpy(f_values)
             
-        # その他の境界値も同様に変換（必要な場合）
+        # 境界条件値を辞書にまとめる
         boundary_values = {
-            'left_dirichlet': self._to_numpy(left_dirichlet) if left_dirichlet is not None else None,
-            'right_dirichlet': self._to_numpy(right_dirichlet) if right_dirichlet is not None else None,
-            'bottom_dirichlet': self._to_numpy(bottom_dirichlet) if bottom_dirichlet is not None else None,
-            'top_dirichlet': self._to_numpy(top_dirichlet) if top_dirichlet is not None else None,
-            'left_neumann': self._to_numpy(left_neumann) if left_neumann is not None else None,
-            'right_neumann': self._to_numpy(right_neumann) if right_neumann is not None else None,
-            'bottom_neumann': self._to_numpy(bottom_neumann) if bottom_neumann is not None else None,
-            'top_neumann': self._to_numpy(top_neumann) if top_neumann is not None else None
+            'left_dirichlet': self._to_numpy(left_dirichlet),
+            'right_dirichlet': self._to_numpy(right_dirichlet),
+            'bottom_dirichlet': self._to_numpy(bottom_dirichlet),
+            'top_dirichlet': self._to_numpy(top_dirichlet),
+            'left_neumann': self._to_numpy(left_neumann),
+            'right_neumann': self._to_numpy(right_neumann),
+            'bottom_neumann': self._to_numpy(bottom_neumann),
+            'top_neumann': self._to_numpy(top_neumann)
         }
         
-        # 境界条件の状態を出力
-        self._print_boundary_info(**boundary_values)
+        # 境界条件の整合性を検証
+        warnings = self._validate_boundary_conditions(boundary_values)
+        if warnings:
+            for warning in warnings:
+                print(f"警告: {warning}")
         
-        # 各格子点に対して処理
+        # 境界条件に関する情報を出力
+        self._print_boundary_info(boundary_values)
+        
+        # 各格子点について処理
         for j in range(ny):
             for i in range(nx):
                 base_idx = (j * nx + i) * var_per_point
-                location = self.system._get_point_location(i, j)
+                location = self._get_point_location(i, j)
                 location_equations = self.system.equations[location]
                 
-                # 方程式を種類別に分類
-                eq_by_type = {
-                    "governing": None, 
-                    "dirichlet": None, 
-                    "neumann_x": None, 
-                    "neumann_y": None, 
-                    "auxiliary": []
-                }
-                
-                for eq in location_equations:
-                    eq_type = self.system._identify_equation_type(eq, i, j)
-                    if eq_type == "auxiliary":
-                        eq_by_type["auxiliary"].append(eq)
-                    elif eq_type:  # Noneでない場合
-                        eq_by_type[eq_type] = eq
-                
-                # 各行に割り当てる方程式を決定
-                assignments = self.system._assign_equations_2d(eq_by_type, i, j)
-                
-                # ソース項の処理（支配方程式に対応する行）
-                governing_row = self._find_governing_row(assignments)
-                if governing_row is not None and f_values is not None:
-                    b[base_idx + governing_row] = f_values[i, j]
-                
-                # 境界条件の処理
-                self._apply_boundary_values(
-                    b, base_idx, location, assignments,
-                    **boundary_values,
-                    i=i, j=j
-                )
+                # 右辺ベクトルの値をセット
+                self._set_rhs_for_point(b, base_idx, location, location_equations, i, j, f_values, boundary_values)
         
         return b
     
-    def _print_boundary_info(self, left_dirichlet=None, right_dirichlet=None, 
-                           bottom_dirichlet=None, top_dirichlet=None,
-                           left_neumann=None, right_neumann=None, 
-                           bottom_neumann=None, top_neumann=None):
+    def _print_boundary_info(self, boundary_values: Dict[str, Any]):
         """
-        境界条件の情報を出力
+        境界条件に関する情報を出力
         
         Args:
-            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet: ディリクレ境界値
-            left_neumann, right_neumann, bottom_neumann, top_neumann: ノイマン境界値
+            boundary_values: 境界条件の値の辞書
         """
         if self.enable_dirichlet:
+            left_dirichlet = boundary_values.get('left_dirichlet') is not None
+            right_dirichlet = boundary_values.get('right_dirichlet') is not None
+            bottom_dirichlet = boundary_values.get('bottom_dirichlet') is not None
+            top_dirichlet = boundary_values.get('top_dirichlet') is not None
             print(f"[2Dソルバー] ディリクレ境界条件: "
-                  f"左={left_dirichlet is not None}, 右={right_dirichlet is not None}, "
-                  f"下={bottom_dirichlet is not None}, 上={top_dirichlet is not None}")
+                  f"左={left_dirichlet}, 右={right_dirichlet}, "
+                  f"下={bottom_dirichlet}, 上={top_dirichlet}")
         if self.enable_neumann:
+            left_neumann = boundary_values.get('left_neumann') is not None
+            right_neumann = boundary_values.get('right_neumann') is not None
+            bottom_neumann = boundary_values.get('bottom_neumann') is not None
+            top_neumann = boundary_values.get('top_neumann') is not None
             print(f"[2Dソルバー] ノイマン境界条件: "
-                  f"左={left_neumann is not None}, 右={right_neumann is not None}, "
-                  f"下={bottom_neumann is not None}, 上={top_neumann is not None}")
+                  f"左={left_neumann}, 右={right_neumann}, "
+                  f"下={bottom_neumann}, 上={top_neumann}")
     
-    def _find_governing_row(self, assignments):
+    def _get_point_location(self, i: int, j: int) -> str:
+        """
+        格子点の位置を取得
+        
+        Args:
+            i: x方向インデックス
+            j: y方向インデックス
+            
+        Returns:
+            位置を表す文字列 ('interior', 'left', 'right', 'bottom', 'top', 
+                           'left_bottom', 'right_bottom', 'left_top', 'right_top')
+        """
+        nx, ny = self.grid.nx_points, self.grid.ny_points
+        
+        # 内部点
+        if 0 < i < nx - 1 and 0 < j < ny - 1:
+            return 'interior'
+        
+        # 角点
+        if i == 0 and j == 0:
+            return 'left_bottom'
+        elif i == nx - 1 and j == 0:
+            return 'right_bottom'
+        elif i == 0 and j == ny - 1:
+            return 'left_top'
+        elif i == nx - 1 and j == ny - 1:
+            return 'right_top'
+        
+        # 境界エッジ（角を除く）
+        if i == 0:
+            return 'left'
+        elif i == nx - 1:
+            return 'right'
+        elif j == 0:
+            return 'bottom'
+        elif j == ny - 1:
+            return 'top'
+        
+        # 念のため
+        return 'interior'
+    
+    def _set_rhs_for_point(self, b: np.ndarray, base_idx: int, location: str, 
+                          equations: List, i: int, j: int, f_values: Optional[np.ndarray], 
+                          boundary_values: Dict[str, Any]):
+        """
+        特定の格子点に対する右辺ベクトルを設定
+        
+        Args:
+            b: 右辺ベクトル
+            base_idx: 基準インデックス
+            location: 点の位置
+            equations: その位置に対応する方程式のリスト
+            i: x方向インデックス
+            j: y方向インデックス
+            f_values: ソース項の値
+            boundary_values: 境界条件の値の辞書
+        """
+        # 方程式の種類ごとに整理
+        eq_by_type = self._classify_equations(equations, i, j)
+        
+        # 方程式の割り当てを決定
+        assignments = self.system._assign_equations_2d(eq_by_type, i, j)
+        
+        # ソース項の処理（支配方程式に対応する行）
+        if f_values is not None:
+            governing_row = self._find_governing_row(assignments)
+            if governing_row is not None:
+                b[base_idx + governing_row] = f_values[i, j]
+        
+        # 境界条件の処理
+        self._apply_boundary_conditions(b, base_idx, location, assignments, i, j, boundary_values)
+    
+    def _classify_equations(self, equations: List, i: int, j: int) -> Dict[str, Any]:
+        """
+        方程式をタイプごとに分類
+        
+        Args:
+            equations: 方程式のリスト
+            i: x方向インデックス
+            j: y方向インデックス
+            
+        Returns:
+            方程式の種類をキー、方程式（または方程式のリスト）を値とする辞書
+        """
+        eq_by_type = {
+            "governing": None, 
+            "dirichlet": None, 
+            "neumann_x": None, 
+            "neumann_y": None, 
+            "auxiliary": []
+        }
+        
+        for eq in equations:
+            eq_type = self.system._identify_equation_type(eq, i, j)
+            if eq_type == "auxiliary":
+                eq_by_type["auxiliary"].append(eq)
+            elif eq_type:  # Noneでない場合
+                eq_by_type[eq_type] = eq
+        
+        return eq_by_type
+    
+    def _find_governing_row(self, assignments: List) -> Optional[int]:
         """
         支配方程式が割り当てられた行を見つける
         
@@ -120,7 +203,7 @@ class RHSBuilder2D(RHSBuilder):
             assignments: 割り当てられた方程式のリスト
             
         Returns:
-            支配方程式の行インデックス
+            支配方程式の行インデックス、見つからない場合はNone
         """
         # 必要なクラスを遅延インポート（依存関係を減らすため）
         from equation.poisson import PoissonEquation, PoissonEquation2D
@@ -131,58 +214,139 @@ class RHSBuilder2D(RHSBuilder):
                 return row
         return None
     
-    def _apply_boundary_values(self, b, base_idx, location, assignments,
-                            left_dirichlet=None, right_dirichlet=None, 
-                            bottom_dirichlet=None, top_dirichlet=None,
-                            left_neumann=None, right_neumann=None, 
-                            bottom_neumann=None, top_neumann=None,
-                            i=None, j=None):
+    def _apply_boundary_conditions(self, b: np.ndarray, base_idx: int, location: str, 
+                                  assignments: List, i: int, j: int, 
+                                  boundary_values: Dict[str, Any]):
         """
-        適切な場所に境界値を設定
+        境界条件を右辺ベクトルに適用
         
         Args:
             b: 右辺ベクトル
             base_idx: 基準インデックス
-            location: 格子点の位置
-            assignments: 割り当てられた方程式リスト
-            left_dirichlet, right_dirichlet, bottom_dirichlet, top_dirichlet: ディリクレ境界値
-            left_neumann, right_neumann, bottom_neumann, top_neumann: ノイマン境界値
-            i, j: 格子点インデックス
+            location: 点の位置
+            assignments: 割り当てられた方程式のリスト
+            i: x方向インデックス
+            j: y方向インデックス
+            boundary_values: 境界条件の値の辞書
         """
         # 必要なクラスを遅延インポート
         from equation.boundary import (
             DirichletBoundaryEquation2D, NeumannXBoundaryEquation2D, NeumannYBoundaryEquation2D
         )
         
-        # 境界値の取得
-        def get_boundary_value(value, idx):
-            if isinstance(value, (list, np.ndarray)) and idx < len(value):
-                return value[idx]
-            return value
-        
-        # 各行に割り当てられた方程式をチェック
+        # 各行の方程式をチェック
         for row, eq in enumerate(assignments):
             # ディリクレ条件
             if isinstance(eq, DirichletBoundaryEquation2D) and self.enable_dirichlet:
-                if 'left' in location and left_dirichlet is not None:
-                    b[base_idx + row] = get_boundary_value(left_dirichlet, j)
-                elif 'right' in location and right_dirichlet is not None:
-                    b[base_idx + row] = get_boundary_value(right_dirichlet, j)
-                elif 'bottom' in location and bottom_dirichlet is not None:
-                    b[base_idx + row] = get_boundary_value(bottom_dirichlet, i)
-                elif 'top' in location and top_dirichlet is not None:
-                    b[base_idx + row] = get_boundary_value(top_dirichlet, i)
+                self._apply_dirichlet_condition(b, base_idx, row, location, i, j, boundary_values)
             
             # X方向ノイマン条件
             elif isinstance(eq, NeumannXBoundaryEquation2D) and self.enable_neumann:
-                if 'left' in location and left_neumann is not None:
-                    b[base_idx + row] = get_boundary_value(left_neumann, j)
-                elif 'right' in location and right_neumann is not None:
-                    b[base_idx + row] = get_boundary_value(right_neumann, j)
+                self._apply_neumann_x_condition(b, base_idx, row, location, i, j, boundary_values)
             
             # Y方向ノイマン条件
             elif isinstance(eq, NeumannYBoundaryEquation2D) and self.enable_neumann:
-                if 'bottom' in location and bottom_neumann is not None:
-                    b[base_idx + row] = get_boundary_value(bottom_neumann, i)
-                elif 'top' in location and top_neumann is not None:
-                    b[base_idx + row] = get_boundary_value(top_neumann, i)
+                self._apply_neumann_y_condition(b, base_idx, row, location, i, j, boundary_values)
+    
+    def _apply_dirichlet_condition(self, b: np.ndarray, base_idx: int, row: int, 
+                                  location: str, i: int, j: int, 
+                                  boundary_values: Dict[str, Any]):
+        """
+        ディリクレ境界条件を適用
+        
+        Args:
+            b: 右辺ベクトル
+            base_idx: 基準インデックス
+            row: 行インデックス
+            location: 点の位置
+            i: x方向インデックス
+            j: y方向インデックス
+            boundary_values: 境界条件の値の辞書
+        """
+        # 位置に応じて適切な境界値を選択
+        if 'left' in location:
+            boundary_value = self._get_boundary_value(boundary_values, 'left_dirichlet', j)
+            if boundary_value is not None:
+                b[base_idx + row] = boundary_value
+        elif 'right' in location:
+            boundary_value = self._get_boundary_value(boundary_values, 'right_dirichlet', j)
+            if boundary_value is not None:
+                b[base_idx + row] = boundary_value
+        elif 'bottom' in location:
+            boundary_value = self._get_boundary_value(boundary_values, 'bottom_dirichlet', i)
+            if boundary_value is not None:
+                b[base_idx + row] = boundary_value
+        elif 'top' in location:
+            boundary_value = self._get_boundary_value(boundary_values, 'top_dirichlet', i)
+            if boundary_value is not None:
+                b[base_idx + row] = boundary_value
+    
+    def _apply_neumann_x_condition(self, b: np.ndarray, base_idx: int, row: int, 
+                                  location: str, i: int, j: int, 
+                                  boundary_values: Dict[str, Any]):
+        """
+        X方向ノイマン境界条件を適用
+        
+        Args:
+            b: 右辺ベクトル
+            base_idx: 基準インデックス
+            row: 行インデックス
+            location: 点の位置
+            i: x方向インデックス
+            j: y方向インデックス
+            boundary_values: 境界条件の値の辞書
+        """
+        if 'left' in location:
+            boundary_value = self._get_boundary_value(boundary_values, 'left_neumann', j)
+            if boundary_value is not None:
+                b[base_idx + row] = boundary_value
+        elif 'right' in location:
+            boundary_value = self._get_boundary_value(boundary_values, 'right_neumann', j)
+            if boundary_value is not None:
+                b[base_idx + row] = boundary_value
+    
+    def _apply_neumann_y_condition(self, b: np.ndarray, base_idx: int, row: int, 
+                                  location: str, i: int, j: int, 
+                                  boundary_values: Dict[str, Any]):
+        """
+        Y方向ノイマン境界条件を適用
+        
+        Args:
+            b: 右辺ベクトル
+            base_idx: 基準インデックス
+            row: 行インデックス
+            location: 点の位置
+            i: x方向インデックス
+            j: y方向インデックス
+            boundary_values: 境界条件の値の辞書
+        """
+        if 'bottom' in location:
+            boundary_value = self._get_boundary_value(boundary_values, 'bottom_neumann', i)
+            if boundary_value is not None:
+                b[base_idx + row] = boundary_value
+        elif 'top' in location:
+            boundary_value = self._get_boundary_value(boundary_values, 'top_neumann', i)
+            if boundary_value is not None:
+                b[base_idx + row] = boundary_value
+    
+    def _get_boundary_value(self, boundary_values: Dict[str, Any], key: str, idx: int) -> Optional[float]:
+        """
+        境界値を取得
+        
+        Args:
+            boundary_values: 境界条件の値の辞書
+            key: 境界条件の種類を示すキー
+            idx: インデックス
+            
+        Returns:
+            境界値、または境界値が指定されていない場合はNone
+        """
+        value = boundary_values.get(key)
+        if value is None:
+            return None
+            
+        # 配列の場合はインデックスを使用
+        if isinstance(value, (list, np.ndarray)) and idx < len(value):
+            return value[idx]
+        # スカラーの場合はそのまま返す
+        return value
