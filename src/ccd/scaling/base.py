@@ -3,7 +3,7 @@ Base class for matrix scaling implementations.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple, Union, Optional
+from typing import Dict, Any, Tuple
 import numpy as np
 
 

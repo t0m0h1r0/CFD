@@ -7,10 +7,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple, List, Optional, Union
-import numpy as np
 
-from base_equation_system import BaseEquationSystem
 # linear_solver パッケージからソルバー作成関数をインポート
 from linear_solver import create_solver
 

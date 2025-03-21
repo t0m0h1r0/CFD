@@ -271,7 +271,6 @@ class DiagonalScaling(BaseScaling):
         Returns:
             d: Diagonal scaling factors
         """
-        from scipy import sparse
         
         # Convert to CSR if not already
         if not hasattr(A, "tocsr") or A.format != "csr":
@@ -492,7 +491,7 @@ class DiagonalScaling(BaseScaling):
     @property
     def name(self):
         """Return the name of the scaling method."""
-        return f"DiagonalScaling"
+        return "DiagonalScaling"
     
     @property
     def description(self):

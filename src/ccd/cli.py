@@ -2,7 +2,6 @@ import argparse
 import os
 import time
 import numpy as np
-import matplotlib.pyplot as plt
 from grid1d import Grid1D
 from grid2d import Grid2D
 from tester1d import CCDTester1D

@@ -6,7 +6,7 @@
 """
 
 import numpy as np
-from typing import Dict, Any, Optional, Union, List, Tuple
+from typing import Dict, Any, Optional, List
 
 from base_rhs_builder import RHSBuilder
 

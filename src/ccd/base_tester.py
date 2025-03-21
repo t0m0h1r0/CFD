@@ -7,13 +7,11 @@
 
 from abc import ABC, abstractmethod
 import os
-import time
 import numpy as np
 
 from grid1d import Grid1D
 from grid2d import Grid2D
 from equation_sets import EquationSet
-from scaling import plugin_manager
 from matrix_visualizer import MatrixVisualizer
 
 

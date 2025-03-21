@@ -5,9 +5,7 @@
 1D, 2D両方のテスト関数をサポートする統一インターフェースを定義します。
 """
 
-import sympy as sp
 from abc import ABC, abstractmethod
-from typing import List, Dict, Tuple, Any, Callable, Optional, Union
 
 class BaseTestFunction(ABC):
     """テスト関数の抽象基底クラス"""

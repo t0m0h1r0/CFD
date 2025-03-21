@@ -5,14 +5,11 @@
 """
 
 import numpy as np
-from typing import List, Tuple, Dict, Any, Optional, Union
 
 from base_tester import CCDTester
 from solver2d import CCDSolver2D
 from equation_sets import DerivativeEquationSet2D
-from grid2d import Grid2D
 from test_function_factory import TestFunctionFactory
-from test_function2d import TestFunction2D
 
 
 class CCDTester2D(CCDTester):
@@ -209,7 +206,7 @@ class CCDTester2D(CCDTester):
 
         # 厳密解を初期値として使用する場合は、直接オプションを渡す
         if self.perturbation_level is not None and self.solver_method != 'direct' and self.exact_solution is not None:
-            print(f"直接x0を渡してsolve()を呼び出します")
+            print("直接x0を渡してsolve()を呼び出します")
             # オプションを作成して厳密解（摂動あり/なし）を含める
             solve_options = {
                 'tol': self.solver_options.get('tol', 1e-10),

@@ -7,7 +7,7 @@
 
 import numpy as np
 import scipy.sparse as sp_cpu
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Dict, List, Any
 
 from base_equation_system import BaseEquationSystem
 

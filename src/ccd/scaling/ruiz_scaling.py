@@ -381,7 +381,7 @@ class RuizScaling(BaseScaling):
     @property
     def name(self):
         """Return the name of the scaling method."""
-        return f"RuizScaling"
+        return "RuizScaling"
     
     @property
     def description(self):

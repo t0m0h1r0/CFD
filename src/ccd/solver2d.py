@@ -6,7 +6,6 @@
 """
 
 import numpy as np
-from typing import List, Tuple, Dict, Any, Optional, Union
 
 from base_solver import BaseCCDSolver
 from equation_system2d import EquationSystem2D

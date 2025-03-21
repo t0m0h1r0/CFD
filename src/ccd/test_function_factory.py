@@ -5,8 +5,7 @@
 1D, 2D両方のテスト関数を作成するファクトリークラスを定義します。
 """
 
-import sympy as sp
-from typing import List, Dict, Tuple, Any, Callable, Optional, Union
+from typing import List, Dict, Optional
 
 from base_test_function import BaseTestFunction
 from test_function1d import TestFunction1D, TestFunction1DFactory

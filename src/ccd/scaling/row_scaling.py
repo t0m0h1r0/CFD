@@ -196,7 +196,7 @@ class RowScaling(BaseScaling):
     @property
     def name(self):
         """Return the name of the scaling method."""
-        return f"RowScaling"
+        return "RowScaling"
     
     @property
     def description(self):
