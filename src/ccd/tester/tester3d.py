@@ -9,7 +9,6 @@ import numpy as np
 from core.base.base_tester import CCDTester
 from core.solver.solver3d import CCDSolver3D
 from equation_set.equation_set3d import DerivativeEquationSet3D
-from test_function.test_function_factory import TestFunctionFactory
 
 
 class CCDTester3D(CCDTester):
