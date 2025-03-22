@@ -322,15 +322,17 @@ class EquationSystem3D(BaseEquationSystem):
         # 3D固有のタイプまたは方向性のある方程式
         from equation.converter import DirectionalEquation3D
         if isinstance(equation, DirectionalEquation3D):
-            # 内部の2D方程式が特定の種類かチェック
-            if hasattr(equation, 'equation_2d'):
-                # 方向に基づいて適切なノイマンタイプを返す
-                if equation.direction == 'x':
-                    return "neumann_x"
-                elif equation.direction == 'y':
-                    return "neumann_y"
-                elif equation.direction == 'z':
-                    return "neumann_z"
+            # 内部の1D方程式が特定の種類かチェック
+            if hasattr(equation, 'equation_1d'):
+                from equation.dim1.boundary import NeumannBoundaryEquation
+                if isinstance(equation.equation_1d, NeumannBoundaryEquation):
+                    # 方向に基づいて適切なノイマンタイプを返す
+                    if equation.direction == 'x':
+                        return "neumann_x"
+                    elif equation.direction == 'y':
+                        return "neumann_y"
+                    elif equation.direction == 'z':
+                        return "neumann_z"
         
         # それ以外は補助方程式
         return "auxiliary"

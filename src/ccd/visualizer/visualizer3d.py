@@ -85,15 +85,16 @@ class CCDVisualizer3D(BaseVisualizer):
         
         # 3つの主要断面について可視化
         for plane, (idx_name, idx) in enumerate([('x', mid_x), ('y', mid_y), ('z', mid_z)]):
-            # 各平面ごとに別の図を作成
-            fig, axes = plt.subplots(len(solution_names)//2, 2, figsize=(15, 4*len(solution_names)//2))
+            # 主要解成分だけを可視化
+            vis_components = [0, 1, 4, 7]  # ψ, ψ_x, ψ_xx, ψ_xxx
+            
+            # 2x2の図を作成（コンポーネント数に合わせて）
+            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+            axes = axes.flatten()  # 1次元配列に変換して扱いやすくする
             plt.suptitle(f"{function_name}: {idx_name}={idx} Plane ({nx_points}x{ny_points}x{nz_points} points)")
             
             # カラーマップ
             cmap_sol = 'viridis'
-            
-            # 主要解成分だけを可視化（全10成分は多すぎるため）
-            vis_components = [0, 1, 4, 7]  # ψ, ψ_x, ψ_y, ψ_z
             
             for i, comp_idx in enumerate(vis_components):
                 name = solution_names[comp_idx]
@@ -134,7 +135,7 @@ class CCDVisualizer3D(BaseVisualizer):
                 vmax = max(np.max(num_slice), np.max(ex_slice))
                 
                 # 数値解
-                ax = axes[i//2, i%2]
+                ax = axes[i]
                 im = ax.contourf(xx, yy, num_slice, 50, cmap=cmap_sol, vmin=vmin, vmax=vmax)
                 ax.set_title(f"{name} (Numerical), Error: {err:.2e}")
                 ax.set_xlabel(xlabel)

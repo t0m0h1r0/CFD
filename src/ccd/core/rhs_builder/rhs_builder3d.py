@@ -9,6 +9,9 @@ import numpy as np
 from typing import Dict, Any, Optional, List
 
 from core.base.base_rhs_builder import RHSBuilder
+from equation.converter import DirectionalEquation3D
+from equation.dim1.boundary import NeumannBoundaryEquation
+from equation.dim3.boundary import DirichletBoundaryEquation3D
 
 
 class RHSBuilder3D(RHSBuilder):
@@ -102,7 +105,7 @@ class RHSBuilder3D(RHSBuilder):
                 b[base_idx + governing_row] = f_values[i, j, k]
         
         # 境界条件の処理
-        self._apply_boundary_conditions(b, base_idx, location, assignments, i, j, k, boundary_values)
+        self._apply_boundary_conditions(b, base_idx, location, assignments, equations, i, j, k, boundary_values)
     
     def _classify_equations(self, equations: List, i: int, j: int, k: int) -> Dict[str, Any]:
         """
@@ -153,7 +156,7 @@ class RHSBuilder3D(RHSBuilder):
         return None
     
     def _apply_boundary_conditions(self, b: np.ndarray, base_idx: int, location: str, 
-                                  assignments: List, i: int, j: int, k: int, 
+                                  assignments: List, equations: List, i: int, j: int, k: int, 
                                   boundary_values: Dict[str, Any]):
         """
         境界条件を右辺ベクトルに適用
@@ -163,21 +166,32 @@ class RHSBuilder3D(RHSBuilder):
             base_idx: 基準インデックス
             location: 点の位置
             assignments: 割り当てられた方程式のリスト
+            equations: その位置に対応する方程式のリスト
             i, j, k: 格子点のインデックス
             boundary_values: 境界条件の値の辞書
         """
-        # 必要なクラスを遅延インポート
-        from equation.dim3.boundary import DirichletBoundaryEquation3D, NeumannBoundaryEquation3D
-        
-        # 現在の位置に対応する境界条件を適用
+        # ディリクレ境界条件を適用
         for row, eq in enumerate(assignments):
-            # ディリクレ条件
             if isinstance(eq, DirichletBoundaryEquation3D) and self.enable_dirichlet:
                 self._apply_dirichlet_condition(b, base_idx, row, location, i, j, k, boundary_values)
-            
-            # ノイマン条件
-            elif isinstance(eq, NeumannBoundaryEquation3D) and self.enable_neumann:
-                self._apply_neumann_condition(b, base_idx, row, location, eq.direction, i, j, k, boundary_values)
+        
+        # ノイマン境界条件を適用（変換元の1D方程式をチェック）
+        for eq in equations:
+            if isinstance(eq, DirectionalEquation3D) and self.enable_neumann:
+                if hasattr(eq, 'equation_1d') and isinstance(eq.equation_1d, NeumannBoundaryEquation):
+                    direction = eq.direction
+                    # 方向に応じた行インデックスを決定
+                    if direction == 'x':
+                        row_idx = 1
+                    elif direction == 'y':
+                        row_idx = 4
+                    elif direction == 'z':
+                        row_idx = 7
+                    else:
+                        continue
+                    
+                    # ノイマン条件を適用
+                    self._apply_neumann_condition(b, base_idx, row_idx, location, direction, i, j, k, boundary_values)
     
     def _apply_dirichlet_condition(self, b: np.ndarray, base_idx: int, row: int, 
                                   location: str, i: int, j: int, k: int,
