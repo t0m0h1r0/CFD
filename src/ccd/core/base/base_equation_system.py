@@ -150,43 +150,18 @@ class BaseEquationSystem(ABC):
         elif isinstance(equation, NeumannBoundaryEquation):
             return "neumann"
         
-        # 2D固有のタイプまたは方向性のある方程式
-        if self.is_2d:
-            # DirectionalEquation2Dで作られた方向性のある方程式を識別
-            from equation.converter import DirectionalEquation2D
-            if isinstance(equation, DirectionalEquation2D):
-                # 内部の1D方程式がNeumannBoundaryEquationの場合
-                if hasattr(equation, 'equation_1d') and isinstance(equation.equation_1d, NeumannBoundaryEquation):
-                    # 方向に基づいて適切なノイマンタイプを返す
-                    if equation.direction == 'x':
-                        return "neumann_x"
-                    elif equation.direction == 'y':
-                        return "neumann_y"
+        # 2D/3D向けの方向性のある方程式を処理
+        from equation.converter import DirectionalEquation2D, DirectionalEquation3D
         
-        # 3D固有のタイプまたは方向性のある方程式
-        if self.is_3d:
-            # DirectionalEquation3Dで作られた方向性のある方程式を識別
-            from equation.converter import DirectionalEquation3D
-            if isinstance(equation, DirectionalEquation3D):
-                # 内部の1D方程式がNeumannBoundaryEquationの場合
-                if hasattr(equation, 'equation_1d') and isinstance(equation.equation_1d, NeumannBoundaryEquation):
-                    # 方向に基づいて適切なノイマンタイプを返す
-                    if equation.direction == 'x':
-                        return "neumann_x"
-                    elif equation.direction == 'y':
-                        return "neumann_y"
-                    elif equation.direction == 'z':
-                        return "neumann_z"
-                        
-            # 3D専用の境界条件クラスを識別
-            from equation.dim3.boundary import NeumannBoundaryEquation3D
-            if isinstance(equation, NeumannBoundaryEquation3D):
-                # 方向に応じたタイプを返す
+        if isinstance(equation, (DirectionalEquation2D, DirectionalEquation3D)):
+            # 内部の1D方程式がNeumannBoundaryEquationの場合
+            if hasattr(equation, 'equation_1d') and isinstance(equation.equation_1d, NeumannBoundaryEquation):
+                # 方向に基づいて適切なノイマンタイプを返す
                 if equation.direction == 'x':
                     return "neumann_x"
                 elif equation.direction == 'y':
                     return "neumann_y"
-                elif equation.direction == 'z':
+                elif equation.direction == 'z' and isinstance(equation, DirectionalEquation3D):
                     return "neumann_z"
         
         # それ以外は補助方程式
