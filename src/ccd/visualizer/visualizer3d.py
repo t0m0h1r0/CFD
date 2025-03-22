@@ -168,7 +168,7 @@ class CCDVisualizer3D(BaseVisualizer):
         
         # 3D断面スライス
         ax_slice = fig.add_subplot(gs[2, 1], projection='3d')
-        self._plot_3d_slices(ax_slice, grid, psi_np, function_name, errors[0])
+        self._plot_3d_slices_improved(ax_slice, grid, psi_np, function_name, errors[0])
         
         # 誤差等値面
         ax_error = fig.add_subplot(gs[2, 2], projection='3d')
@@ -251,14 +251,22 @@ class CCDVisualizer3D(BaseVisualizer):
         ax.set_zlabel('Z')
         ax.set_title(f"3D Isosurfaces (ψ) - Error: {error:.2e}")
         
+        # 軸範囲を明示的に設定
+        ax.set_xlim(x_flat[0], x_flat[-1])
+        ax.set_ylim(y_flat[0], y_flat[-1])
+        ax.set_zlim(z_flat[0], z_flat[-1])
+        
+        # 視点を設定
+        ax.view_init(elev=30, azim=-60)
+        
         # カラーバー用のスカラーマッパブル
         sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax))
         sm.set_array([])
         plt.colorbar(sm, ax=ax, shrink=0.7)
     
-    def _plot_3d_slices(self, ax, grid, data_np, function_name, error):
+    def _plot_3d_slices_improved(self, ax, grid, data_np, function_name, error):
         """
-        3D断面スライスを描画
+        3D断面スライスを描画（改良版）- 完全に直交するスライスを正確に描画
         
         Args:
             ax: 描画するAxis
@@ -273,47 +281,115 @@ class CCDVisualizer3D(BaseVisualizer):
         mid_y = ny_points // 2
         mid_z = nz_points // 2
         
-        # メッシュグリッド
+        # グリッド座標の取得
         X, Y, Z = grid.get_points()
         X_np = self._to_numpy(X)
         Y_np = self._to_numpy(Y)
         Z_np = self._to_numpy(Z)
         
+        # 範囲を明示的に取得
+        x_min, x_max = X_np[0, 0, 0], X_np[-1, 0, 0]
+        y_min, y_max = Y_np[0, 0, 0], Y_np[0, -1, 0]
+        z_min, z_max = Z_np[0, 0, 0], Z_np[0, 0, -1]
+        
+        # 中心位置の値
+        mid_x_val = X_np[mid_x, 0, 0]
+        mid_y_val = Y_np[0, mid_y, 0]
+        mid_z_val = Z_np[0, 0, mid_z]
+        
         # カラーマッピングのための正規化
         vmin, vmax = np.min(data_np), np.max(data_np)
         norm = plt.Normalize(vmin, vmax)
         
-        # 断面スライス
-        x_plane = np.s_[mid_x, :, :]
-        y_plane = np.s_[:, mid_y, :]
-        z_plane = np.s_[:, :, mid_z]
+        # 平面の頂点座標
+        # XY平面 (Z = mid_z_val)
+        xy_vertices = np.array([
+            [x_min, y_min, mid_z_val],
+            [x_max, y_min, mid_z_val],
+            [x_max, y_max, mid_z_val],
+            [x_min, y_max, mid_z_val]
+        ])
         
-        # x平面スライス
-        xx = X_np[x_plane]
-        yy = Y_np[x_plane]
-        zz = Z_np[x_plane]
-        surf = ax.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(norm(data_np[x_plane])),
-                              alpha=0.7, rstride=1, cstride=1)
+        # XZ平面 (Y = mid_y_val)
+        xz_vertices = np.array([
+            [x_min, mid_y_val, z_min],
+            [x_max, mid_y_val, z_min],
+            [x_max, mid_y_val, z_max],
+            [x_min, mid_y_val, z_max]
+        ])
         
-        # y平面スライス
-        xx = X_np[y_plane]
-        yy = Y_np[y_plane]
-        zz = Z_np[y_plane]
-        surf = ax.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(norm(data_np[y_plane])),
-                              alpha=0.7, rstride=1, cstride=1)
+        # YZ平面 (X = mid_x_val)
+        yz_vertices = np.array([
+            [mid_x_val, y_min, z_min],
+            [mid_x_val, y_max, z_min],
+            [mid_x_val, y_max, z_max],
+            [mid_x_val, y_min, z_max]
+        ])
         
-        # z平面スライス
-        xx = X_np[z_plane]
-        yy = Y_np[z_plane]
-        zz = Z_np[z_plane]
-        surf = ax.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(norm(data_np[z_plane])),
-                              alpha=0.7, rstride=1, cstride=1)
+        # 明示的なメッシュグリッド作成 - より精確な直交平面表示のため
+        # XY平面のメッシュグリッド (Z = mid_z_val)
+        xy_grid_x, xy_grid_y = np.meshgrid(X_np[:, 0, 0], Y_np[0, :, 0])
+        xy_grid_z = np.ones_like(xy_grid_x) * mid_z_val
+        xy_grid_values = data_np[:, :, mid_z].T
+        
+        # XZ平面のメッシュグリッド (Y = mid_y_val)
+        xz_grid_x, xz_grid_z = np.meshgrid(X_np[:, 0, 0], Z_np[0, 0, :])
+        xz_grid_y = np.ones_like(xz_grid_x) * mid_y_val
+        xz_grid_values = data_np[:, mid_y, :].T
+        
+        # YZ平面のメッシュグリッド (X = mid_x_val)
+        yz_grid_y, yz_grid_z = np.meshgrid(Y_np[0, :, 0], Z_np[0, 0, :])
+        yz_grid_x = np.ones_like(yz_grid_y) * mid_x_val
+        yz_grid_values = data_np[mid_x, :, :].T
+        
+        # 各スライスの描画
+        # XY平面 (Z = mid_z_val)
+        surf_xy = ax.plot_surface(
+            xy_grid_x, xy_grid_y, xy_grid_z,
+            facecolors=plt.cm.viridis(norm(xy_grid_values)),
+            alpha=0.8, rstride=1, cstride=1, shade=False
+        )
+        
+        # XZ平面 (Y = mid_y_val)
+        surf_xz = ax.plot_surface(
+            xz_grid_x, xz_grid_y, xz_grid_z,
+            facecolors=plt.cm.viridis(norm(xz_grid_values)),
+            alpha=0.8, rstride=1, cstride=1, shade=False
+        )
+        
+        # YZ平面 (X = mid_x_val)
+        surf_yz = ax.plot_surface(
+            yz_grid_x, yz_grid_y, yz_grid_z,
+            facecolors=plt.cm.viridis(norm(yz_grid_values)),
+            alpha=0.8, rstride=1, cstride=1, shade=False
+        )
+        
+        # 各平面の枠線を明示的に描画して直交性を強調
+        # XY平面の枠線
+        ax.plot(xy_vertices[[0, 1, 2, 3, 0], 0], xy_vertices[[0, 1, 2, 3, 0], 1], xy_vertices[[0, 1, 2, 3, 0], 2], 'k-', lw=1.5)
+        
+        # XZ平面の枠線
+        ax.plot(xz_vertices[[0, 1, 2, 3, 0], 0], xz_vertices[[0, 1, 2, 3, 0], 1], xz_vertices[[0, 1, 2, 3, 0], 2], 'k-', lw=1.5)
+        
+        # YZ平面の枠線
+        ax.plot(yz_vertices[[0, 1, 2, 3, 0], 0], yz_vertices[[0, 1, 2, 3, 0], 1], yz_vertices[[0, 1, 2, 3, 0], 2], 'k-', lw=1.5)
         
         # 軸ラベル
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
         ax.set_title(f"3D Orthogonal Slices (ψ) - Error: {error:.2e}")
+        
+        # 軸範囲を明示的に設定
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_zlim(z_min, z_max)
+        
+        # 正射影（アスペクト比1:1:1）で表示して直交性を視覚的に正確に
+        ax.set_box_aspect([1, 1, 1])
+        
+        # 視点の設定 - 直交性がはっきりと見えるアングル
+        ax.view_init(elev=30, azim=45)
         
         # カラーバー
         sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=norm)
@@ -385,6 +461,14 @@ class CCDVisualizer3D(BaseVisualizer):
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
         ax.set_title(f"Error Isosurfaces (ψ) - Max Error: {max_error:.2e}")
+        
+        # 軸範囲を明示的に設定
+        ax.set_xlim(x_flat[0], x_flat[-1])
+        ax.set_ylim(y_flat[0], y_flat[-1])
+        ax.set_zlim(z_flat[0], z_flat[-1])
+        
+        # 視点を設定
+        ax.view_init(elev=30, azim=-60)
         
         # カラーバー用のスカラーマッパブル
         if err_max / err_min > 100:
