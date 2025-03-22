@@ -8,7 +8,7 @@ import numpy as np
 
 from core.base.base_tester import CCDTester
 from core.solver.solver3d import CCDSolver3D
-from equation_set.equation_set3d import DerivativeEquationSet3D
+from equation_set.equation_sets import DerivativeEquationSet3D
 
 
 class CCDTester3D(CCDTester):

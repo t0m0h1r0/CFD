@@ -246,11 +246,13 @@ class CCDTester(ABC):
         """
         if test_func is None:
             # デフォルトテスト関数
-            from test_function.test_function_factory import TestFunctionFactory
+            from test_function.test_function1d import TestFunction1DFactory
+            from test_function.test_function2d import TestFunction2DFactory
+            from test_function.test_function3d import TestFunction3DFactory
             if self.get_dimension() == 1:
-                test_func = TestFunctionFactory.create_standard_1d_functions()[3]  # Sine
+                test_func = TestFunction1DFactory.create_standard_functions()[3]  # Sine
             else:
-                test_func = TestFunctionFactory.create_standard_2d_functions()[0]  # Sine2D
+                test_func = TestFunction2DFactory.create_standard_functions()[0]  # Sine2D
         elif isinstance(test_func, str):
             test_func = self.get_test_function(test_func)
         

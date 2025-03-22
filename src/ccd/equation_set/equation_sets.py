@@ -11,25 +11,16 @@
 # 基底クラスのインポート
 from core.base.base_equation_set import EquationSet, DimensionalEquationSetWrapper
 
-# 1次元方程式セットのインポート
-from equation_set.equation_set1d import (
-    DerivativeEquationSet1D,
-    PoissonEquationSet1D,
-    PoissonEquationSet1D2
-)
+from equation_set.derivative_set1d import DerivativeEquationSet1D
+from equation_set.poisson_set1d import PoissonEquationSet1D
+from equation_set.poisson2_set1d import PoissonEquationSet1D2
+from equation_set.derivative_set2d import DerivativeEquationSet2D
+from equation_set.poisson_set2d import PoissonEquationSet2D
+from equation_set.poisson2_set2d import PoissonEquationSet2D2
+from equation_set.derivative_set3d import DerivativeEquationSet3D
+from equation_set.poisson_set3d import PoissonEquationSet3D
+from equation_set.poisson2_set3d import PoissonEquationSet3D2
 
-# 2次元方程式セットのインポート
-from equation_set.equation_set2d import (
-    DerivativeEquationSet2D,
-    PoissonEquationSet2D,
-    PoissonEquationSet2D2
-)
-
-from equation_set.equation_set3d import (
-    DerivativeEquationSet3D,
-    PoissonEquationSet3D,
-    PoissonEquationSet3D2
-)
 
 # EquationSet クラスを拡張して、利用可能な方程式セットの辞書を提供
 @classmethod
