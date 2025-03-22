@@ -25,6 +25,12 @@ from equation_set.equation_set2d import (
     PoissonEquationSet2D2
 )
 
+from equation_set.equation_set3d import (
+    DerivativeEquationSet3D,
+    PoissonEquationSet3D,
+    PoissonEquationSet3D2
+)
+
 # EquationSet クラスを拡張して、利用可能な方程式セットの辞書を提供
 @classmethod
 def get_available_sets(cls, dimension=None):
@@ -38,29 +44,19 @@ def get_available_sets(cls, dimension=None):
         利用可能な方程式セットの辞書
     """
     all_sets = {
-        "poisson": {"1d": PoissonEquationSet1D, "2d": PoissonEquationSet2D},
-        "poisson2": {"1d": PoissonEquationSet1D2, "2d": PoissonEquationSet2D2},
-        "derivative": {"1d": DerivativeEquationSet1D, "2d": DerivativeEquationSet2D},
+        "poisson": {"1d": PoissonEquationSet1D, "2d": PoissonEquationSet2D, "3d": PoissonEquationSet3D},
+        "poisson2": {"1d": PoissonEquationSet1D2, "2d": PoissonEquationSet2D2, "3d": PoissonEquationSet3D2},
+        "derivative": {"1d": DerivativeEquationSet1D, "2d": DerivativeEquationSet2D, "3d": DerivativeEquationSet3D},
     }
     
     if dimension == 1:
         return {key: value["1d"] for key, value in all_sets.items()}
     elif dimension == 2:
         return {key: value["2d"] for key, value in all_sets.items()}
+    elif dimension == 3:
+        return {key: value["3d"] for key, value in all_sets.items()}
     else:
         return all_sets
 
 # クラスメソッドを上書き
 EquationSet.get_available_sets = get_available_sets
-
-# 後方互換性のために全てのクラスをエクスポート
-__all__ = [
-    'EquationSet', 
-    'DimensionalEquationSetWrapper',
-    'DerivativeEquationSet1D',
-    'PoissonEquationSet1D',
-    'PoissonEquationSet1D2',
-    'DerivativeEquationSet2D',
-    'PoissonEquationSet2D',
-    'PoissonEquationSet2D2'
-]
