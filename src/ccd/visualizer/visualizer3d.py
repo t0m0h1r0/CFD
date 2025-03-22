@@ -194,7 +194,7 @@ class CCDVisualizer3D(BaseVisualizer):
     def _create_integrated_3d_visualization(self, grid, function_name, numerical, exact, errors, 
                                          prefix="", save=True, show=False, dpi=150):
         """
-        3D統合可視化（ボリューム + 断面）
+        3D統合可視化（等値面のみ - 断面なし）
         
         Args:
             grid: Grid3D オブジェクト
@@ -208,6 +208,9 @@ class CCDVisualizer3D(BaseVisualizer):
             dpi: 画像のDPI値
         """
         nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
+        
+        # 中心断面のインデックス (スライス図用)
+        mid_x, mid_y, mid_z = nx_points//2, ny_points//2, nz_points//2
         
         # NumPy配列に変換
         num_psi = self._to_numpy(numerical[0])  # ψ成分のみ
@@ -223,61 +226,41 @@ class CCDVisualizer3D(BaseVisualizer):
         # 2x2のサブプロットレイアウト
         fig = plt.figure(figsize=(14, 12))
         
-        # 1. 3Dボリュームレンダリング (等値面)
+        # 1. 3Dボリュームレンダリング (等値面のみ)
         ax1 = fig.add_subplot(221, projection='3d')
         
-        # 等値面の値を決定（最大値の40%と70%）
+        # 等値面の値を決定（複数のレベルでより詳細な表示）
         val_max = np.max(num_psi)
         val_min = np.min(num_psi)
         if val_max > val_min:
-            iso_values = [val_min + 0.4 * (val_max - val_min), 
-                         val_min + 0.7 * (val_max - val_min)]
+            # より多くの等値面を使用して詳細化
+            levels = np.linspace(0.3, 0.8, 4)  # 30%, 50%, 70%, 90%の4レベル
+            iso_values = [val_min + level * (val_max - val_min) for level in levels]
+            
+            # 各等値面の色とアルファ値を設定
+            alphas = [0.3, 0.4, 0.5, 0.6]
+            colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(iso_values)))
             
             # 各等値面の表示
-            for iso_val, alpha, color in zip(iso_values, [0.3, 0.7], ['royalblue', 'navy']):
+            for idx, (iso_val, alpha, color) in enumerate(zip(iso_values, alphas, colors)):
                 # 等値面の検出（単純化のため）
                 verts = []
-                for i in range(1, nx_points-1):
-                    for j in range(1, ny_points-1):
-                        for k in range(1, nz_points-1):
+                step = max(1, min(nx_points, ny_points, nz_points) // 50)  # データ削減
+                for i in range(1, nx_points-1, step):
+                    for j in range(1, ny_points-1, step):
+                        for k in range(1, nz_points-1, step):
                             if (num_psi[i, j, k] > iso_val and \
                                 (num_psi[i-1, j, k] < iso_val or num_psi[i+1, j, k] < iso_val or
                                  num_psi[i, j-1, k] < iso_val or num_psi[i, j+1, k] < iso_val or
                                  num_psi[i, j, k-1] < iso_val or num_psi[i, j, k+1] < iso_val)):
                                 verts.append((X_np[i, j, k], Y_np[i, j, k], Z_np[i, j, k]))
                 
-                # 代表点をプロットして等値面を近似（効率のため）
+                # 代表点をプロットして等値面を近似
                 if verts:
                     verts = np.array(verts)
                     ax1.scatter(verts[:, 0], verts[:, 1], verts[:, 2], 
-                              c=color, alpha=alpha, s=10, edgecolors='none')
-        
-        # 表面にセントラルスライスを追加
-        mid_x, mid_y, mid_z = nx_points//2, ny_points//2, nz_points//2
-        
-        # x=mid_x面
-        xx = X_np[mid_x, :, :]
-        yy = Y_np[mid_x, :, :]
-        zz = Z_np[mid_x, :, :]
-        c1 = ax1.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(
-            (num_psi[mid_x, :, :] - val_min) / (val_max - val_min if val_max > val_min else 1)),
-                             alpha=0.7, rstride=1, cstride=1)
-        
-        # y=mid_y面
-        xx = X_np[:, mid_y, :]
-        yy = Y_np[:, mid_y, :]
-        zz = Z_np[:, mid_y, :]
-        c2 = ax1.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(
-            (num_psi[:, mid_y, :] - val_min) / (val_max - val_min if val_max > val_min else 1)),
-                             alpha=0.7, rstride=1, cstride=1)
-        
-        # z=mid_z面
-        xx = X_np[:, :, mid_z]
-        yy = Y_np[:, :, mid_z]
-        zz = Z_np[:, :, mid_z]
-        c3 = ax1.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(
-            (num_psi[:, :, mid_z] - val_min) / (val_max - val_min if val_max > val_min else 1)),
-                             alpha=0.7, rstride=1, cstride=1)
+                              c=[color], alpha=alpha, s=15, edgecolors='none',
+                              label=f'Level: {iso_val:.3f}')
         
         # カラーバー
         sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, 
@@ -291,48 +274,67 @@ class CCDVisualizer3D(BaseVisualizer):
         ax1.set_ylabel('Y')
         ax1.set_zlabel('Z')
         
-        # 2. 三面断面図（x, y, z方向の中央断面）- 誤差分布
+        # 軸の設定
+        ax1.set_xlim(-1.0, 1.0)
+        ax1.set_ylim(-1.0, 1.0)
+        ax1.set_zlim(-1.0, 1.0)
+        
+        # 2. 誤差分布の3D可視化（等値面のみ）
         ax2 = fig.add_subplot(222, projection='3d')
         
-        # エラー断面のカラーマッピング
-        error_norm = LogNorm(vmin=max(np.min(error_psi[error_psi > 0]), 1e-15), 
-                           vmax=np.max(error_psi)) if np.max(error_psi) > 0 else None
-        
-        # x=mid_x面（誤差）
-        xx = X_np[mid_x, :, :]
-        yy = Y_np[mid_x, :, :]
-        zz = Z_np[mid_x, :, :]
-        c1 = ax2.plot_surface(xx, yy, zz, facecolors=plt.cm.hot(
-            error_norm((error_psi[mid_x, :, :])) if error_norm else error_psi[mid_x, :, :]),
-                             alpha=0.7, rstride=1, cstride=1)
-        
-        # y=mid_y面（誤差）
-        xx = X_np[:, mid_y, :]
-        yy = Y_np[:, mid_y, :]
-        zz = Z_np[:, mid_y, :]
-        c2 = ax2.plot_surface(xx, yy, zz, facecolors=plt.cm.hot(
-            error_norm((error_psi[:, mid_y, :])) if error_norm else error_psi[:, mid_y, :]),
-                             alpha=0.7, rstride=1, cstride=1)
-        
-        # z=mid_z面（誤差）
-        xx = X_np[:, :, mid_z]
-        yy = Y_np[:, :, mid_z]
-        zz = Z_np[:, :, mid_z]
-        c3 = ax2.plot_surface(xx, yy, zz, facecolors=plt.cm.hot(
-            error_norm((error_psi[:, :, mid_z])) if error_norm else error_psi[:, :, mid_z]),
-                             alpha=0.7, rstride=1, cstride=1)
-        
-        # カラーバー
+        # エラー値の範囲を特定
         if np.max(error_psi) > 0:
+            # 対数スケールでの等値面レベル
+            err_max = np.max(error_psi)
+            err_min = max(np.min(error_psi[error_psi > 0]), 1e-15)
+            
+            # 対数スケールでの等値面レベル
+            error_levels = np.logspace(np.log10(err_min), np.log10(err_max), 4)
+            error_colors = plt.cm.hot(np.linspace(0.2, 0.8, len(error_levels)))
+            error_alphas = [0.3, 0.4, 0.5, 0.6]
+            
+            # 各誤差レベルの等値面
+            for idx, (err_val, alpha, color) in enumerate(zip(error_levels, error_alphas, error_colors)):
+                # 誤差等値面の検出
+                err_verts = []
+                step = max(1, min(nx_points, ny_points, nz_points) // 50)  # データ削減
+                for i in range(1, nx_points-1, step):
+                    for j in range(1, ny_points-1, step):
+                        for k in range(1, nz_points-1, step):
+                            if (error_psi[i, j, k] > err_val and \
+                                (error_psi[i-1, j, k] < err_val or error_psi[i+1, j, k] < err_val or
+                                 error_psi[i, j-1, k] < err_val or error_psi[i, j+1, k] < err_val or
+                                 error_psi[i, j, k-1] < err_val or error_psi[i, j, k+1] < err_val)):
+                                err_verts.append((X_np[i, j, k], Y_np[i, j, k], Z_np[i, j, k]))
+                
+                # 誤差等値面のプロット
+                if err_verts:
+                    err_verts = np.array(err_verts)
+                    ax2.scatter(err_verts[:, 0], err_verts[:, 1], err_verts[:, 2], 
+                              c=[color], alpha=alpha, s=15, edgecolors='none',
+                              label=f'Error: {err_val:.2e}')
+        
+        # 誤差用のカラーバー
+        if np.max(error_psi) > 0:
+            error_norm = LogNorm(vmin=max(np.min(error_psi[error_psi > 0]), 1e-15), 
+                               vmax=np.max(error_psi))
             sm2 = plt.cm.ScalarMappable(cmap=plt.cm.hot, norm=error_norm)
             sm2.set_array([])
             cbar2 = plt.colorbar(sm2, ax=ax2, shrink=0.6)
             cbar2.set_label('Error (Log Scale)')
+            
+            # レジェンド表示（誤差レベル）
+            ax2.legend(loc='upper right', fontsize=8)
         
         ax2.set_title(f"Error Distribution\nψ Component (Max Error: {errors[0]:.2e})")
         ax2.set_xlabel('X')
         ax2.set_ylabel('Y')
         ax2.set_zlabel('Z')
+        
+        # 軸の設定
+        ax2.set_xlim(-1.0, 1.0)
+        ax2.set_ylim(-1.0, 1.0)
+        ax2.set_zlim(-1.0, 1.0)
         
         # 3. XY平面の断面比較（z=mid_z）
         ax3 = fig.add_subplot(223)
