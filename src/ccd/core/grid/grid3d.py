@@ -249,8 +249,8 @@ class Grid3D(BaseGrid):
             境界タイプの文字列
             'interior': 内部点
             'face_x_min', 'face_x_max', 'face_y_min', 'face_y_max', 'face_z_min', 'face_z_max': 面
-            'edge_*': 辺
-            'vertex_*': 頂点
+            'edge_x_*', 'edge_y_*', 'edge_z_*': 辺 (主要方向_面1_面2)
+            'vertex_x_min_y_min_z_min' など: 頂点
         """
         if j is None or k is None:
             raise ValueError("3D格子ではj, kインデックスを指定する必要があります")
@@ -261,50 +261,29 @@ class Grid3D(BaseGrid):
         
         # 頂点
         if self.is_vertex_point(i, j, k):
-            vertex_type = 'vertex'
-            if i == 0: 
-                vertex_type += '_x_min'
-            else: 
-                vertex_type += '_x_max'
-                
-            if j == 0: 
-                vertex_type += '_y_min'
-            else: 
-                vertex_type += '_y_max'
-                
-            if k == 0: 
-                vertex_type += '_z_min'
-            else: 
-                vertex_type += '_z_max'
-                
-            return vertex_type
+            x_suffix = '_x_min' if i == 0 else '_x_max'
+            y_suffix = '_y_min' if j == 0 else '_y_max'
+            z_suffix = '_z_min' if k == 0 else '_z_max'
+            return 'vertex' + x_suffix + y_suffix + z_suffix
         
-        # 辺
+        # 辺 - 新しい命名規則に従ってフォーマット
         if self.is_edge_point(i, j, k):
-            edge_type = 'edge'
-            
-            if i == 0:
-                edge_type += '_x_min'
-            elif i == self.nx_points - 1:
-                edge_type += '_x_max'
-            else:
-                edge_type += '_x'
-                
-            if j == 0:
-                edge_type += '_y_min'
-            elif j == self.ny_points - 1:
-                edge_type += '_y_max'
-            else:
-                edge_type += '_y'
-                
-            if k == 0:
-                edge_type += '_z_min'
-            elif k == self.nz_points - 1:
-                edge_type += '_z_max'
-            else:
-                edge_type += '_z'
-                
-            return edge_type
+            # エッジの方向を特定
+            if 0 < i < self.nx_points - 1:  # x方向に沿ったエッジ
+                prefix = 'edge_x'
+                y_suffix = '_y_min' if j == 0 else '_y_max'
+                z_suffix = '_z_min' if k == 0 else '_z_max'
+                return prefix + y_suffix + z_suffix
+            elif 0 < j < self.ny_points - 1:  # y方向に沿ったエッジ
+                prefix = 'edge_y'
+                x_suffix = '_x_min' if i == 0 else '_x_max'
+                z_suffix = '_z_min' if k == 0 else '_z_max'
+                return prefix + x_suffix + z_suffix
+            elif 0 < k < self.nz_points - 1:  # z方向に沿ったエッジ
+                prefix = 'edge_z'
+                x_suffix = '_x_min' if i == 0 else '_x_max'
+                y_suffix = '_y_min' if j == 0 else '_y_max'
+                return prefix + x_suffix + y_suffix
         
         # 面
         if i == 0:

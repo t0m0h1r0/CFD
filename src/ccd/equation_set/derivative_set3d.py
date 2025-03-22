@@ -53,7 +53,7 @@ class DerivativeEquationSet3D(EquationSet):
         # 元の関数を全ての領域に追加
         system.add_dominant_equation(OriginalEquation3D(grid=grid))
         
-        # 内部点用の方程式
+        # ========== 内部点 ==========
         system.add_equations('interior', [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
@@ -66,9 +66,8 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
         ])
         
-        # 面の方程式設定 (6つの面)
-        
-        # x方向最小面 (i=0)
+        # ========== 面の方程式 ==========
+        # x = 0 (左面)
         system.add_equations('face_x_min', [
             converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
@@ -81,7 +80,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
         ])
         
-        # x方向最大面 (i=nx-1)
+        # x = nx-1 (右面)
         system.add_equations('face_x_max', [
             converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
@@ -94,7 +93,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
         ])
         
-        # y方向最小面 (j=0)
+        # y = 0 (下面)
         system.add_equations('face_y_min', [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
@@ -107,7 +106,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
         ])
         
-        # y方向最大面 (j=ny-1)
+        # y = ny-1 (上面)
         system.add_equations('face_y_max', [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
@@ -120,7 +119,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
         ])
         
-        # z方向最小面 (k=0)
+        # z = 0 (前面)
         system.add_equations('face_z_min', [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
@@ -133,7 +132,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # z方向最大面 (k=nz-1)
+        # z = nz-1 (後面)
         system.add_equations('face_z_max', [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
@@ -146,9 +145,10 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # 辺の方程式設定 (12の辺)
+        # ========== 辺の方程式 ==========
+        # x方向の辺 (y面とz面の交線)
         
-        # x方向の辺 (y=0, z=0)
+        # y=0, z=0面交差辺（下前）
         system.add_equations('edge_x_y_min_z_min', [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
@@ -161,7 +161,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # x方向の辺 (y=0, z=nz-1)
+        # y=0, z=nz-1面交差辺（下後）
         system.add_equations('edge_x_y_min_z_max', [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
@@ -174,7 +174,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # x方向の辺 (y=ny-1, z=0)
+        # y=ny-1, z=0面交差辺（上前）
         system.add_equations('edge_x_y_max_z_min', [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
@@ -187,7 +187,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # x方向の辺 (y=ny-1, z=nz-1)
+        # y=ny-1, z=nz-1面交差辺（上後）
         system.add_equations('edge_x_y_max_z_max', [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
@@ -200,7 +200,9 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # y方向の辺 (x=0, z=0)
+        # y方向の辺 (x面とz面の交線)
+        
+        # x=0, z=0面交差辺（左前）
         system.add_equations('edge_y_x_min_z_min', [
             converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
@@ -213,7 +215,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # y方向の辺 (x=0, z=nz-1)
+        # x=0, z=nz-1面交差辺（左後）
         system.add_equations('edge_y_x_min_z_max', [
             converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
@@ -226,7 +228,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # y方向の辺 (x=nx-1, z=0)
+        # x=nx-1, z=0面交差辺（右前）
         system.add_equations('edge_y_x_max_z_min', [
             converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
@@ -239,7 +241,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # y方向の辺 (x=nx-1, z=nz-1)
+        # x=nx-1, z=nz-1面交差辺（右後）
         system.add_equations('edge_y_x_max_z_max', [
             converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
@@ -252,7 +254,9 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # z方向の辺 (x=0, y=0)
+        # z方向の辺 (x面とy面の交線)
+        
+        # x=0, y=0面交差辺（左下）
         system.add_equations('edge_z_x_min_y_min', [
             converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
@@ -265,7 +269,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
         ])
         
-        # z方向の辺 (x=0, y=ny-1)
+        # x=0, y=ny-1面交差辺（左上）
         system.add_equations('edge_z_x_min_y_max', [
             converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
@@ -278,7 +282,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
         ])
         
-        # z方向の辺 (x=nx-1, y=0)
+        # x=nx-1, y=0面交差辺（右下）
         system.add_equations('edge_z_x_max_y_min', [
             converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
@@ -291,7 +295,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
         ])
         
-        # z方向の辺 (x=nx-1, y=ny-1)
+        # x=nx-1, y=ny-1面交差辺（右上）
         system.add_equations('edge_z_x_max_y_max', [
             converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
@@ -304,9 +308,9 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
         ])
         
-        # 頂点の方程式設定 (8つの頂点)
+        # ========== 頂点の方程式 ==========
         
-        # 頂点 (0,0,0)
+        # 左下前 (i=0, j=0, k=0)
         system.add_equations('vertex_x_min_y_min_z_min', [
             converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
@@ -319,46 +323,7 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # 頂点 (0,0,nz-1)
-        system.add_equations('vertex_x_min_y_min_z_max', [
-            converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
-            converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid),
-            converter.to_z(RightBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
-        ])
-        
-        # 頂点 (0,ny-1,0)
-        system.add_equations('vertex_x_min_y_max_z_min', [
-            converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
-            converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid),
-            converter.to_z(LeftBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
-        ])
-        
-        # 頂点 (0,ny-1,nz-1)
-        system.add_equations('vertex_x_min_y_max_z_max', [
-            converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
-            converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid),
-            converter.to_z(RightBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
-        ])
-        
-        # 頂点 (nx-1,0,0)
+        # 右下前 (i=nx-1, j=0, k=0)
         system.add_equations('vertex_x_max_y_min_z_min', [
             converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
@@ -371,20 +336,20 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # 頂点 (nx-1,0,nz-1)
-        system.add_equations('vertex_x_max_y_min_z_max', [
-            converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid),
-            converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid),
-            converter.to_z(RightBoundary1stDerivativeEquation(), grid=grid),
-            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
-            converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
+        # 左上前 (i=0, j=ny-1, k=0)
+        system.add_equations('vertex_x_min_y_max_z_min', [
+            converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # 頂点 (nx-1,ny-1,0)
+        # 右上前 (i=nx-1, j=ny-1, k=0)
         system.add_equations('vertex_x_max_y_max_z_min', [
             converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
@@ -397,7 +362,46 @@ class DerivativeEquationSet3D(EquationSet):
             converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
         ])
         
-        # 頂点 (nx-1,ny-1,nz-1)
+        # 左下後 (i=0, j=0, k=nz-1)
+        system.add_equations('vertex_x_min_y_min_z_max', [
+            converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
+        ])
+        
+        # 右下後 (i=nx-1, j=0, k=nz-1)
+        system.add_equations('vertex_x_max_y_min_z_max', [
+            converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
+        ])
+        
+        # 左上後 (i=0, j=ny-1, k=nz-1)
+        system.add_equations('vertex_x_min_y_max_z_max', [
+            converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
+        ])
+        
+        # 右上後 (i=nx-1, j=ny-1, k=nz-1)
         system.add_equations('vertex_x_max_y_max_z_max', [
             converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
             converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
