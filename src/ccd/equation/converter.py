@@ -1,6 +1,6 @@
-import numpy as cp
-from equation.base2d import Equation2D
-from equation.base3d import Equation3D
+import numpy as np
+from .dim2.base import Equation2D
+from .dim3.base import Equation3D
 
 class Equation1Dto2DConverter:
     """1次元方程式を2次元方程式に変換するファクトリクラス"""
@@ -268,7 +268,7 @@ class DirectionalEquation2D(Equation2D):
                 offset_2d = (0, offset_1d)
             
             # 係数配列を変換（7要素の配列に拡張）
-            coeff_array_2d = cp.zeros(7)
+            coeff_array_2d = np.zeros(7)
             for idx_1d, idx_2d in self.index_map.items():
                 if idx_1d < len(coeff_array_1d):
                     coeff_array_2d[idx_2d] = coeff_array_1d[idx_1d]
@@ -580,7 +580,7 @@ class DirectionalEquation3D(Equation3D):
                 offset_3d = (0, 0, offset_1d)
             
             # 係数配列を変換（10要素の配列に拡張）
-            coeff_array_3d = cp.zeros(10)
+            coeff_array_3d = np.zeros(10)
             for idx_1d, idx_3d in self.index_map.items():
                 if idx_1d < len(coeff_array_1d):
                     coeff_array_3d[idx_3d] = coeff_array_1d[idx_1d]

@@ -1,5 +1,5 @@
-import numpy as cp
-from .base1d import Equation
+import numpy as np
+from .base import Equation
 
 class LeftBoundary1stDerivativeEquation(Equation):
     """左境界点での1階導関数関係式"""
@@ -28,9 +28,9 @@ class LeftBoundary1stDerivativeEquation(Equation):
             
         h = self.grid.get_spacing()
         coeffs = {
-            0: cp.array([9/2, 1, 0, 0]) * cp.array([h**-1, h**0, h**1, h**2]),
-            1: cp.array([-4, 4, -1, 1/3]) * cp.array([h**-1, h**0, h**1, h**2]),
-            2: cp.array([-(1/2), 0, 0, 0]) * cp.array([h**-1, h**0, h**1, h**2])
+            0: np.array([9/2, 1, 0, 0]) * np.array([h**-1, h**0, h**1, h**2]),
+            1: np.array([-4, 4, -1, 1/3]) * np.array([h**-1, h**0, h**1, h**2]),
+            2: np.array([-(1/2), 0, 0, 0]) * np.array([h**-1, h**0, h**1, h**2])
         }
         return coeffs
 
@@ -77,9 +77,9 @@ class LeftBoundary2ndDerivativeEquation(Equation):
             
         h = self.grid.get_spacing()
         coeffs = {
-            0: cp.array([-16, 0, 1, 0]) * cp.array([h**-2, h**-1, h**0, h**1]),
-            1: cp.array([12, -20, 5, -(7/3)]) * cp.array([h**-2, h**-1, h**0, h**1]),
-            2: cp.array([4, 0, 0, 0]) * cp.array([h**-2, h**-1, h**0, h**1])
+            0: np.array([-16, 0, 1, 0]) * np.array([h**-2, h**-1, h**0, h**1]),
+            1: np.array([12, -20, 5, -(7/3)]) * np.array([h**-2, h**-1, h**0, h**1]),
+            2: np.array([4, 0, 0, 0]) * np.array([h**-2, h**-1, h**0, h**1])
         }
         return coeffs
 
@@ -126,9 +126,9 @@ class LeftBoundary3rdDerivativeEquation(Equation):
             
         h = self.grid.get_spacing()
         coeffs = {
-            0: cp.array([42, 0, 0, 1]) * cp.array([h**-3, h**-2, h**-1, h**0]),
-            1: cp.array([-24, 60, -12, 9]) * cp.array([h**-3, h**-2, h**-1, h**0]),
-            2: cp.array([-18, 0, 0, 0]) * cp.array([h**-3, h**-2, h**-1, h**0])
+            0: np.array([42, 0, 0, 1]) * np.array([h**-3, h**-2, h**-1, h**0]),
+            1: np.array([-24, 60, -12, 9]) * np.array([h**-3, h**-2, h**-1, h**0]),
+            2: np.array([-18, 0, 0, 0]) * np.array([h**-3, h**-2, h**-1, h**0])
         }
         return coeffs
 

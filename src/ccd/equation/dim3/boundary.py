@@ -1,5 +1,5 @@
 import numpy as np
-from equation.base3d import Equation3D
+from .base import Equation3D
 
 class DirichletBoundaryEquation3D(Equation3D):
     """

@@ -206,11 +206,11 @@ class RHSBuilder2D(RHSBuilder):
             支配方程式の行インデックス、見つからない場合はNone
         """
         # 必要なクラスを遅延インポート（依存関係を減らすため）
-        from equation.poisson import PoissonEquation, PoissonEquation2D
-        from equation.original import OriginalEquation, OriginalEquation2D
+        from equation.dim2.poisson import PoissonEquation2D
+        from equation.dim2.original import OriginalEquation2D
         
         for row, eq in enumerate(assignments):
-            if isinstance(eq, (PoissonEquation, PoissonEquation2D, OriginalEquation, OriginalEquation2D)):
+            if isinstance(eq, (PoissonEquation2D, OriginalEquation2D)):
                 return row
         return None
     
@@ -230,9 +230,9 @@ class RHSBuilder2D(RHSBuilder):
             boundary_values: 境界条件の値の辞書
         """
         # 必要なクラスを遅延インポート
-        from equation.boundary import DirichletBoundaryEquation2D
-        from equation.equation_converter import DirectionalEquation2D
-        from equation.boundary import NeumannBoundaryEquation
+        from equation.dim2.boundary import DirichletBoundaryEquation2D
+        from equation.converter import DirectionalEquation2D
+        from equation.dim1.boundary import NeumannBoundaryEquation
         
         # 各行の方程式をチェック
         for row, eq in enumerate(assignments):

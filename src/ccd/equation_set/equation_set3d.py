@@ -8,26 +8,25 @@
 from core.base.base_equation_set import EquationSet
 
 # 共通の方程式をインポート
-from equation.poisson import PoissonEquation3D
-from equation.original import OriginalEquation3D
-from equation.boundary import DirichletBoundaryEquation3D, NeumannBoundaryEquation
-from equation.boundary3d import NeumannBoundaryEquation3D
-from equation.compact_internal import (
+from equation.dim3.poisson import PoissonEquation3D
+from equation.dim3.original import OriginalEquation3D
+from equation.dim3.boundary import DirichletBoundaryEquation3D, NeumannBoundaryEquation3D
+from equation.dim1.compact_internal import (
     Internal1stDerivativeEquation,
     Internal2ndDerivativeEquation,
     Internal3rdDerivativeEquation
 )
-from equation.compact_left_boundary import (
+from equation.dim1.compact_left_boundary import (
     LeftBoundary1stDerivativeEquation,
     LeftBoundary2ndDerivativeEquation,
     LeftBoundary3rdDerivativeEquation
 )
-from equation.compact_right_boundary import (
+from equation.dim1.compact_right_boundary import (
     RightBoundary1stDerivativeEquation,
     RightBoundary2ndDerivativeEquation,
     RightBoundary3rdDerivativeEquation
 )
-from equation.equation_converter import Equation1Dto3DConverter
+from equation.converter import Equation1Dto3DConverter
 
 
 class DerivativeEquationSet3D(EquationSet):
