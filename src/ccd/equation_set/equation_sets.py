@@ -9,17 +9,17 @@
 """
 
 # 基底クラスのインポート
-from base_equation_set import EquationSet, DimensionalEquationSetWrapper
+from core.base.base_equation_set import EquationSet, DimensionalEquationSetWrapper
 
 # 1次元方程式セットのインポート
-from equation_set1d import (
+from equation_set.equation_set1d import (
     DerivativeEquationSet1D,
     PoissonEquationSet1D,
     PoissonEquationSet1D2
 )
 
 # 2次元方程式セットのインポート
-from equation_set2d import (
+from equation_set.equation_set2d import (
     DerivativeEquationSet2D,
     PoissonEquationSet2D,
     PoissonEquationSet2D2

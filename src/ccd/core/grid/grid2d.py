@@ -6,7 +6,7 @@
 
 import numpy as np
 
-from base_grid import BaseGrid
+from core.base.base_grid import BaseGrid
 
 
 class Grid2D(BaseGrid):

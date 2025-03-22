@@ -5,7 +5,7 @@
 2次元の方程式セットを定義します。
 """
 
-from base_equation_set import EquationSet
+from core.base.base_equation_set import EquationSet
 
 # 共通の方程式をインポート
 from equation.poisson import PoissonEquation2D

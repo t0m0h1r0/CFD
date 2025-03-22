@@ -8,7 +8,7 @@
 import numpy as np
 from typing import Dict, Any, Optional, List
 
-from base_rhs_builder import RHSBuilder
+from core.base.base_rhs_builder import RHSBuilder
 
 
 class RHSBuilder2D(RHSBuilder):

@@ -2,13 +2,13 @@ import argparse
 import os
 import time
 import numpy as np
-from grid1d import Grid1D
-from grid2d import Grid2D
-from tester1d import CCDTester1D
-from tester2d import CCDTester2D
-from test_function_factory import TestFunctionFactory
-from visualizer1d import CCDVisualizer1D
-from visualizer2d import CCDVisualizer2D
+from core.grid.grid1d import Grid1D
+from core.grid.grid2d import Grid2D
+from tester.tester1d import CCDTester1D
+from tester.tester2d import CCDTester2D
+from test_function.test_function_factory import TestFunctionFactory
+from visualizer.visualizer1d import CCDVisualizer1D
+from visualizer.visualizer2d import CCDVisualizer2D
 from scaling import plugin_manager
 from linear_solver import create_solver
 

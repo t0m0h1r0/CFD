@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import List
 
-from base_visualizer import BaseVisualizer
+from core.base.base_visualizer import BaseVisualizer
 
 
 class CCDVisualizer2D(BaseVisualizer):
