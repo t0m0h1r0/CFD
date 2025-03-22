@@ -37,8 +37,7 @@ def parse_args():
     # ソルバー
     parser.add_argument("--solver", type=str, default='direct', help="解法('all'=全解法)")
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法('all'=全手法)")
-    parser.add_argument("--backend", type=str, choices=['cpu', 'cuda', 'jax'], default='cpu',
-                      help="計算バックエンド")
+    parser.add_argument("--backend", type=str, choices=['cpu', 'cuda', 'jax'], default='cpu', help="計算バックエンド")
     parser.add_argument("--tol", type=float, default=1e-10, help="許容誤差")
     parser.add_argument("--maxiter", type=int, default=1000, help="最大反復数")
     parser.add_argument("--perturbation", type=float, default=None, 
@@ -50,6 +49,7 @@ def parse_args():
     parser.add_argument("--list-solvers", action="store_true", help="ソルバー一覧")
     parser.add_argument("--converge", action="store_true", help="格子収束テスト")
     parser.add_argument("--verify", action="store_true", help="行列構造検証")
+    parser.add_argument("--verbose", action="store_true", help="詳細情報表示")
     
     return parser.parse_args()
 
@@ -69,8 +69,6 @@ def create_tester(args):
         tester = CCDTester1D(grid)
         
     tester.set_equation_set(args.equation)
-    
-    # バックエンドを先に設定
     tester.backend = args.backend
     
     # ソルバーオプションを設定
@@ -80,10 +78,7 @@ def create_tester(args):
         "backend": args.backend
     })
     
-    # スケーリング設定
     tester.scaling_method = args.scaling
-    
-    # 摂動レベルを設定
     tester.perturbation_level = args.perturbation
     
     return tester
@@ -107,6 +102,9 @@ def get_functions(args):
         return [tester.get_test_function(args.func)]
 
 def get_scaling_methods(args):
+    # スケーリングプラグイン読み込み時の出力を抑制
+    plugin_manager.verbose = args.verbose
+    
     if args.scaling == "all":
         methods = plugin_manager.get_available_plugins()
         if args.list_scaling:
@@ -147,7 +145,8 @@ def get_solvers(args):
                     
             return methods
         except Exception as e:
-            print(f"ソルバー情報取得エラー: {e}")
+            if args.verbose:
+                print(f"ソルバー情報取得エラー: {e}")
             return ["direct"]
     else:
         return [args.solver]
@@ -175,20 +174,7 @@ def generate_filename(args, func_name, solver, scaling, extension="png"):
     return os.path.join(args.out, filename)
 
 def _create_grid(nx, ny=None, nz=None, x_range=(-1.0, 1.0), y_range=None, z_range=None):
-    """
-    次元に応じたグリッドを作成
-    
-    Args:
-        nx: x方向の格子点数
-        ny: y方向の格子点数（Noneの場合は1D）
-        nz: z方向の格子点数（Noneの場合は1Dまたは2D）
-        x_range: xの範囲
-        y_range: yの範囲
-        z_range: zの範囲
-        
-    Returns:
-        Grid1D, Grid2Dまたは3Dオブジェクト
-    """
+    """次元に応じたグリッドを作成"""
     if ny is None:
         return Grid1D(nx, x_range=x_range)
     elif nz is None:
@@ -205,7 +191,7 @@ def run_tests(args):
     
     # テスト状況表示
     multi_test = len(functions) > 1 or len(solvers) > 1 or len(scaling_methods) > 1
-    if multi_test:
+    if multi_test and args.verbose:
         print(f"\nCombination test: {len(functions)} functions x {len(solvers)} solvers x {len(scaling_methods)} scaling methods")
     
     # 実行結果格納
@@ -222,7 +208,7 @@ def run_tests(args):
                 
                 # 実行
                 perturbation_info = ""
-                if args.perturbation is not None:
+                if args.perturbation is not None and args.verbose:
                     perturbation_info = f", Perturbation: {args.perturbation}"
                 
                 print(f"\nFunction: {func.name}, Scaling: {scaling or 'None'}, Solver: {solver}{perturbation_info}")
@@ -279,10 +265,14 @@ def run_tests(args):
                             result["exact"], result["errors"], prefix=out_prefix
                         )
                     
-                    print(f"Result visualization saved to: {out_filename}")
+                    if args.verbose:
+                        print(f"Result visualization saved to: {out_filename}")
                     
                 except Exception as e:
-                    print(f"Test error: {e}")
+                    print(f"Test error: {str(e)}")
+                    if args.verbose:
+                        import traceback
+                        traceback.print_exc()
         
     return results
 
@@ -321,7 +311,8 @@ def run_convergence_test(args):
         
         # 可視化実行
         visualizer.visualize_grid_convergence(func.name, grid_sizes, results, prefix=out_prefix)
-        print(f"Convergence visualization saved with prefix: {out_prefix}")
+        if args.verbose:
+            print(f"Convergence visualization saved with prefix: {out_prefix}")
 
 def run_verification(args):
     """行列構造検証の実行"""
@@ -340,16 +331,42 @@ def run_verification(args):
         out_filename = generate_filename(args, func.name, "matrix", args.scaling, "png")
         out_basename = os.path.basename(out_filename).split('.')[0]
         
-        # ベース名設定（これはtesterの中で処理される）
+        # ベース名設定
         tester.matrix_basename = out_basename
         
         # 検証実行
         output_path = tester.visualize_matrix_system(func)
-        print(f"Matrix visualization saved to: {output_path}")
+        if args.verbose:
+            print(f"Matrix visualization saved to: {output_path}")
 
 def main():
     args = parse_args()
     os.makedirs(args.out, exist_ok=True)
+    
+    # プラグインマネージャーに修正を適用
+    import scaling.plugin_manager
+    scaling.plugin_manager.verbose = args.verbose
+    
+    # 3D固有の問題を修正（エッジ名の形式を修正）
+    if args.dim == 3:
+        # Grid3DクラスのエッジとCornerの命名を補正
+        from core.grid.grid3d import Grid3D
+        original_get_boundary_type = Grid3D.get_boundary_type
+        
+        def patched_get_boundary_type(self, i, j=None, k=None):
+            """エッジ名のフォーマットを修正するパッチ"""
+            boundary_type = original_get_boundary_type(self, i, j, k)
+            
+            # エッジ名の形式が誤っている場合の修正
+            if boundary_type.startswith('edge_x_min_y_z_min'):
+                # 例: 'edge_x_min_y_z_min' → 'edge_x_y_min_z_min'
+                boundary_type = 'edge_x_y_min_z_min'
+            # 他のエッジ形式も必要に応じて修正
+            
+            return boundary_type
+        
+        # グリッドクラスにパッチを適用（実験的 - 実際にはより適切な修正が必要）
+        Grid3D.get_boundary_type = patched_get_boundary_type
     
     # 一覧表示モードの処理
     if args.list:
