@@ -187,7 +187,7 @@ class PoissonEquationSet3D2(EquationSet):
         
         system.add_equations('face_z_max', z_max_face_eqs)
         
-        # ===== エッジと頂点の設定 =====
+        # ===== エッジの方程式設定 =====
         # x方向エッジ (y = 0, z = 0)
         edge_x_y_min_z_min_eqs = [
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
@@ -213,8 +213,282 @@ class PoissonEquationSet3D2(EquationSet):
         
         system.add_equations('edge_x_y_min_z_min', edge_x_y_min_z_min_eqs)
         
-        # 残りのエッジも同様に設定...
+        # x方向エッジ (y = 0, z = nz-1)
+        edge_x_y_min_z_max_eqs = [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
         
+        system.add_equations('edge_x_y_min_z_max', edge_x_y_min_z_max_eqs)
+        
+        # x方向エッジ (y = ny-1, z = 0)
+        edge_x_y_max_z_min_eqs = [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('edge_x_y_max_z_min', edge_x_y_max_z_min_eqs)
+        
+        # x方向エッジ (y = ny-1, z = nz-1)
+        edge_x_y_max_z_max_eqs = [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('edge_x_y_max_z_max', edge_x_y_max_z_max_eqs)
+        
+        # y方向エッジ (x = 0, z = 0)
+        edge_y_x_min_z_min_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('edge_y_x_min_z_min', edge_y_x_min_z_min_eqs)
+        
+        # y方向エッジ (x = 0, z = nz-1)
+        edge_y_x_min_z_max_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('edge_y_x_min_z_max', edge_y_x_min_z_max_eqs)
+        
+        # y方向エッジ (x = nx-1, z = 0)
+        edge_y_x_max_z_min_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('edge_y_x_max_z_min', edge_y_x_max_z_min_eqs)
+        
+        # y方向エッジ (x = nx-1, z = nz-1)
+        edge_y_x_max_z_max_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('edge_y_x_max_z_max', edge_y_x_max_z_max_eqs)
+        
+        # z方向エッジ (x = 0, y = 0)
+        edge_z_x_min_y_min_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ]
+        
+        system.add_equations('edge_z_x_min_y_min', edge_z_x_min_y_min_eqs)
+        
+        # z方向エッジ (x = 0, y = ny-1)
+        edge_z_x_min_y_max_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ]
+        
+        system.add_equations('edge_z_x_min_y_max', edge_z_x_min_y_max_eqs)
+        
+        # z方向エッジ (x = nx-1, y = 0)
+        edge_z_x_max_y_min_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ]
+        
+        system.add_equations('edge_z_x_max_y_min', edge_z_x_max_y_min_eqs)
+        
+        # z方向エッジ (x = nx-1, y = ny-1)
+        edge_z_x_max_y_max_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ]
+        
+        system.add_equations('edge_z_x_max_y_max', edge_z_x_max_y_max_eqs)
+        
+        # ===== 頂点の方程式設定 =====
         # 頂点 (x = 0, y = 0, z = 0)
         vertex_x_min_y_min_z_min_eqs = [
             DirichletBoundaryEquation3D(grid=grid),
@@ -245,6 +519,214 @@ class PoissonEquationSet3D2(EquationSet):
         
         system.add_equations('vertex_x_min_y_min_z_min', vertex_x_min_y_min_z_min_eqs)
         
-        # 残りの頂点も同様に設定...
+        # 頂点 (x = 0, y = 0, z = nz-1)
+        vertex_x_min_y_min_z_max_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
         
-        return True, False  # ディリクレト境界条件のみ有効
+        system.add_equations('vertex_x_min_y_min_z_max', vertex_x_min_y_min_z_max_eqs)
+        
+        # 頂点 (x = 0, y = ny-1, z = 0)
+        vertex_x_min_y_max_z_min_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('vertex_x_min_y_max_z_min', vertex_x_min_y_max_z_min_eqs)
+        
+        # 頂点 (x = 0, y = ny-1, z = nz-1)
+        vertex_x_min_y_max_z_max_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('vertex_x_min_y_max_z_max', vertex_x_min_y_max_z_max_eqs)
+        
+        # 頂点 (x = nx-1, y = 0, z = 0)
+        vertex_x_max_y_min_z_min_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('vertex_x_max_y_min_z_min', vertex_x_max_y_min_z_min_eqs)
+        
+        # 頂点 (x = nx-1, y = 0, z = nz-1)
+        vertex_x_max_y_min_z_max_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('vertex_x_max_y_min_z_max', vertex_x_max_y_min_z_max_eqs)
+        
+        # 頂点 (x = nx-1, y = ny-1, z = 0)
+        vertex_x_max_y_max_z_min_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                LeftBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                LeftBoundary2ndDerivativeEquation()+ 
+                LeftBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('vertex_x_max_y_max_z_min', vertex_x_max_y_max_z_min_eqs)
+        
+        # 頂点 (x = nx-1, y = ny-1, z = nz-1)
+        vertex_x_max_y_max_z_max_eqs = [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_x(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_y(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_y(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid),
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_z(
+                RightBoundary1stDerivativeEquation(),
+                grid=grid),
+            converter.to_z(
+                RightBoundary2ndDerivativeEquation()+ 
+                RightBoundary3rdDerivativeEquation(), 
+                grid=grid)
+        ]
+        
+        system.add_equations('vertex_x_max_y_max_z_max', vertex_x_max_y_max_z_max_eqs)
+        
+        return True, False
