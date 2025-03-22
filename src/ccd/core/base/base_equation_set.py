@@ -8,7 +8,7 @@
 from abc import ABC, abstractmethod
 
 class EquationSet(ABC):
-    """統合された方程式セットの抽象基底クラス (1D/2D両対応)"""
+    """統合された方程式セットの抽象基底クラス (1D/2D/3D対応)"""
 
     def __init__(self):
         """初期化"""
@@ -23,7 +23,7 @@ class EquationSet(ABC):
         
         Args:
             system: 方程式システム
-            grid: Grid オブジェクト (1D/2D)
+            grid: Grid オブジェクト (1D/2D/3D)
             test_func: テスト関数（オプション）
             
         Returns:
@@ -61,7 +61,7 @@ class EquationSet(ABC):
         利用可能な方程式セットを返す
         
         Args:
-            dimension: 1または2 (Noneの場合は両方)
+            dimension: 1, 2, または 3 (Noneの場合は全次元)
             
         Returns:
             利用可能な方程式セットの辞書
@@ -69,15 +69,17 @@ class EquationSet(ABC):
         # 注: 実際の実装はequation_sets.pyでオーバーライドされます
         # ここではプレースホルダーのみを提供
         all_sets = {
-            "poisson": {"1d": None, "2d": None},
-            "poisson2": {"1d": None, "2d": None},
-            "derivative": {"1d": None, "2d": None},
+            "poisson": {"1d": None, "2d": None, "3d": None},
+            "poisson2": {"1d": None, "2d": None, "3d": None},
+            "derivative": {"1d": None, "2d": None, "3d": None},
         }
         
         if dimension == 1:
             return {key: value["1d"] for key, value in all_sets.items()}
         elif dimension == 2:
             return {key: value["2d"] for key, value in all_sets.items()}
+        elif dimension == 3:
+            return {key: value["3d"] for key, value in all_sets.items()}
         else:
             return all_sets
 
@@ -88,7 +90,7 @@ class EquationSet(ABC):
         
         Args:
             name: 方程式セット名
-            dimension: 1または2 (Noneの場合はgridの次元から判断)
+            dimension: 1, 2, または 3 (Noneの場合はgridの次元から判断)
             
         Returns:
             方程式セットのインスタンス
@@ -137,13 +139,14 @@ class DimensionalEquationSetWrapper(EquationSet):
         
         Args:
             name: 方程式セット名
-            dimension_sets: 次元ごとの方程式セットクラス {"1d": Class1D, "2d": Class2D}
+            dimension_sets: 次元ごとの方程式セットクラス {"1d": Class1D, "2d": Class2D, "3d": Class3D}
         """
         super().__init__()
         self.name = name
         self.dimension_sets = dimension_sets
         self._1d_instance = None
         self._2d_instance = None
+        self._3d_instance = None
     
     def setup_equations(self, system, grid, test_func=None):
         """
@@ -151,14 +154,26 @@ class DimensionalEquationSetWrapper(EquationSet):
         
         Args:
             system: 方程式システム
-            grid: Grid オブジェクト (1D/2D)
+            grid: Grid オブジェクト (1D/2D/3D)
             test_func: テスト関数（オプション）
             
         Returns:
             Tuple[bool, bool]: ディリクレ境界条件とノイマン境界条件の有効フラグ
         """
         # Gridの次元に基づいて適切なインスタンスを使用
-        if grid.is_2d:
+        is_3d = hasattr(grid, 'is_3d') and grid.is_3d
+        is_2d = hasattr(grid, 'is_2d') and grid.is_2d
+        
+        if is_3d:
+            if self._3d_instance is None:
+                self._3d_instance = self.dimension_sets["3d"]()
+                
+            # 境界条件の設定を継承
+            self._3d_instance.set_boundary_options(self.enable_dirichlet, self.enable_neumann)
+            
+            # 方程式をセットアップして境界条件フラグを返す
+            return self._3d_instance.setup_equations(system, grid, test_func)
+        elif is_2d:
             if self._2d_instance is None:
                 self._2d_instance = self.dimension_sets["2d"]()
                 
@@ -195,5 +210,7 @@ class DimensionalEquationSetWrapper(EquationSet):
             self._1d_instance.set_boundary_options(use_dirichlet, use_neumann)
         if self._2d_instance is not None:
             self._2d_instance.set_boundary_options(use_dirichlet, use_neumann)
+        if self._3d_instance is not None:
+            self._3d_instance.set_boundary_options(use_dirichlet, use_neumann)
             
         return self

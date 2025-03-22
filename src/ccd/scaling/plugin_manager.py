@@ -21,11 +21,35 @@ class ScalingPluginManager:
         self._plugins_loaded: bool = False
         self._logger = logging.getLogger(__name__)
         
-        # デバッグログを有効化
-        self._logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.DEBUG)
-        self._logger.addHandler(handler)
+        # Set up logger with ERROR level by default (minimal output)
+        self._logger.setLevel(logging.ERROR)
+        if not self._logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setLevel(logging.ERROR)
+            self._logger.addHandler(handler)
+        
+        # Verbose flag for controlling log level
+        self._verbose = False
+        
+    @property
+    def verbose(self):
+        """詳細ログ出力の設定を取得"""
+        return self._verbose
+
+    @verbose.setter
+    def verbose(self, value):
+        """詳細ログ出力の設定を更新"""
+        self._verbose = value
+        
+        # Update log level based on verbose flag
+        if value:
+            self._logger.setLevel(logging.DEBUG)
+            for handler in self._logger.handlers:
+                handler.setLevel(logging.DEBUG)
+        else:
+            self._logger.setLevel(logging.ERROR)
+            for handler in self._logger.handlers:
+                handler.setLevel(logging.ERROR)
         
     def discover_plugins(self) -> Dict[str, BaseScaling]:
         """scalingパッケージ内のすべてのスケーリングプラグインを検出する"""

@@ -16,10 +16,11 @@ class BaseEquationSystem(ABC):
         方程式システムを初期化
         
         Args:
-            grid: 計算格子オブジェクト (1Dまたは2D)
+            grid: 計算格子オブジェクト (1D, 2D, または 3D)
         """
         self.grid = grid
-        self.is_2d = grid.is_2d
+        self.is_2d = grid.is_2d if hasattr(grid, 'is_2d') else False
+        self.is_3d = grid.is_3d if hasattr(grid, 'is_3d') else False
         
         # 領域ごとの方程式コレクション（サブクラスで初期化）
         self.equations = {}
@@ -91,33 +92,38 @@ class BaseEquationSystem(ABC):
                 raise ValueError(f"{region}領域に方程式が設定されていません")
     
     @abstractmethod
-    def _get_point_location(self, i: int, j: int = None) -> str:
+    def _get_point_location(self, i: int, j: int = None, k: int = None) -> str:
         """
         格子点の位置タイプを判定
         
         Args:
             i: x方向のインデックス
-            j: y方向のインデックス (2Dのみ)
+            j: y方向のインデックス (2D/3Dのみ)
+            k: z方向のインデックス (3Dのみ)
             
         Returns:
             位置を表す文字列 ('interior', 'left', 等)
         """
         pass
     
-    def _identify_equation_type(self, equation, i: int, j: int = None) -> str:
+    def _identify_equation_type(self, equation, i: int, j: int = None, k: int = None) -> str:
         """
         方程式の種類を識別
         
         Args:
             equation: 対象の方程式
             i: x方向のインデックス
-            j: y方向のインデックス (2Dのみ)
+            j: y方向のインデックス (2D/3Dのみ)
+            k: z方向のインデックス (3Dのみ)
             
         Returns:
             方程式の種類 ('governing', 'dirichlet', 等) または None (無効な場合)
         """
         # 方程式が有効かチェック
-        if self.is_2d:
+        if self.is_3d:
+            if not equation.is_valid_at(i, j, k):
+                return None
+        elif self.is_2d:
             if not equation.is_valid_at(i, j):
                 return None
         else:
@@ -127,15 +133,19 @@ class BaseEquationSystem(ABC):
         # クラス名から方程式種別を判定 (importはローカルに行う)
         from equation.dim1.poisson import PoissonEquation
         from equation.dim2.poisson import PoissonEquation2D
+        from equation.dim3.poisson import PoissonEquation3D
         from equation.dim1.original import OriginalEquation
         from equation.dim2.original import OriginalEquation2D
+        from equation.dim3.original import OriginalEquation3D
         from equation.dim1.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
         from equation.dim2.boundary import DirichletBoundaryEquation2D
+        from equation.dim3.boundary import DirichletBoundaryEquation3D
         
-        # 1D/2D共通の方程式タイプ
-        if isinstance(equation, (PoissonEquation, PoissonEquation2D, OriginalEquation, OriginalEquation2D)):
+        # 1D/2D/3D共通の方程式タイプ
+        if isinstance(equation, (PoissonEquation, PoissonEquation2D, PoissonEquation3D, 
+                              OriginalEquation, OriginalEquation2D, OriginalEquation3D)):
             return "governing"
-        elif isinstance(equation, (DirichletBoundaryEquation, DirichletBoundaryEquation2D)):
+        elif isinstance(equation, (DirichletBoundaryEquation, DirichletBoundaryEquation2D, DirichletBoundaryEquation3D)):
             return "dirichlet"
         elif isinstance(equation, NeumannBoundaryEquation):
             return "neumann"
@@ -152,6 +162,32 @@ class BaseEquationSystem(ABC):
                         return "neumann_x"
                     elif equation.direction == 'y':
                         return "neumann_y"
+        
+        # 3D固有のタイプまたは方向性のある方程式
+        if self.is_3d:
+            # DirectionalEquation3Dで作られた方向性のある方程式を識別
+            from equation.converter import DirectionalEquation3D
+            if isinstance(equation, DirectionalEquation3D):
+                # 内部の1D方程式がNeumannBoundaryEquationの場合
+                if hasattr(equation, 'equation_1d') and isinstance(equation.equation_1d, NeumannBoundaryEquation):
+                    # 方向に基づいて適切なノイマンタイプを返す
+                    if equation.direction == 'x':
+                        return "neumann_x"
+                    elif equation.direction == 'y':
+                        return "neumann_y"
+                    elif equation.direction == 'z':
+                        return "neumann_z"
+                        
+            # 3D専用の境界条件クラスを識別
+            from equation.dim3.boundary import NeumannBoundaryEquation3D
+            if isinstance(equation, NeumannBoundaryEquation3D):
+                # 方向に応じたタイプを返す
+                if equation.direction == 'x':
+                    return "neumann_x"
+                elif equation.direction == 'y':
+                    return "neumann_y"
+                elif equation.direction == 'z':
+                    return "neumann_z"
         
         # それ以外は補助方程式
         return "auxiliary"
