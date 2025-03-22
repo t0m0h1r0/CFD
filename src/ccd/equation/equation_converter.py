@@ -130,6 +130,51 @@ class Equation2Dto3DConverter:
         
         return CombinedDirectionalEquation3D(xy_eq, xz_eq, yz_eq, grid)
 
+    @staticmethod
+    def to_x(equation_2d, grid=None):
+        """
+        2次元方程式のx方向成分のみを取り出して3次元方程式に変換
+        
+        Args:
+            equation_2d: 2次元方程式クラスのインスタンス
+            grid: Grid3Dオブジェクト
+            
+        Returns:
+            x方向に特化した3次元方程式インスタンス
+        """
+        # x方向にのみ適用する特殊な3次元方程式
+        return DirectionalEquation3D(equation_2d, 'x', True, grid)
+    
+    @staticmethod
+    def to_y(equation_2d, grid=None):
+        """
+        2次元方程式のy方向成分のみを取り出して3次元方程式に変換
+        
+        Args:
+            equation_2d: 2次元方程式クラスのインスタンス
+            grid: Grid3Dオブジェクト
+            
+        Returns:
+            y方向に特化した3次元方程式インスタンス
+        """
+        # y方向にのみ適用する特殊な3次元方程式
+        return DirectionalEquation3D(equation_2d, 'y', True, grid)
+    
+    @staticmethod
+    def to_z(equation_2d, grid=None):
+        """
+        2次元方程式のz方向成分のみを取り出して3次元方程式に変換
+        
+        Args:
+            equation_2d: 2次元方程式クラスのインスタンス
+            grid: Grid3Dオブジェクト
+            
+        Returns:
+            z方向に特化した3次元方程式インスタンス
+        """
+        # z方向にのみ適用する特殊な3次元方程式
+        return DirectionalEquation3D(equation_2d, 'z', True, grid)
+
 
 class DirectionalEquation2D(Equation2D):
     """
@@ -435,8 +480,8 @@ class DirectionalEquation3D(Equation3D):
         
         Args:
             equation_2d: 2次元方程式のインスタンス
-            direction: 'xy'、'xz'、または'yz'
-            direction_only: 特定の平面のみ処理する場合True
+            direction: 'xy'、'xz'、'yz'、'x'、'y'、'z'
+            direction_only: 特定の平面/方向のみ処理する場合True
             grid: Grid3Dオブジェクト
         """
         super().__init__(grid)
@@ -454,10 +499,19 @@ class DirectionalEquation3D(Equation3D):
             # 2次元の未知数[ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy]を
             # 3次元の[ψ, ψ_x, ψ_xx, ψ_xxx, 0, 0, 0, ψ_z, ψ_zz, ψ_zzz]にマッピング （yをzに変更）
             self.index_map = {0: 0, 1: 1, 2: 2, 3: 3, 4: 7, 5: 8, 6: 9}
-        else:  # direction == 'yz'
+        elif direction == 'yz':
             # 2次元の未知数[ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy]を
             # 3次元の[ψ, 0, 0, 0, ψ_y, ψ_yy, ψ_yyy, ψ_z, ψ_zz, ψ_zzz]にマッピング （xをzに変更）
             self.index_map = {0: 0, 1: 4, 2: 5, 3: 6, 4: 7, 5: 8, 6: 9}
+        elif direction == 'x':
+            # x方向のみの特殊ケース
+            self.index_map = {0: 0, 1: 1, 2: 2, 3: 3}
+        elif direction == 'y':
+            # y方向のみの特殊ケース
+            self.index_map = {0: 0, 1: 4, 2: 5, 3: 6}
+        elif direction == 'z':
+            # z方向のみの特殊ケース
+            self.index_map = {0: 0, 1: 7, 2: 8, 3: 9}
             
         # 部分方程式にもgridを設定
         if self.grid is not None and hasattr(equation_2d, 'set_grid'):
@@ -487,19 +541,19 @@ class DirectionalEquation3D(Equation3D):
                 return self.hx, self.hy
         
         # 方向に応じた2Dグリッドを作成
-        if self.direction == 'xy':
+        if self.direction in ['xy', 'x', 'y']:
             emulated_grid = Grid2DEmulator(
                 self.grid.x, self.grid.y,
                 self.grid.get_spacing()[0], self.grid.get_spacing()[1],
                 self.grid.nx_points, self.grid.ny_points
             )
-        elif self.direction == 'xz':
+        elif self.direction in ['xz', 'x', 'z']:
             emulated_grid = Grid2DEmulator(
                 self.grid.x, self.grid.z,
                 self.grid.get_spacing()[0], self.grid.get_spacing()[2],
                 self.grid.nx_points, self.grid.nz_points
             )
-        else:  # self.direction == 'yz'
+        else:  # direction in ['yz', 'y', 'z']
             emulated_grid = Grid2DEmulator(
                 self.grid.y, self.grid.z,
                 self.grid.get_spacing()[1], self.grid.get_spacing()[2],
@@ -552,12 +606,21 @@ class DirectionalEquation3D(Equation3D):
         elif self.direction == 'xz':
             i_2d, j_2d = i, k
             is_boundary = j == 0 or j == self.grid.ny_points - 1
-        else:  # self.direction == 'yz'
+        elif self.direction == 'yz':
             i_2d, j_2d = j, k
             is_boundary = i == 0 or i == self.grid.nx_points - 1
+        elif self.direction == 'x':
+            i_2d, j_2d = i, 0  # j座標は使用しない
+            is_boundary = True  # 特定方向のみ
+        elif self.direction == 'y':
+            i_2d, j_2d = j, 0  # i座標は使用しない
+            is_boundary = True  # 特定方向のみ
+        else:  # self.direction == 'z'
+            i_2d, j_2d = k, 0  # k座標は使用しない
+            is_boundary = True  # 特定方向のみ
         
         # 境界点で特定平面のみの場合は処理を飛ばす
-        if self.direction_only and is_boundary:
+        if self.direction_only and is_boundary and self.direction not in ['x', 'y', 'z']:
             return {}
         
         # 2次元方程式からステンシル係数を取得
@@ -571,8 +634,14 @@ class DirectionalEquation3D(Equation3D):
                 offset_3d = (offset_i, offset_j, 0)
             elif self.direction == 'xz':
                 offset_3d = (offset_i, 0, offset_j)
-            else:  # self.direction == 'yz'
+            elif self.direction == 'yz':
                 offset_3d = (0, offset_i, offset_j)
+            elif self.direction == 'x':
+                offset_3d = (offset_i, 0, 0)
+            elif self.direction == 'y':
+                offset_3d = (0, offset_i, 0)
+            else:  # self.direction == 'z'
+                offset_3d = (0, 0, offset_i)
             
             # 係数配列を変換（10要素の配列に拡張）
             coeff_array_3d = cp.zeros(10)
@@ -632,7 +701,7 @@ class DirectionalEquation3D(Equation3D):
             emulator = Grid2DEmulator(self.grid.nx_points, self.grid.nz_points)
             return self.equation_2d.is_valid_at(i, k)
             
-        else:  # self.direction == 'yz'
+        elif self.direction == 'yz':
             # yz平面の境界判定
             if self.direction_only:
                 # yz平面のみの場合、内部点およびyz平面境界のみで有効（x方向境界では無効）
@@ -642,6 +711,18 @@ class DirectionalEquation3D(Equation3D):
             # 2次元方程式のvalid判定を使用
             emulator = Grid2DEmulator(self.grid.ny_points, self.grid.nz_points)
             return self.equation_2d.is_valid_at(j, k)
+            
+        elif self.direction == 'x':
+            # x方向のみ: 常に有効
+            return True
+            
+        elif self.direction == 'y':
+            # y方向のみ: 常に有効
+            return True
+            
+        else:  # self.direction == 'z'
+            # z方向のみ: 常に有効
+            return True
 
 
 class CombinedDirectionalEquation3D(Equation3D):
