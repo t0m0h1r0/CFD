@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from typing import List
+from skimage import measure
 
 from core.base.base_visualizer import BaseVisualizer
 
@@ -165,7 +166,7 @@ class CCDVisualizer3D(BaseVisualizer):
     
     def _create_3d_volume_visualization(self, grid, function_name, numerical, exact, error, prefix="", save=True, show=False, dpi=150):
         """
-        3Dボリュームスライスの可視化
+        改良された3Dボリューム可視化メソッド
         
         Args:
             grid: Grid3D オブジェクト
@@ -183,60 +184,201 @@ class CCDVisualizer3D(BaseVisualizer):
         # NumPy配列に変換
         num_np = self._to_numpy(numerical)
         
-        # 3Dボリュームスライスの可視化
-        fig = plt.figure(figsize=(12, 8))
-        ax = fig.add_subplot(111, projection='3d')
-        
-        # ボリュームスライスのインデックス（少ないスライスで特徴を捉えるため）
-        x_slices = [0, nx_points//2, nx_points-1]
-        y_slices = [0, ny_points//2, ny_points-1]
-        z_slices = [0, nz_points//2, nz_points-1]
-        
         # メッシュグリッド
         X, Y, Z = grid.get_points()
         X_np = self._to_numpy(X)
         Y_np = self._to_numpy(Y)
         Z_np = self._to_numpy(Z)
         
+        # 4つのサブプロットを作成: 等値面と3つの主要断面
+        fig = plt.figure(figsize=(18, 12))
+        
         # カラーマップの範囲
         vmin, vmax = np.min(num_np), np.max(num_np)
         
-        # 各スライスを可視化
-        for i in x_slices:
-            xx = X_np[i, :, :]
-            yy = Y_np[i, :, :]
-            zz = Z_np[i, :, :]
-            c = ax.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis((num_np[i, :, :] - vmin) / (vmax - vmin)),
-                               alpha=0.3, rstride=1, cstride=1)
+        # 1. 等値面プロット (上左)
+        ax1 = fig.add_subplot(221, projection='3d')
         
-        for j in y_slices:
-            xx = X_np[:, j, :]
-            yy = Y_np[:, j, :]
-            zz = Z_np[:, j, :]
-            c = ax.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis((num_np[:, j, :] - vmin) / (vmax - vmin)),
-                               alpha=0.3, rstride=1, cstride=1)
+        # 複数の等値面を表示（値の範囲に応じて調整）
+        levels = np.linspace(vmin + 0.05 * (vmax - vmin), vmax - 0.05 * (vmax - vmin), 4)
         
-        for k in z_slices:
-            xx = X_np[:, :, k]
-            yy = Y_np[:, :, k]
-            zz = Z_np[:, :, k]
-            c = ax.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis((num_np[:, :, k] - vmin) / (vmax - vmin)),
-                               alpha=0.3, rstride=1, cstride=1)
+        # 等値面ごとに異なる色と不透明度を設定
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
+        alphas = [0.3, 0.4, 0.5, 0.6]
         
-        # カラーバー
-        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax))
-        sm.set_array([])
-        cbar = plt.colorbar(sm, ax=ax)
-        cbar.set_label('Value')
+        for i, (level, color, alpha) in enumerate(zip(levels, colors, alphas)):
+            # 等値面のマスク作成
+            verts, faces, _, _ = measure.marching_cubes(num_np, level)
+            
+            # グリッド座標に変換
+            x_min, x_max = grid.x_min, grid.x_max
+            y_min, y_max = grid.y_min, grid.y_max
+            z_min, z_max = grid.z_min, grid.z_max
+            
+            x_vals = x_min + (x_max - x_min) * verts[:, 0] / (nx_points - 1)
+            y_vals = y_min + (y_max - y_min) * verts[:, 1] / (ny_points - 1)
+            z_vals = z_min + (z_max - z_min) * verts[:, 2] / (nz_points - 1)
+            
+            # 等値面を描画
+            mesh = ax1.plot_trisurf(x_vals, y_vals, z_vals, triangles=faces,
+                                  color=color, alpha=alpha, shade=True, 
+                                  label=f'Level {i+1}: {level:.2f}')
         
-        ax.set_title(f"{function_name}: 3D Volume Visualization (Error: {error:.2e})")
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
+        ax1.set_title(f"{function_name}: Isosurfaces", fontsize=12)
+        ax1.set_xlabel('X'), ax1.set_ylabel('Y'), ax1.set_zlabel('Z')
+        ax1.legend()
+        
+        # 2. XY断面プロット (上右)
+        ax2 = fig.add_subplot(222)
+        mid_z = nz_points // 2
+        z_val = Z_np[0, 0, mid_z]
+        
+        # 少ない等高線でより明確に
+        cs = ax2.contourf(X_np[:, :, mid_z], Y_np[:, :, mid_z], num_np[:, :, mid_z], 
+                      levels=15, cmap='viridis')
+        plt.colorbar(cs, ax=ax2)
+        
+        # より明確な輪郭線を追加
+        contour = ax2.contour(X_np[:, :, mid_z], Y_np[:, :, mid_z], num_np[:, :, mid_z], 
+                          levels=8, colors='k', linewidths=0.5)
+        ax2.clabel(contour, inline=True, fontsize=8)
+        
+        ax2.set_title(f"XY Plane (Z = {z_val:.2f})", fontsize=12)
+        ax2.set_xlabel('X'), ax2.set_ylabel('Y')
+        ax2.grid(False)  # グリッド線を非表示に
+        
+        # 3. XZ断面プロット (下左)
+        ax3 = fig.add_subplot(223)
+        mid_y = ny_points // 2
+        y_val = Y_np[0, mid_y, 0]
+        
+        cs = ax3.contourf(X_np[:, mid_y, :], Z_np[:, mid_y, :], num_np[:, mid_y, :], 
+                      levels=15, cmap='viridis')
+        plt.colorbar(cs, ax=ax3)
+        
+        contour = ax3.contour(X_np[:, mid_y, :], Z_np[:, mid_y, :], num_np[:, mid_y, :], 
+                          levels=8, colors='k', linewidths=0.5)
+        ax3.clabel(contour, inline=True, fontsize=8)
+        
+        ax3.set_title(f"XZ Plane (Y = {y_val:.2f})", fontsize=12)
+        ax3.set_xlabel('X'), ax3.set_ylabel('Z')
+        ax3.grid(False)
+        
+        # 4. YZ断面プロット (下右)
+        ax4 = fig.add_subplot(224)
+        mid_x = nx_points // 2
+        x_val = X_np[mid_x, 0, 0]
+        
+        cs = ax4.contourf(Y_np[mid_x, :, :], Z_np[mid_x, :, :], num_np[mid_x, :, :], 
+                      levels=15, cmap='viridis')
+        plt.colorbar(cs, ax=ax4)
+        
+        contour = ax4.contour(Y_np[mid_x, :, :], Z_np[mid_x, :, :], num_np[mid_x, :, :], 
+                          levels=8, colors='k', linewidths=0.5)
+        ax4.clabel(contour, inline=True, fontsize=8)
+        
+        ax4.set_title(f"YZ Plane (X = {x_val:.2f})", fontsize=12)
+        ax4.set_xlabel('Y'), ax4.set_ylabel('Z')
+        ax4.grid(False)
+        
+        # 全体タイトルを設定
+        plt.suptitle(f"{function_name}: 3D Visualization (Error: {error:.2e})", fontsize=14)
+        
+        plt.tight_layout()
         
         # 保存ファイル名
         if save:
             volume_filepath = self.generate_filename(function_name, nx_points, ny_points, nz_points, f"{prefix}_volume")
+            plt.savefig(volume_filepath, dpi=dpi)
+        
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        
+        # 追加の可視化: 3Dボリュームレンダリング（オプション）
+        self._create_volume_rendering(grid, function_name, num_np, error, prefix, save, show, dpi)
+
+    def _create_volume_rendering(self, grid, function_name, num_np, error, prefix="", save=True, show=False, dpi=150):
+        """
+        3Dボリュームレンダリングを使用した可視化（より直感的）
+        
+        Args:
+            grid: Grid3D オブジェクト
+            function_name: テスト関数の名前
+            num_np: 数値解データ (NumPy配列)
+            error: 誤差値
+            prefix: ファイル名の接頭辞
+            save: 図を保存するかどうか
+            show: 図を表示するかどうか
+            dpi: 保存する図のDPI
+        """
+        nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
+        
+        # データの正規化（0-1の範囲に）
+        v_min, v_max = np.min(num_np), np.max(num_np)
+        normalized_data = (num_np - v_min) / (v_max - v_min)
+        
+        # 図の作成
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')
+        
+        # ボリュームレンダリングのための座標系設定
+        x = np.linspace(grid.x_min, grid.x_max, nx_points)
+        y = np.linspace(grid.y_min, grid.y_max, ny_points)
+        z = np.linspace(grid.z_min, grid.z_max, nz_points)
+        
+        # スパースサンプリング（可視化を明確にするため）
+        stride = max(1, min(nx_points, ny_points, nz_points) // 20)
+        x_sparse = x[::stride]
+        y_sparse = y[::stride]
+        z_sparse = z[::stride]
+        
+        # 各ポイントでの値を取得（間引いたデータ）
+        points = []
+        values = []
+        sizes = []
+        
+        for i in range(0, nx_points, stride):
+            for j in range(0, ny_points, stride):
+                for k in range(0, nz_points, stride):
+                    val = normalized_data[i, j, k]
+                    
+                    # 低い値はスキップして視覚的なノイズを減らす
+                    if val < 0.25:
+                        continue
+                    
+                    points.append((x[i], y[j], z[k]))
+                    values.append(val)
+                    # 値が大きいほど、点を大きく表示
+                    sizes.append(50 * val**2 + 10)
+        
+        if points:  # 点がある場合のみプロット
+            points = np.array(points)
+            
+            # 3Dスキャッタープロットを使用したボリュームビジュアライゼーション
+            scatter = ax.scatter(
+                points[:, 0], points[:, 1], points[:, 2],
+                c=values, cmap='plasma',
+                s=sizes, alpha=0.6,
+                edgecolors='none'
+            )
+            
+            plt.colorbar(scatter, ax=ax, label='Normalized Value')
+        
+        ax.set_title(f"{function_name}: Volume Rendering (Error: {error:.2e})")
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        
+        # x, y, z軸の目盛りを減らして見やすく
+        ax.xaxis.set_major_locator(plt.MaxNLocator(5))
+        ax.yaxis.set_major_locator(plt.MaxNLocator(5))
+        ax.zaxis.set_major_locator(plt.MaxNLocator(5))
+        
+        # 保存ファイル名
+        if save:
+            volume_filepath = self.generate_filename(function_name, nx_points, ny_points, nz_points, f"{prefix}_volume_render")
             plt.savefig(volume_filepath, dpi=dpi)
         
         if show:
