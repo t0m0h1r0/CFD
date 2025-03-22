@@ -2,7 +2,8 @@
 高精度コンパクト差分法 (CCD) の3次元結果可視化
 
 このモジュールは、3次元CCDソルバーの計算結果を可視化するための
-クラスと機能を提供します。scikit-imageを用いた等値面表示機能を追加しました。
+クラスと機能を提供します。scikit-imageを用いた等値面表示機能を追加し、
+すべての可視化結果を1枚の画像にまとめて出力します。
 """
 
 import numpy as np
@@ -10,6 +11,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from matplotlib.colors import LogNorm
+from matplotlib.gridspec import GridSpec
 from skimage import measure
 from typing import List, Optional, Tuple, Union
 
@@ -52,16 +54,16 @@ class CCDVisualizer3D(BaseVisualizer):
         else:
             return f"{self.output_dir}/{func_name.lower()}_{nx_points}x{ny_points}x{nz_points}_points.png"
     
-    def visualize_solution(self, grid, function_name, numerical, exact, errors, prefix="", save=True, show=False, dpi=150):
+    def visualize_solution(self, grid, function_name, numerical, exact, errors, prefix="", save=True, show=False, dpi=180):
         """
-        3Dソリューションを可視化（断面図として）
+        3Dソリューションを可視化し、すべての結果を1枚の画像にまとめる
         
         Args:
             grid: Grid3D オブジェクト
             function_name: テスト関数の名前
             numerical: 数値解のリスト [psi, psi_x, psi_y, psi_z, psi_xx, psi_yy, psi_zz, psi_xxx, psi_yyy, psi_zzz]
             exact: 厳密解のリスト
-            errors: 誤差のリスト
+            errors: 誤差リスト
             prefix: ファイル名の接頭辞
             save: 図を保存するかどうか
             show: 図を表示するかどうか
@@ -72,124 +74,138 @@ class CCDVisualizer3D(BaseVisualizer):
         """
         nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
         
-        # 中心断面のインデックス
-        mid_x = nx_points // 2
-        mid_y = ny_points // 2
-        mid_z = nz_points // 2
-        
         # CuPy配列をNumPyに変換
         X, Y, Z = grid.get_points()
         X_np = self._to_numpy(X)
         Y_np = self._to_numpy(Y)
         Z_np = self._to_numpy(Z)
         
+        # 中心断面のインデックス
+        mid_x = nx_points // 2
+        mid_y = ny_points // 2
+        mid_z = nz_points // 2
+        
         # 可視化するソリューションのリスト
         solution_names = ["ψ", "ψ_x", "ψ_y", "ψ_z", "ψ_xx", "ψ_yy", "ψ_zz", "ψ_xxx", "ψ_yyy", "ψ_zzz"]
         
-        # 3つの主要断面について可視化
-        for plane, (idx_name, idx) in enumerate([('x', mid_x), ('y', mid_y), ('z', mid_z)]):
-            # 主要解成分だけを可視化
-            vis_components = [0, 1, 4, 7]  # ψ, ψ_x, ψ_xx, ψ_xxx
-            
-            # 2x2の図を作成（コンポーネント数に合わせて）
-            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-            axes = axes.flatten()  # 1次元配列に変換して扱いやすくする
-            plt.suptitle(f"{function_name}: {idx_name}={idx} Plane ({nx_points}x{ny_points}x{nz_points} points)")
-            
-            # カラーマップ
-            cmap_sol = 'viridis'
-            
-            for i, comp_idx in enumerate(vis_components):
-                name = solution_names[comp_idx]
-                num = numerical[comp_idx]
-                ex = exact[comp_idx]
-                err = errors[comp_idx]
-                
-                # NumPy配列に変換
-                num_np = self._to_numpy(num)
-                ex_np = self._to_numpy(ex)
-                error_np = self._to_numpy(np.abs(num_np - ex_np))
-                
-                # 平面ごとの断面を抽出
-                if idx_name == 'x':
-                    num_slice = num_np[idx, :, :]
-                    ex_slice = ex_np[idx, :, :]
-                    error_slice = error_np[idx, :, :]
-                    xlabel, ylabel = 'Y', 'Z'
-                    x_data, y_data = Y_np[idx, :, 0], Z_np[idx, 0, :]
-                    xx, yy = np.meshgrid(x_data, y_data, indexing='ij')
-                elif idx_name == 'y':
-                    num_slice = num_np[:, idx, :]
-                    ex_slice = ex_np[:, idx, :]
-                    error_slice = error_np[:, idx, :]
-                    xlabel, ylabel = 'X', 'Z'
-                    x_data, y_data = X_np[:, idx, 0], Z_np[0, idx, :]
-                    xx, yy = np.meshgrid(x_data, y_data, indexing='ij')
-                else:  # idx_name == 'z'
-                    num_slice = num_np[:, :, idx]
-                    ex_slice = ex_np[:, :, idx]
-                    error_slice = error_np[:, :, idx]
-                    xlabel, ylabel = 'X', 'Y'
-                    x_data, y_data = X_np[:, 0, idx], Y_np[0, :, idx]
-                    xx, yy = np.meshgrid(x_data, y_data, indexing='ij')
-                
-                # 同じカラーバーの範囲を使用するため、最小値と最大値を計算
-                vmin = min(np.min(num_slice), np.min(ex_slice))
-                vmax = max(np.max(num_slice), np.max(ex_slice))
-                
-                # 数値解
-                ax = axes[i]
-                im = ax.contourf(xx, yy, num_slice, 50, cmap=cmap_sol, vmin=vmin, vmax=vmax)
-                ax.set_title(f"{name} (Numerical), Error: {err:.2e}")
-                ax.set_xlabel(xlabel)
-                ax.set_ylabel(ylabel)
-                plt.colorbar(im, ax=ax)
-            
-            plt.tight_layout()
-            
-            # 保存ファイル名
-            if save:
-                plane_suffix = f"_plane_{idx_name}{idx}"
-                filepath = self.generate_filename(function_name, nx_points, ny_points, nz_points, f"{prefix}{plane_suffix}")
-                plt.savefig(filepath, dpi=dpi)
-            
-            if show:
-                plt.show()
-            else:
-                plt.close(fig)
+        # 主要解成分だけを可視化
+        vis_components = [0, 1, 4, 7]  # ψ, ψ_x, ψ_xx, ψ_xxx
         
-        # 等値面を使用した3D可視化（主要成分のみ）
-        self._create_isosurface_visualization(grid, function_name, numerical[0], exact[0], 
-                                             errors[0], prefix, save, show, dpi)
+        # 1枚の大きな図を作成 (4 rows x 3 columns layout)
+        fig = plt.figure(figsize=(24, 30))
         
-        # 誤差等値面の可視化
-        self._create_error_isosurface(grid, function_name, numerical[0], exact[0], 
-                                     errors[0], prefix, save, show, dpi)
+        # GridSpecを使用して複雑なレイアウトを作成
+        gs = GridSpec(4, 3, figure=fig, height_ratios=[1, 1, 1, 0.7])
         
-        # 誤差サマリー図を作成
-        self._create_error_summary(function_name, solution_names, errors, nx_points, ny_points, nz_points, prefix, save, show, dpi)
+        # タイトル
+        fig.suptitle(f"{function_name} Function Analysis ({nx_points}x{ny_points}x{nz_points} points)", 
+                    fontsize=24, y=0.98)
+        
+        # NumPy配列に変換（主要成分のみ）
+        psi_np = self._to_numpy(numerical[0])
+        psi_ex_np = self._to_numpy(exact[0])
+        error_np = self._to_numpy(np.abs(psi_np - psi_ex_np))
+        
+        # 1行目: 断面図 (x, y, z)
+        plane_axes = []
+        for col, (idx_name, idx) in enumerate([('x', mid_x), ('y', mid_y), ('z', mid_z)]):
+            ax = fig.add_subplot(gs[0, col])
+            plane_axes.append(ax)
+            
+            # 平面ごとの断面を抽出 (ψ成分のみ)
+            if idx_name == 'x':
+                num_slice = psi_np[idx, :, :]
+                xlabel, ylabel = 'Y', 'Z'
+                x_data, y_data = Y_np[idx, :, 0], Z_np[idx, 0, :]
+                plane_title = f"X={idx} Plane (ψ)"
+            elif idx_name == 'y':
+                num_slice = psi_np[:, idx, :]
+                xlabel, ylabel = 'X', 'Z'
+                x_data, y_data = X_np[:, idx, 0], Z_np[0, idx, :]
+                plane_title = f"Y={idx} Plane (ψ)"
+            else:  # idx_name == 'z'
+                num_slice = psi_np[:, :, idx]
+                xlabel, ylabel = 'X', 'Y'
+                x_data, y_data = X_np[:, 0, idx], Y_np[0, :, idx]
+                plane_title = f"Z={idx} Plane (ψ)"
+                
+            xx, yy = np.meshgrid(x_data, y_data, indexing='ij')
+            
+            # コンター図として描画
+            im = ax.contourf(xx, yy, num_slice, 50, cmap='viridis')
+            ax.set_title(plane_title)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            plt.colorbar(im, ax=ax)
+        
+        # 2行目: 誤差および異なる解成分の断面
+        for col, comp_idx in enumerate(vis_components[1:]):  # ψ_x, ψ_xx, ψ_xxx
+            ax = fig.add_subplot(gs[1, col])
+            name = solution_names[comp_idx]
+            num = numerical[comp_idx]
+            ex = exact[comp_idx]
+            err = errors[comp_idx]
+            
+            # NumPy配列に変換
+            num_np = self._to_numpy(num)
+            
+            # Z平面の断面を抽出
+            num_slice = num_np[:, :, mid_z]
+            x_data, y_data = X_np[:, 0, mid_z], Y_np[0, :, mid_z]
+            xx, yy = np.meshgrid(x_data, y_data, indexing='ij')
+            
+            # コンター図として描画
+            im = ax.contourf(xx, yy, num_slice, 50, cmap='viridis')
+            ax.set_title(f"{name} at Z={mid_z} (Error: {err:.2e})")
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            plt.colorbar(im, ax=ax)
+        
+        # 3行目: 3D可視化
+        # 3D等値面
+        ax_iso = fig.add_subplot(gs[2, 0], projection='3d')
+        self._plot_isosurface(ax_iso, grid, psi_np, function_name, errors[0])
+        
+        # 3D断面スライス
+        ax_slice = fig.add_subplot(gs[2, 1], projection='3d')
+        self._plot_3d_slices(ax_slice, grid, psi_np, function_name, errors[0])
+        
+        # 誤差等値面
+        ax_error = fig.add_subplot(gs[2, 2], projection='3d')
+        self._plot_error_isosurface(ax_error, grid, psi_np, psi_ex_np, error_np, function_name, errors[0])
+        
+        # 4行目: 誤差サマリー (水平バーグラフ)
+        ax_summary = fig.add_subplot(gs[3, :])
+        self._plot_error_summary(ax_summary, solution_names, errors, function_name)
+        
+        # 余白を調整
+        plt.tight_layout(rect=[0, 0, 1, 0.96])  # タイトル用の余白を確保
+        
+        # 保存ファイル名
+        if save:
+            filepath = self.generate_filename(function_name, nx_points, ny_points, nz_points, prefix)
+            plt.savefig(filepath, dpi=dpi, bbox_inches='tight')
+            print(f"Combined visualization saved to: {filepath}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
         
         return True
     
-    def _create_isosurface_visualization(self, grid, function_name, numerical, exact, error, prefix="", save=True, show=False, dpi=150):
+    def _plot_isosurface(self, ax, grid, data_np, function_name, error):
         """
-        scikit-imageを使用した等値面可視化
+        等値面を描画
         
         Args:
-            grid: Grid3D オブジェクト
-            function_name: テスト関数の名前
-            numerical: 数値解 (ψ)
-            exact: 厳密解 (ψ)
+            ax: 描画するAxis
+            grid: グリッドオブジェクト
+            data_np: 描画データ (NumPy配列)
+            function_name: 関数名
             error: 誤差値
-            prefix: ファイル名の接頭辞
-            save: 図を保存するかどうか
-            show: 図を表示するかどうか
-            dpi: 保存する図のDPI値
         """
         nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
-        
-        # NumPy配列に変換
-        num_np = self._to_numpy(numerical)
         
         # メッシュグリッド
         X, Y, Z = grid.get_points()
@@ -198,140 +214,126 @@ class CCDVisualizer3D(BaseVisualizer):
         z_flat = self._to_numpy(Z[0, 0, :])
         
         # 値の範囲
-        vmin, vmax = np.min(num_np), np.max(num_np)
+        vmin, vmax = np.min(data_np), np.max(data_np)
         
-        # 等値面の値を計算（最小値から最大値までの範囲を複数のレベルに分割）
-        n_levels = 5
-        iso_values = np.linspace(vmin + (vmax - vmin) * 0.2, vmax - (vmax - vmin) * 0.1, n_levels)
-        
-        # 図の作成
-        fig = plt.figure(figsize=(15, 12))
-        
-        # 左側のサブプロット（等値面）
-        ax1 = fig.add_subplot(121, projection='3d')
+        # 等値面の値を計算
+        n_levels = 3
+        iso_values = np.linspace(vmin + (vmax - vmin) * 0.3, vmax - (vmax - vmin) * 0.1, n_levels)
         
         # 各等値面レベルに対してマーチングキューブ法を適用
         for i, iso_val in enumerate(iso_values):
-            # skimageのmarching_cubesを使用して等値面を抽出
-            verts, faces, normals, values = measure.marching_cubes(num_np, iso_val)
-            
-            # 正規化された値に基づいて色を選択（0～1の範囲）
-            normalized_val = (iso_val - vmin) / (vmax - vmin)
-            
-            # 座標をスケーリング（グリッド範囲に合わせる）
-            vert_coords = np.zeros_like(verts)
-            vert_coords[:, 0] = x_flat[0] + verts[:, 0] * (x_flat[-1] - x_flat[0]) / (nx_points - 1)
-            vert_coords[:, 1] = y_flat[0] + verts[:, 1] * (y_flat[-1] - y_flat[0]) / (ny_points - 1)
-            vert_coords[:, 2] = z_flat[0] + verts[:, 2] * (z_flat[-1] - z_flat[0]) / (nz_points - 1)
-            
-            # 等値面の描画
-            mesh = ax1.plot_trisurf(
-                vert_coords[:, 0], vert_coords[:, 1], vert_coords[:, 2],
-                triangles=faces,
-                color=plt.cm.viridis(normalized_val),
-                alpha=0.6,
-                label=f'{iso_val:.2f}'
-            )
+            try:
+                # skimageのmarching_cubesを使用して等値面を抽出
+                verts, faces, normals, values = measure.marching_cubes(data_np, iso_val)
+                
+                # 正規化された値に基づいて色を選択
+                normalized_val = (iso_val - vmin) / (vmax - vmin)
+                
+                # 座標をスケーリング
+                vert_coords = np.zeros_like(verts)
+                vert_coords[:, 0] = x_flat[0] + verts[:, 0] * (x_flat[-1] - x_flat[0]) / (nx_points - 1)
+                vert_coords[:, 1] = y_flat[0] + verts[:, 1] * (y_flat[-1] - y_flat[0]) / (ny_points - 1)
+                vert_coords[:, 2] = z_flat[0] + verts[:, 2] * (z_flat[-1] - z_flat[0]) / (nz_points - 1)
+                
+                # 等値面の描画
+                mesh = ax.plot_trisurf(
+                    vert_coords[:, 0], vert_coords[:, 1], vert_coords[:, 2],
+                    triangles=faces,
+                    color=plt.cm.viridis(normalized_val),
+                    alpha=0.6
+                )
+            except:
+                continue
         
         # 軸ラベル
-        ax1.set_xlabel('X')
-        ax1.set_ylabel('Y')
-        ax1.set_zlabel('Z')
-        ax1.set_title(f"{function_name}: 3D Isosurfaces\nψ Component (Error: {error:.2e})")
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title(f"3D Isosurfaces (ψ) - Error: {error:.2e}")
         
         # カラーバー用のスカラーマッパブル
         sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax))
         sm.set_array([])
-        cbar = plt.colorbar(sm, ax=ax1, shrink=0.7)
-        cbar.set_label('ψ Value')
+        plt.colorbar(sm, ax=ax, shrink=0.7)
+    
+    def _plot_3d_slices(self, ax, grid, data_np, function_name, error):
+        """
+        3D断面スライスを描画
         
-        # 断面スライスの可視化のためのサブプロット
-        ax2 = fig.add_subplot(122, projection='3d')
-        
-        # 中心断面を抽出
+        Args:
+            ax: 描画するAxis
+            grid: グリッドオブジェクト
+            data_np: 描画データ (NumPy配列)
+            function_name: 関数名
+            error: 誤差値
+        """
+        # 中心断面のインデックス
+        nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
         mid_x = nx_points // 2
         mid_y = ny_points // 2
         mid_z = nz_points // 2
         
         # メッシュグリッド
+        X, Y, Z = grid.get_points()
         X_np = self._to_numpy(X)
         Y_np = self._to_numpy(Y)
         Z_np = self._to_numpy(Z)
         
-        # 断面スライス - x, y, z平面
+        # カラーマッピングのための正規化
+        vmin, vmax = np.min(data_np), np.max(data_np)
+        norm = plt.Normalize(vmin, vmax)
+        
+        # 断面スライス
         x_plane = np.s_[mid_x, :, :]
         y_plane = np.s_[:, mid_y, :]
         z_plane = np.s_[:, :, mid_z]
-        
-        # カラーマッピングのための正規化
-        norm = plt.Normalize(vmin, vmax)
         
         # x平面スライス
         xx = X_np[x_plane]
         yy = Y_np[x_plane]
         zz = Z_np[x_plane]
-        surf = ax2.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(norm(num_np[x_plane])),
-                               alpha=0.7, rstride=1, cstride=1)
+        surf = ax.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(norm(data_np[x_plane])),
+                              alpha=0.7, rstride=1, cstride=1)
         
         # y平面スライス
         xx = X_np[y_plane]
         yy = Y_np[y_plane]
         zz = Z_np[y_plane]
-        surf = ax2.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(norm(num_np[y_plane])),
-                               alpha=0.7, rstride=1, cstride=1)
+        surf = ax.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(norm(data_np[y_plane])),
+                              alpha=0.7, rstride=1, cstride=1)
         
         # z平面スライス
         xx = X_np[z_plane]
         yy = Y_np[z_plane]
         zz = Z_np[z_plane]
-        surf = ax2.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(norm(num_np[z_plane])),
-                               alpha=0.7, rstride=1, cstride=1)
+        surf = ax.plot_surface(xx, yy, zz, facecolors=plt.cm.viridis(norm(data_np[z_plane])),
+                              alpha=0.7, rstride=1, cstride=1)
         
         # 軸ラベル
-        ax2.set_xlabel('X')
-        ax2.set_ylabel('Y')
-        ax2.set_zlabel('Z')
-        ax2.set_title(f"{function_name}: 3D Orthogonal Slices\nψ Component (Error: {error:.2e})")
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title(f"3D Orthogonal Slices (ψ) - Error: {error:.2e}")
         
         # カラーバー
-        cbar = plt.colorbar(sm, ax=ax2, shrink=0.7)
-        cbar.set_label('ψ Value')
-        
-        plt.tight_layout()
-        
-        # 保存ファイル名
-        if save:
-            volume_filepath = self.generate_filename(function_name, nx_points, ny_points, nz_points, f"{prefix}_isosurface")
-            plt.savefig(volume_filepath, dpi=dpi)
-        
-        if show:
-            plt.show()
-        else:
-            plt.close(fig)
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=norm)
+        sm.set_array([])
+        plt.colorbar(sm, ax=ax, shrink=0.7)
     
-    def _create_error_isosurface(self, grid, function_name, numerical, exact, error, prefix="", save=True, show=False, dpi=150):
+    def _plot_error_isosurface(self, ax, grid, numerical_np, exact_np, error_np, function_name, max_error):
         """
-        誤差分布の等値面可視化
+        誤差等値面を描画
         
         Args:
-            grid: Grid3D オブジェクト
-            function_name: テスト関数の名前
-            numerical: 数値解 (ψ)
-            exact: 厳密解 (ψ)
-            error: 最大誤差値
-            prefix: ファイル名の接頭辞
-            save: 図を保存するかどうか
-            show: 図を表示するかどうか
-            dpi: 保存する図のDPI値
+            ax: 描画するAxis
+            grid: グリッドオブジェクト
+            numerical_np: 数値解 (NumPy配列)
+            exact_np: 厳密解 (NumPy配列)
+            error_np: 誤差データ (NumPy配列)
+            function_name: 関数名
+            max_error: 最大誤差値
         """
         nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
-        
-        # NumPy配列に変換
-        num_np = self._to_numpy(numerical)
-        ex_np = self._to_numpy(exact)
-        
-        # 誤差計算
-        error_np = np.abs(num_np - ex_np)
         
         # メッシュグリッド
         X, Y, Z = grid.get_points()
@@ -340,21 +342,15 @@ class CCDVisualizer3D(BaseVisualizer):
         z_flat = self._to_numpy(Z[0, 0, :])
         
         # 誤差の範囲（非常に小さい値は無視）
-        err_min = np.max([np.min(error_np[error_np > 0]), 1e-15])  # ゼロでない最小値
+        err_min = np.max([np.min(error_np[error_np > 0]), 1e-15])
         err_max = np.max(error_np)
         
         # 対数スケールで等値面の値を計算
-        n_levels = 4
-        if err_max / err_min > 100:  # 対数スケールが意味を持つ場合
-            iso_values = np.logspace(np.log10(err_min), np.log10(err_max), n_levels)
+        n_levels = 3
+        if err_max / err_min > 100:
+            iso_values = np.logspace(np.log10(err_min), np.log10(err_max * 0.7), n_levels)
         else:
-            iso_values = np.linspace(err_min, err_max, n_levels)
-        
-        # 図の作成
-        fig = plt.figure(figsize=(15, 12))
-        
-        # 左側のサブプロット（誤差等値面）
-        ax1 = fig.add_subplot(121, projection='3d')
+            iso_values = np.linspace(err_min, err_max * 0.7, n_levels)
         
         # 各等値面レベルに対してマーチングキューブ法を適用
         for i, iso_val in enumerate(iso_values):
@@ -362,35 +358,33 @@ class CCDVisualizer3D(BaseVisualizer):
                 # skimageのmarching_cubesを使用して等値面を抽出
                 verts, faces, normals, values = measure.marching_cubes(error_np, iso_val)
                 
-                # 対数正規化された値に基づいて色を選択（0～1の範囲）
+                # 正規化された値に基づいて色を選択
                 if err_max / err_min > 100:
                     normalized_val = (np.log10(iso_val) - np.log10(err_min)) / (np.log10(err_max) - np.log10(err_min))
                 else:
                     normalized_val = (iso_val - err_min) / (err_max - err_min)
                 
-                # 座標をスケーリング（グリッド範囲に合わせる）
+                # 座標をスケーリング
                 vert_coords = np.zeros_like(verts)
                 vert_coords[:, 0] = x_flat[0] + verts[:, 0] * (x_flat[-1] - x_flat[0]) / (nx_points - 1)
                 vert_coords[:, 1] = y_flat[0] + verts[:, 1] * (y_flat[-1] - y_flat[0]) / (ny_points - 1)
                 vert_coords[:, 2] = z_flat[0] + verts[:, 2] * (z_flat[-1] - z_flat[0]) / (nz_points - 1)
                 
                 # 等値面の描画
-                mesh = ax1.plot_trisurf(
+                mesh = ax.plot_trisurf(
                     vert_coords[:, 0], vert_coords[:, 1], vert_coords[:, 2],
                     triangles=faces,
                     color=plt.cm.hot(normalized_val),
-                    alpha=0.7,
-                    label=f'{iso_val:.2e}'
+                    alpha=0.7
                 )
             except:
-                # 等値面が見つからない場合はスキップ
                 continue
         
         # 軸ラベル
-        ax1.set_xlabel('X')
-        ax1.set_ylabel('Y')
-        ax1.set_zlabel('Z')
-        ax1.set_title(f"{function_name}: 3D Error Isosurfaces\nψ Component (Max Error: {error:.2e})")
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title(f"Error Isosurfaces (ψ) - Max Error: {max_error:.2e}")
         
         # カラーバー用のスカラーマッパブル
         if err_max / err_min > 100:
@@ -400,88 +394,18 @@ class CCDVisualizer3D(BaseVisualizer):
             
         sm = plt.cm.ScalarMappable(cmap=plt.cm.hot, norm=norm)
         sm.set_array([])
-        cbar = plt.colorbar(sm, ax=ax1, shrink=0.7)
-        cbar.set_label('Error Magnitude')
-        
-        # 右側のサブプロット（解と誤差のヒートマップ）
-        ax2 = fig.add_subplot(122, projection='3d')
-        
-        # 中心断面を抽出
-        mid_x = nx_points // 2
-        mid_y = ny_points // 2
-        mid_z = nz_points // 2
-        
-        # メッシュグリッド
-        X_np = self._to_numpy(X)
-        Y_np = self._to_numpy(Y)
-        Z_np = self._to_numpy(Z)
-        
-        # 断面スライス - 中心平面
-        z_plane = np.s_[:, :, mid_z]
-        
-        # 解のヒートマップ
-        xx = X_np[z_plane]
-        yy = Y_np[z_plane]
-        zz = Z_np[z_plane]
-        
-        # エラーデータの対数スケール（必要に応じて）
-        if err_max / err_min > 100:
-            error_data = np.log10(np.maximum(error_np[z_plane], err_min))
-            error_label = 'Log10(Error)'
-        else:
-            error_data = error_np[z_plane]
-            error_label = 'Error'
-        
-        # 誤差のヒートマップとコンター
-        surf = ax2.plot_surface(xx, yy, zz, facecolors=plt.cm.hot(norm(error_np[z_plane])),
-                               alpha=0.7, rstride=1, cstride=1)
-        
-        # 等高線の追加（解の面上に誤差のコンターを描画）
-        # z座標をわずかにオフセットして、サーフェス上に表示
-        offset_z = zz + 0.0001 * (Z_np.max() - Z_np.min())
-        
-        # エラー用のコンター
-        contour_levels = iso_values
-        ax2.contour(xx, yy, offset_z, error_np[z_plane], levels=contour_levels, 
-                   cmap='hot', linewidths=2, alpha=0.8)
-        
-        # 軸ラベル
-        ax2.set_xlabel('X')
-        ax2.set_ylabel('Y')
-        ax2.set_zlabel('Z')
-        ax2.set_title(f"{function_name}: Error Distribution at Z={mid_z}\nψ Component (Max Error: {error:.2e})")
-        
-        # カラーバー
-        cbar = plt.colorbar(sm, ax=ax2, shrink=0.7)
-        cbar.set_label(error_label)
-        
-        plt.tight_layout()
-        
-        # 保存ファイル名
-        if save:
-            volume_filepath = self.generate_filename(function_name, nx_points, ny_points, nz_points, f"{prefix}_error_isosurface")
-            plt.savefig(volume_filepath, dpi=dpi)
-        
-        if show:
-            plt.show()
-        else:
-            plt.close(fig)
+        plt.colorbar(sm, ax=ax, shrink=0.7)
     
-    def _create_error_summary(self, function_name, solution_names, errors, nx_points, ny_points, nz_points, prefix="", save=True, show=False, dpi=150):
+    def _plot_error_summary(self, ax, solution_names, errors, function_name):
         """
-        誤差のサマリーグラフを作成
+        誤差サマリープロットを描画
         
         Args:
-            function_name: 関数名
+            ax: 描画するAxis
             solution_names: 解成分の名前リスト
             errors: 誤差リスト
-            nx_points, ny_points, nz_points: 格子点数
-            prefix: 接頭辞
-            save: 保存するかどうか
-            show: 表示するかどうか
-            dpi: 画像のDPI値
+            function_name: 関数名
         """
-        fig, ax = plt.subplots(figsize=(10, 6))
         x_pos = np.arange(len(solution_names))
         bars = ax.bar(x_pos, errors)
         
@@ -492,11 +416,11 @@ class CCDVisualizer3D(BaseVisualizer):
                 error_values[i] = self.min_log_value
         
         ax.set_yscale('log')
-        ax.set_title(f"{function_name} Function: Error Summary ({nx_points}x{ny_points}x{nz_points} points)")
+        ax.set_title(f"Error Summary for {function_name}")
         ax.set_xlabel('Solution Component')
         ax.set_ylabel('Maximum Error (log scale)')
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(solution_names, rotation=45, ha="right")
+        ax.set_xticklabels(solution_names)
         ax.grid(True, which='both', linestyle='--', alpha=0.7)
         
         # バーにラベルを追加
@@ -504,26 +428,9 @@ class CCDVisualizer3D(BaseVisualizer):
             height = bar.get_height()
             ax.annotate(f'{err:.2e}',
                         xy=(bar.get_x() + bar.get_width() / 2, height),
-                        xytext=(0, 3),  # 3 points vertical offset
+                        xytext=(0, 3),
                         textcoords="offset points",
                         ha='center', va='bottom')
-        
-        plt.tight_layout()
-        
-        if save:
-            summary_filepath = self.generate_filename(
-                f"{function_name}_summary", 
-                nx_points, 
-                ny_points,
-                nz_points,
-                prefix
-            )
-            plt.savefig(summary_filepath, dpi=dpi)
-        
-        if show:
-            plt.show()
-        else:
-            plt.close(fig)
     
     def compare_all_functions_errors(self, results_summary, grid_size, prefix="", dpi=150, show=False):
         """
