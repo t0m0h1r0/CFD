@@ -9,7 +9,7 @@ import numpy as np
 from core.base.base_tester import CCDTester
 from core.solver.solver1d import CCDSolver1D
 from equation_set.equation_sets import DerivativeEquationSet1D
-from test_function.test_function_factory import TestFunctionFactory
+from test_function.test_function1d import TestFunction1DFactory
 
 
 class CCDTester1D(CCDTester):
@@ -60,7 +60,7 @@ class CCDTester1D(CCDTester):
         Returns:
             TestFunction1D: 取得したテスト関数
         """
-        funcs = TestFunctionFactory.create_standard_1d_functions()
+        funcs = TestFunction1DFactory.create_standard_functions()
         func = next((f for f in funcs if f.name == func_name), None)
         
         if not func:

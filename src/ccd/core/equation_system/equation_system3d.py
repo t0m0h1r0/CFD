@@ -309,9 +309,9 @@ class EquationSystem3D(BaseEquationSystem):
             return None
         
         # クラス名から方程式種別を判定 (importはローカルに行う)
-        from equation.poisson import PoissonEquation3D
-        from equation.original import OriginalEquation3D
-        from equation.boundary import DirichletBoundaryEquation3D
+        from equation.dim3.poisson import PoissonEquation3D
+        from equation.dim3.original import OriginalEquation3D
+        from equation.dim3.boundary import DirichletBoundaryEquation3D
         
         # 3D共通の方程式タイプ
         if isinstance(equation, (PoissonEquation3D, OriginalEquation3D)):
@@ -320,7 +320,7 @@ class EquationSystem3D(BaseEquationSystem):
             return "dirichlet"
         
         # 3D固有のタイプまたは方向性のある方程式
-        from equation.equation_converter import DirectionalEquation3D
+        from equation.converter import DirectionalEquation3D
         if isinstance(equation, DirectionalEquation3D):
             # 内部の2D方程式が特定の種類かチェック
             if hasattr(equation, 'equation_2d'):

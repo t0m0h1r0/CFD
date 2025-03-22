@@ -125,12 +125,12 @@ class BaseEquationSystem(ABC):
                 return None
         
         # クラス名から方程式種別を判定 (importはローカルに行う)
-        from equation.poisson import PoissonEquation, PoissonEquation2D
-        from equation.original import OriginalEquation, OriginalEquation2D
-        from equation.boundary import (
-            DirichletBoundaryEquation, NeumannBoundaryEquation,
-            DirichletBoundaryEquation2D
-        )
+        from equation.dim1.poisson import PoissonEquation
+        from equation.dim2.poisson import PoissonEquation2D
+        from equation.dim1.original import OriginalEquation
+        from equation.dim2.original import OriginalEquation2D
+        from equation.dim1.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
+        from equation.dim2.boundary import DirichletBoundaryEquation2D
         
         # 1D/2D共通の方程式タイプ
         if isinstance(equation, (PoissonEquation, PoissonEquation2D, OriginalEquation, OriginalEquation2D)):
@@ -143,7 +143,7 @@ class BaseEquationSystem(ABC):
         # 2D固有のタイプまたは方向性のある方程式
         if self.is_2d:
             # DirectionalEquation2Dで作られた方向性のある方程式を識別
-            from equation.equation_converter import DirectionalEquation2D
+            from equation.converter import DirectionalEquation2D
             if isinstance(equation, DirectionalEquation2D):
                 # 内部の1D方程式がNeumannBoundaryEquationの場合
                 if hasattr(equation, 'equation_1d') and isinstance(equation.equation_1d, NeumannBoundaryEquation):

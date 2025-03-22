@@ -144,8 +144,8 @@ class RHSBuilder3D(RHSBuilder):
             支配方程式の行インデックス、見つからない場合はNone
         """
         # 必要なクラスを遅延インポート（依存関係を減らすため）
-        from equation.poisson import PoissonEquation3D
-        from equation.original import OriginalEquation3D
+        from equation.dim3.poisson import PoissonEquation3D
+        from equation.dim3.original import OriginalEquation3D
         
         for row, eq in enumerate(assignments):
             if isinstance(eq, (PoissonEquation3D, OriginalEquation3D)):
@@ -167,7 +167,7 @@ class RHSBuilder3D(RHSBuilder):
             boundary_values: 境界条件の値の辞書
         """
         # 必要なクラスを遅延インポート
-        from equation.boundary3d import DirichletBoundaryEquation3D, NeumannBoundaryEquation3D
+        from equation.dim3.boundary import DirichletBoundaryEquation3D, NeumannBoundaryEquation3D
         
         # 現在の位置に対応する境界条件を適用
         for row, eq in enumerate(assignments):

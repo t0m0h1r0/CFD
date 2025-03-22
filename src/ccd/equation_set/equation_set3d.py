@@ -8,10 +8,26 @@
 from core.base.base_equation_set import EquationSet
 
 # 共通の方程式をインポート
-from equation.poisson import PoissonEquation3D
-from equation.original import OriginalEquation3D
-from equation.boundary import DirichletBoundaryEquation3D
-from equation.equation_converter import Equation2Dto3DConverter
+from equation.dim3.poisson import PoissonEquation3D
+from equation.dim3.original import OriginalEquation3D
+from equation.dim3.boundary import DirichletBoundaryEquation3D, NeumannBoundaryEquation3D
+from equation.dim1.compact_internal import (
+    Internal1stDerivativeEquation,
+    Internal2ndDerivativeEquation,
+    Internal3rdDerivativeEquation
+)
+from equation.dim1.compact_left_boundary import (
+    LeftBoundary1stDerivativeEquation,
+    LeftBoundary2ndDerivativeEquation,
+    LeftBoundary3rdDerivativeEquation
+)
+from equation.dim1.compact_right_boundary import (
+    RightBoundary1stDerivativeEquation,
+    RightBoundary2ndDerivativeEquation,
+    RightBoundary3rdDerivativeEquation
+)
+from equation.converter import Equation1Dto3DConverter
+
 
 class DerivativeEquationSet3D(EquationSet):
     """3次元高階微分のための方程式セット"""
@@ -39,58 +55,180 @@ class DerivativeEquationSet3D(EquationSet):
             raise ValueError("3D方程式セットが非3Dグリッドで使用されました")
         
         # 変換器を作成
-        converter = Equation2Dto3DConverter
+        converter = Equation1Dto3DConverter
         
         # 元の関数を全ての領域に追加
         system.add_dominant_equation(OriginalEquation3D(grid=grid))
         
         # 内部点用の方程式
-        from equation_set.equation_set2d import DerivativeEquationSet2D
-        derivative_2d = DerivativeEquationSet2D()
+        system.add_equations('interior', [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        # xy平面の方程式（z方向に拡張）
-        system.add_equation('interior', converter.to_xy(derivative_2d, grid=grid))
+        # 面の方程式設定
+        # x最小面 (i=0)
+        system.add_equations('face_x_min', [
+            converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        # xz平面の方程式（y方向に拡張）
-        system.add_equation('interior', converter.to_xz(derivative_2d, grid=grid))
+        # x最大面 (i=nx-1)
+        system.add_equations('face_x_max', [
+            converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        # yz平面の方程式（x方向に拡張）
-        system.add_equation('interior', converter.to_yz(derivative_2d, grid=grid))
+        # y最小面 (j=0)
+        system.add_equations('face_y_min', [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        # 面、辺、頂点の方程式設定（各面に対応する平面方程式を追加）
-        # 面
-        system.add_equation('face_x_min', converter.to_yz(derivative_2d, grid=grid))
-        system.add_equation('face_x_max', converter.to_yz(derivative_2d, grid=grid))
-        system.add_equation('face_y_min', converter.to_xz(derivative_2d, grid=grid))
-        system.add_equation('face_y_max', converter.to_xz(derivative_2d, grid=grid))
-        system.add_equation('face_z_min', converter.to_xy(derivative_2d, grid=grid))
-        system.add_equation('face_z_max', converter.to_xy(derivative_2d, grid=grid))
+        # y最大面 (j=ny-1)
+        system.add_equations('face_y_max', [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        # 辺（x方向）
+        # z最小面 (k=0)
+        system.add_equations('face_z_min', [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
+        ])
+        
+        # z最大面 (k=nz-1)
+        system.add_equations('face_z_max', [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
+        ])
+
+        # 辺の方程式設定（x方向辺）
         for edge in ['edge_x_y_min_z_min', 'edge_x_y_min_z_max', 
-                    'edge_x_y_max_z_min', 'edge_x_y_max_z_max']:
-            system.add_equation(edge, converter.to_x(derivative_2d, grid=grid))
+                     'edge_x_y_max_z_min', 'edge_x_y_max_z_max']:
+            y_bound_type = "Left" if "y_min" in edge else "Right"
+            z_bound_type = "Left" if "z_min" in edge else "Right"
+            
+            system.add_equations(edge, [
+                converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+                converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+                converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+                converter.to_y(globals()[f"{y_bound_type}Boundary1stDerivativeEquation"](), grid=grid),
+                converter.to_y(globals()[f"{y_bound_type}Boundary2ndDerivativeEquation"](), grid=grid),
+                converter.to_y(globals()[f"{y_bound_type}Boundary3rdDerivativeEquation"](), grid=grid),
+                converter.to_z(globals()[f"{z_bound_type}Boundary1stDerivativeEquation"](), grid=grid),
+                converter.to_z(globals()[f"{z_bound_type}Boundary2ndDerivativeEquation"](), grid=grid),
+                converter.to_z(globals()[f"{z_bound_type}Boundary3rdDerivativeEquation"](), grid=grid)
+            ])
         
-        # 辺（y方向）
+        # 辺の方程式設定（y方向辺）
         for edge in ['edge_y_x_min_z_min', 'edge_y_x_min_z_max', 
-                    'edge_y_x_max_z_min', 'edge_y_x_max_z_max']:
-            system.add_equation(edge, converter.to_y(derivative_2d, grid=grid))
+                     'edge_y_x_max_z_min', 'edge_y_x_max_z_max']:
+            x_bound_type = "Left" if "x_min" in edge else "Right"
+            z_bound_type = "Left" if "z_min" in edge else "Right"
+            
+            system.add_equations(edge, [
+                converter.to_x(globals()[f"{x_bound_type}Boundary1stDerivativeEquation"](), grid=grid),
+                converter.to_x(globals()[f"{x_bound_type}Boundary2ndDerivativeEquation"](), grid=grid),
+                converter.to_x(globals()[f"{x_bound_type}Boundary3rdDerivativeEquation"](), grid=grid),
+                converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+                converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+                converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+                converter.to_z(globals()[f"{z_bound_type}Boundary1stDerivativeEquation"](), grid=grid),
+                converter.to_z(globals()[f"{z_bound_type}Boundary2ndDerivativeEquation"](), grid=grid),
+                converter.to_z(globals()[f"{z_bound_type}Boundary3rdDerivativeEquation"](), grid=grid)
+            ])
         
-        # 辺（z方向）
+        # 辺の方程式設定（z方向辺）
         for edge in ['edge_z_x_min_y_min', 'edge_z_x_min_y_max', 
-                    'edge_z_x_max_y_min', 'edge_z_x_max_y_max']:
-            system.add_equation(edge, converter.to_z(derivative_2d, grid=grid))
+                     'edge_z_x_max_y_min', 'edge_z_x_max_y_max']:
+            x_bound_type = "Left" if "x_min" in edge else "Right"
+            y_bound_type = "Left" if "y_min" in edge else "Right"
+            
+            system.add_equations(edge, [
+                converter.to_x(globals()[f"{x_bound_type}Boundary1stDerivativeEquation"](), grid=grid),
+                converter.to_x(globals()[f"{x_bound_type}Boundary2ndDerivativeEquation"](), grid=grid),
+                converter.to_x(globals()[f"{x_bound_type}Boundary3rdDerivativeEquation"](), grid=grid),
+                converter.to_y(globals()[f"{y_bound_type}Boundary1stDerivativeEquation"](), grid=grid),
+                converter.to_y(globals()[f"{y_bound_type}Boundary2ndDerivativeEquation"](), grid=grid),
+                converter.to_y(globals()[f"{y_bound_type}Boundary3rdDerivativeEquation"](), grid=grid),
+                converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+                converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+                converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+            ])
         
-        # 頂点
+        # 頂点の方程式設定
         for vertex in ['vertex_x_min_y_min_z_min', 'vertex_x_min_y_min_z_max',
-                     'vertex_x_min_y_max_z_min', 'vertex_x_min_y_max_z_max',
-                     'vertex_x_max_y_min_z_min', 'vertex_x_max_y_min_z_max',
-                     'vertex_x_max_y_max_z_min', 'vertex_x_max_y_max_z_max']:
-            system.add_equation(vertex, converter.to_xyz(derivative_2d, grid=grid))
+                       'vertex_x_min_y_max_z_min', 'vertex_x_min_y_max_z_max',
+                       'vertex_x_max_y_min_z_min', 'vertex_x_max_y_min_z_max',
+                       'vertex_x_max_y_max_z_min', 'vertex_x_max_y_max_z_max']:
+            x_bound_type = "Left" if "x_min" in vertex else "Right"
+            y_bound_type = "Left" if "y_min" in vertex else "Right"
+            z_bound_type = "Left" if "z_min" in vertex else "Right"
+            
+            system.add_equations(vertex, [
+                converter.to_x(globals()[f"{x_bound_type}Boundary1stDerivativeEquation"](), grid=grid),
+                converter.to_x(globals()[f"{x_bound_type}Boundary2ndDerivativeEquation"](), grid=grid),
+                converter.to_x(globals()[f"{x_bound_type}Boundary3rdDerivativeEquation"](), grid=grid),
+                converter.to_y(globals()[f"{y_bound_type}Boundary1stDerivativeEquation"](), grid=grid),
+                converter.to_y(globals()[f"{y_bound_type}Boundary2ndDerivativeEquation"](), grid=grid),
+                converter.to_y(globals()[f"{y_bound_type}Boundary3rdDerivativeEquation"](), grid=grid),
+                converter.to_z(globals()[f"{z_bound_type}Boundary1stDerivativeEquation"](), grid=grid),
+                converter.to_z(globals()[f"{z_bound_type}Boundary2ndDerivativeEquation"](), grid=grid),
+                converter.to_z(globals()[f"{z_bound_type}Boundary3rdDerivativeEquation"](), grid=grid)
+            ])
         
         # 微分方程式セットでは境界条件は常に無効（既に導関数計算に制約式を使用）
         return False, False
-
 
 class PoissonEquationSet3D(EquationSet):
     """ディリクレ・ノイマン混合境界条件の3Dポアソン方程式セット"""
@@ -116,50 +254,133 @@ class PoissonEquationSet3D(EquationSet):
             raise ValueError("3D方程式セットが非3Dグリッドで使用されました")
             
         # 変換器を作成
-        converter = Equation2Dto3DConverter
+        converter = Equation1Dto3DConverter
 
         # ポアソン方程式を全ての領域に追加
         system.add_dominant_equation(PoissonEquation3D(grid=grid))
         
-        # 内部点用の方程式
-        from equation_set.equation_set2d import DerivativeEquationSet2D
-        derivative_2d = DerivativeEquationSet2D()
+        # 内部点用の基本方程式
+        internal_equations = [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ]
         
-        # xy, xz, yz平面の方程式を内部点に追加
-        system.add_equation('interior', converter.to_xyz(derivative_2d, grid=grid))
+        system.add_equations('interior', internal_equations)
         
         # 面の方程式設定
-        for face in ['face_x_min', 'face_x_max', 'face_y_min', 
-                    'face_y_max', 'face_z_min', 'face_z_max']:
-            system.add_equation(face, DirichletBoundaryEquation3D(grid=grid))
-            
-            # 対応する平面方程式を追加
-            if face in ['face_x_min', 'face_x_max']:
-                system.add_equation(face, converter.to_yz(derivative_2d, grid=grid))
-            elif face in ['face_y_min', 'face_y_max']:
-                system.add_equation(face, converter.to_xz(derivative_2d, grid=grid))
-            else:  # face_z_min, face_z_max
-                system.add_equation(face, converter.to_xy(derivative_2d, grid=grid))
+        # x最小面 (i=0)
+        system.add_equations('face_x_min', [
+            DirichletBoundaryEquation3D(grid=grid),
+            NeumannBoundaryEquation3D('x', grid=grid),
+            converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        # 辺の方程式設定
-        for edge in ['edge_x_y_min_z_min', 'edge_x_y_min_z_max', 
-                   'edge_x_y_max_z_min', 'edge_x_y_max_z_max',
-                   'edge_y_x_min_z_min', 'edge_y_x_min_z_max', 
-                   'edge_y_x_max_z_min', 'edge_y_x_max_z_max',
-                   'edge_z_x_min_y_min', 'edge_z_x_min_y_max', 
-                   'edge_z_x_max_y_min', 'edge_z_x_max_y_max']:
-            system.add_equation(edge, DirichletBoundaryEquation3D(grid=grid))
+        # x最大面 (i=nx-1)
+        system.add_equations('face_x_max', [
+            DirichletBoundaryEquation3D(grid=grid),
+            NeumannBoundaryEquation3D('x', grid=grid),
+            converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        # 頂点の方程式設定
-        for vertex in ['vertex_x_min_y_min_z_min', 'vertex_x_min_y_min_z_max',
-                     'vertex_x_min_y_max_z_min', 'vertex_x_min_y_max_z_max',
-                     'vertex_x_max_y_min_z_min', 'vertex_x_max_y_min_z_max',
-                     'vertex_x_max_y_max_z_min', 'vertex_x_max_y_max_z_max']:
-            system.add_equation(vertex, DirichletBoundaryEquation3D(grid=grid))
+        # y最小面 (j=0)
+        system.add_equations('face_y_min', [
+            DirichletBoundaryEquation3D(grid=grid),
+            NeumannBoundaryEquation3D('y', grid=grid),
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
+        
+        # y最大面 (j=ny-1)
+        system.add_equations('face_y_max', [
+            DirichletBoundaryEquation3D(grid=grid),
+            NeumannBoundaryEquation3D('y', grid=grid),
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
+        
+        # z最小面 (k=0)
+        system.add_equations('face_z_min', [
+            DirichletBoundaryEquation3D(grid=grid),
+            NeumannBoundaryEquation3D('z', grid=grid),
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
+        ])
+        
+        # z最大面 (k=nz-1)
+        system.add_equations('face_z_max', [
+            DirichletBoundaryEquation3D(grid=grid),
+            NeumannBoundaryEquation3D('z', grid=grid),
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
+        ])
+
+        # 辺と頂点の方程式設定
+        # 辺の方程式に境界条件を追加
+        for region in system.equations:
+            if region.startswith('edge_') or region.startswith('vertex_'):
+                system.add_equation(region, DirichletBoundaryEquation3D(grid=grid))
+                
+                # 適切な方向のノイマン境界条件を追加
+                if 'x_min' in region or 'x_max' in region:
+                    system.add_equation(region, NeumannBoundaryEquation3D('x', grid=grid))
+                if 'y_min' in region or 'y_max' in region:
+                    system.add_equation(region, NeumannBoundaryEquation3D('y', grid=grid))
+                if 'z_min' in region or 'z_max' in region:
+                    system.add_equation(region, NeumannBoundaryEquation3D('z', grid=grid))
         
         return True, True
-
-
+    
 class PoissonEquationSet3D2(EquationSet):
     """ディリクレ境界条件のみの3Dポアソン方程式セット"""
     
@@ -183,48 +404,116 @@ class PoissonEquationSet3D2(EquationSet):
         if not hasattr(grid, 'is_3d') or not grid.is_3d:
             raise ValueError("3D方程式セットが非3Dグリッドで使用されました")
             
-        # PoissonEquationSet3Dとほぼ同じだが、ノイマン境界条件を使わない
         # 変換器を作成
-        converter = Equation2Dto3DConverter
+        converter = Equation1Dto3DConverter
 
         # ポアソン方程式を全ての領域に追加
         system.add_dominant_equation(PoissonEquation3D(grid=grid))
         
-        # 内部点用の方程式
-        from equation_set.equation_set2d import DerivativeEquationSet2D
-        derivative_2d = DerivativeEquationSet2D()
+        # 内部点用の基本方程式
+        internal_equations = [
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ]
         
-        # xy, xz, yz平面の方程式を内部点に追加
-        system.add_equation('interior', converter.to_xyz(derivative_2d, grid=grid))
+        system.add_equations('interior', internal_equations)
         
-        # 面の方程式設定（ディリクレのみ）
-        for face in ['face_x_min', 'face_x_max', 'face_y_min', 
-                    'face_y_max', 'face_z_min', 'face_z_max']:
-            system.add_equation(face, DirichletBoundaryEquation3D(grid=grid))
-            
-            # 対応する平面方程式を追加
-            if face in ['face_x_min', 'face_x_max']:
-                system.add_equation(face, converter.to_yz(derivative_2d, grid=grid))
-            elif face in ['face_y_min', 'face_y_max']:
-                system.add_equation(face, converter.to_xz(derivative_2d, grid=grid))
-            else:  # face_z_min, face_z_max
-                system.add_equation(face, converter.to_xy(derivative_2d, grid=grid))
+        # 面の方程式設定
+        # x最小面 (i=0)
+        system.add_equations('face_x_min', [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        # 辺と頂点に対しても同様（ディリクレのみ）
-        # 辺の方程式設定
-        for edge in ['edge_x_y_min_z_min', 'edge_x_y_min_z_max', 
-                   'edge_x_y_max_z_min', 'edge_x_y_max_z_max',
-                   'edge_y_x_min_z_min', 'edge_y_x_min_z_max', 
-                   'edge_y_x_max_z_min', 'edge_y_x_max_z_max',
-                   'edge_z_x_min_y_min', 'edge_z_x_min_y_max', 
-                   'edge_z_x_max_y_min', 'edge_z_x_max_y_max']:
-            system.add_equation(edge, DirichletBoundaryEquation3D(grid=grid))
+        # x最大面 (i=nx-1)
+        system.add_equations('face_x_max', [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_x(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        # 頂点の方程式設定
-        for vertex in ['vertex_x_min_y_min_z_min', 'vertex_x_min_y_min_z_max',
-                     'vertex_x_min_y_max_z_min', 'vertex_x_min_y_max_z_max',
-                     'vertex_x_max_y_min_z_min', 'vertex_x_max_y_min_z_max',
-                     'vertex_x_max_y_max_z_min', 'vertex_x_max_y_max_z_max']:
-            system.add_equation(vertex, DirichletBoundaryEquation3D(grid=grid))
+        # y最小面 (j=0)
+        system.add_equations('face_y_min', [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(LeftBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
         
-        return True, False  # ディリクレ境界条件のみ有効
+        # y最大面 (j=ny-1)
+        system.add_equations('face_y_max', [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_y(RightBoundary3rdDerivativeEquation(), grid=grid),
+            converter.to_z(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_z(Internal3rdDerivativeEquation(), grid=grid)
+        ])
+
+        # z最小面 (k=0)
+        system.add_equations('face_z_min', [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(LeftBoundary3rdDerivativeEquation(), grid=grid)
+        ])
+        
+        # z最大面 (k=nz-1)
+        system.add_equations('face_z_max', [
+            DirichletBoundaryEquation3D(grid=grid),
+            converter.to_x(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_y(Internal1stDerivativeEquation(), grid=grid),
+            converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
+            converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary1stDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
+            converter.to_z(RightBoundary3rdDerivativeEquation(), grid=grid)
+        ])
+
+        # 辺と頂点の方程式設定
+        # 全ての辺と頂点にディリクレ境界条件を追加
+        for region in system.equations:
+            if region.startswith('edge_') or region.startswith('vertex_'):
+                system.add_equation(region, DirichletBoundaryEquation3D(grid=grid))
+                
+        return True, False  # ディリクレト境界条件のみ有効

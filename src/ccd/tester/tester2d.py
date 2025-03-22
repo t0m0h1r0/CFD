@@ -9,7 +9,8 @@ import numpy as np
 from core.base.base_tester import CCDTester
 from core.solver.solver2d import CCDSolver2D
 from equation_set.equation_sets import DerivativeEquationSet2D
-from test_function.test_function_factory import TestFunctionFactory
+from test_function.test_function1d import TestFunction1DFactory
+from test_function.test_function2d import TestFunction2DFactory
 
 
 class CCDTester2D(CCDTester):
@@ -61,13 +62,13 @@ class CCDTester2D(CCDTester):
             TestFunction2D: 取得したテスト関数
         """
         # 基本2D関数を検索
-        funcs = TestFunctionFactory.create_standard_2d_functions()
+        funcs = TestFunction2DFactory.create_standard_functions()
         func = next((f for f in funcs if f.name == func_name), None)
         if func:
             return func
         
         # 1D関数から変換を試みる
-        funcs_1d = TestFunctionFactory.create_standard_1d_functions()
+        funcs_1d = TestFunction1DFactory.create_standard_functions()
         func_1d = next((f for f in funcs_1d if f.name == func_name), None)
         if func_1d:
             from test_function.test_function2d import TestFunction2D

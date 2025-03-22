@@ -8,27 +8,27 @@
 from core.base.base_equation_set import EquationSet
 
 # 共通の方程式をインポート
-from equation.poisson import PoissonEquation2D
-from equation.original import OriginalEquation2D
-from equation.boundary import (
-    DirichletBoundaryEquation2D, NeumannBoundaryEquation
-)
-from equation.compact_internal import (
+from equation.dim2.poisson import PoissonEquation2D
+from equation.dim2.original import OriginalEquation2D
+from equation.dim2.boundary import DirichletBoundaryEquation2D
+from equation.dim1.boundary import NeumannBoundaryEquation
+
+from equation.dim1.compact_internal import (
     Internal1stDerivativeEquation,
     Internal2ndDerivativeEquation,
     Internal3rdDerivativeEquation
 )
-from equation.compact_left_boundary import (
+from equation.dim1.compact_left_boundary import (
     LeftBoundary1stDerivativeEquation,
     LeftBoundary2ndDerivativeEquation,
     LeftBoundary3rdDerivativeEquation
 )
-from equation.compact_right_boundary import (
+from equation.dim1.compact_right_boundary import (
     RightBoundary1stDerivativeEquation,
     RightBoundary2ndDerivativeEquation,
     RightBoundary3rdDerivativeEquation
 )
-from equation.equation_converter import Equation1Dto2DConverter
+from equation.converter import Equation1Dto2DConverter
 
 
 class DerivativeEquationSet2D(EquationSet):

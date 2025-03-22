@@ -8,22 +8,22 @@
 from core.base.base_equation_set import EquationSet
 
 # 共通の方程式をインポート
-from equation.poisson import PoissonEquation
-from equation.original import OriginalEquation
-from equation.boundary import (
+from equation.dim1.poisson import PoissonEquation
+from equation.dim1.original import OriginalEquation
+from equation.dim1.boundary import (
     DirichletBoundaryEquation, NeumannBoundaryEquation
 )
-from equation.compact_internal import (
+from equation.dim1.compact_internal import (
     Internal1stDerivativeEquation,
     Internal2ndDerivativeEquation,
     Internal3rdDerivativeEquation
 )
-from equation.compact_left_boundary import (
+from equation.dim1.compact_left_boundary import (
     LeftBoundary1stDerivativeEquation,
     LeftBoundary2ndDerivativeEquation,
     LeftBoundary3rdDerivativeEquation
 )
-from equation.compact_right_boundary import (
+from equation.dim1.compact_right_boundary import (
     RightBoundary1stDerivativeEquation,
     RightBoundary2ndDerivativeEquation,
     RightBoundary3rdDerivativeEquation
