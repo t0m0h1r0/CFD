@@ -238,7 +238,7 @@ class Grid3D(BaseGrid):
     
     def get_boundary_type(self, i, j=None, k=None):
         """
-        境界点のタイプを取得
+        境界点のタイプを取得（修正版）
         
         Args:
             i: x方向インデックス
@@ -261,29 +261,30 @@ class Grid3D(BaseGrid):
         
         # 頂点
         if self.is_vertex_point(i, j, k):
-            x_suffix = '_x_min' if i == 0 else '_x_max'
-            y_suffix = '_y_min' if j == 0 else '_y_max'
-            z_suffix = '_z_min' if k == 0 else '_z_max'
-            return 'vertex' + x_suffix + y_suffix + z_suffix
+            x_part = 'x_min' if i == 0 else 'x_max'
+            y_part = 'y_min' if j == 0 else 'y_max'
+            z_part = 'z_min' if k == 0 else 'z_max'
+            return f'vertex_{x_part}_{y_part}_{z_part}'
         
-        # 辺 - 新しい命名規則に従ってフォーマット
+        # 辺 - 統一された命名規則を使用
         if self.is_edge_point(i, j, k):
-            # エッジの方向を特定
-            if 0 < i < self.nx_points - 1:  # x方向に沿ったエッジ
-                prefix = 'edge_x'
-                y_suffix = '_y_min' if j == 0 else '_y_max'
-                z_suffix = '_z_min' if k == 0 else '_z_max'
-                return prefix + y_suffix + z_suffix
-            elif 0 < j < self.ny_points - 1:  # y方向に沿ったエッジ
-                prefix = 'edge_y'
-                x_suffix = '_x_min' if i == 0 else '_x_max'
-                z_suffix = '_z_min' if k == 0 else '_z_max'
-                return prefix + x_suffix + z_suffix
-            elif 0 < k < self.nz_points - 1:  # z方向に沿ったエッジ
-                prefix = 'edge_z'
-                x_suffix = '_x_min' if i == 0 else '_x_max'
-                y_suffix = '_y_min' if j == 0 else '_y_max'
-                return prefix + x_suffix + y_suffix
+            # x方向に沿ったエッジ
+            if 0 < i < self.nx_points - 1:
+                y_part = 'y_min' if j == 0 else 'y_max'
+                z_part = 'z_min' if k == 0 else 'z_max'
+                return f'edge_x_{y_part}_{z_part}'
+            
+            # y方向に沿ったエッジ
+            elif 0 < j < self.ny_points - 1:
+                x_part = 'x_min' if i == 0 else 'x_max'
+                z_part = 'z_min' if k == 0 else 'z_max'
+                return f'edge_y_{x_part}_{z_part}'
+            
+            # z方向に沿ったエッジ
+            elif 0 < k < self.nz_points - 1:
+                x_part = 'x_min' if i == 0 else 'x_max'
+                y_part = 'y_min' if j == 0 else 'y_max'
+                return f'edge_z_{x_part}_{y_part}'
         
         # 面
         if i == 0:

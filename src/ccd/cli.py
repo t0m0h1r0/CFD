@@ -84,13 +84,18 @@ def create_tester(args):
     return tester
 
 def get_functions(args):
+    """関数を取得"""
     if args.func == "all":
+        # 次元に応じた適切なファクトリーを使用
         if args.dim == 3:
-            funcs = TestFunction1DFactory.create_standard_functions()
-        elif args.dim == 2:
-            funcs = TestFunction2DFactory.create_standard_functions()
-        else:
+            from test_function.test_function3d import TestFunction3DFactory
             funcs = TestFunction3DFactory.create_standard_functions()
+        elif args.dim == 2:
+            from test_function.test_function2d import TestFunction2DFactory
+            funcs = TestFunction2DFactory.create_standard_functions()
+        else:  # args.dim == 1
+            from test_function.test_function1d import TestFunction1DFactory
+            funcs = TestFunction1DFactory.create_standard_functions()
             
         if args.list:
             print(f"\n利用可能な{args.dim}D関数:")
@@ -98,6 +103,7 @@ def get_functions(args):
                 print(f"- {f.name}")
         return funcs
     else:
+        # 単一関数の場合
         tester = create_tester(args)
         return [tester.get_test_function(args.func)]
 
@@ -206,15 +212,19 @@ def run_tests(args):
                 tester.scaling_method = scaling
                 tester.solver_method = solver
                 
+                # 関数名を取得し、テスター次元に適した関数を取得
+                func_name = func.name
+                test_func = tester.get_test_function(func_name)
+                
                 # 実行
                 perturbation_info = ""
                 if args.perturbation is not None and args.verbose:
                     perturbation_info = f", Perturbation: {args.perturbation}"
                 
-                print(f"\nFunction: {func.name}, Scaling: {scaling or 'None'}, Solver: {solver}{perturbation_info}")
+                print(f"\nFunction: {func_name}, Scaling: {scaling or 'None'}, Solver: {solver}{perturbation_info}")
                 try:
                     start_time = time.time()
-                    result = tester.run_test(func)
+                    result = tester.run_test(test_func)  # テスター次元に適した関数を使用
                     elapsed = time.time() - start_time
                     
                     # 結果情報
@@ -225,7 +235,7 @@ def run_tests(args):
                     
                     # 結果データ
                     result_data = {
-                        'function': func.name,
+                        'function': func_name,
                         'scaling': scaling or "None",
                         'solver': solver,
                         'time': elapsed,
@@ -246,22 +256,22 @@ def run_tests(args):
                         visualizer = CCDVisualizer1D(output_dir=args.out)
                         
                     # 標準化されたファイル名を生成
-                    out_filename = generate_filename(args, func.name, solver, scaling, "png")
+                    out_filename = generate_filename(args, func_name, solver, scaling, "png")
                     out_prefix = os.path.basename(out_filename).split('.')[0]
                     
                     if args.dim == 3:
                         visualizer.visualize_solution(
-                            tester.grid, func.name, result["numerical"],
+                            tester.grid, func_name, result["numerical"],
                             result["exact"], result["errors"], prefix=out_prefix
                         )
                     elif args.dim == 2:
                         visualizer.visualize_solution(
-                            tester.grid, func.name, result["numerical"],
+                            tester.grid, func_name, result["numerical"],
                             result["exact"], result["errors"], prefix=out_prefix
                         )
                     else:
                         visualizer.visualize_derivatives(
-                            tester.grid, func.name, result["numerical"],
+                            tester.grid, func_name, result["numerical"],
                             result["exact"], result["errors"], prefix=out_prefix
                         )
                     
