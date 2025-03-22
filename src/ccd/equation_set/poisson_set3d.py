@@ -195,11 +195,10 @@ class PoissonEquationSet3D(EquationSet):
                 LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
@@ -211,11 +210,10 @@ class PoissonEquationSet3D(EquationSet):
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
             converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_y(NeumannBoundaryEquation(), grid=grid),
+            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_y(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             DirichletBoundaryEquation3D(grid=grid),
@@ -234,11 +232,10 @@ class PoissonEquationSet3D(EquationSet):
             converter.to_x(Internal1stDerivativeEquation(), grid=grid),
             converter.to_x(Internal2ndDerivativeEquation(), grid=grid),
             converter.to_x(Internal3rdDerivativeEquation(), grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_y(NeumannBoundaryEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_y(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             DirichletBoundaryEquation3D(grid=grid),
@@ -264,11 +261,10 @@ class PoissonEquationSet3D(EquationSet):
                 RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
@@ -287,11 +283,10 @@ class PoissonEquationSet3D(EquationSet):
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
             converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
             converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
@@ -300,11 +295,10 @@ class PoissonEquationSet3D(EquationSet):
         
         # y方向エッジ (x = 0, z = nz-1)
         edge_y_x_min_z_max_eqs = [
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_x(NeumannBoundaryEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_x(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
@@ -323,11 +317,10 @@ class PoissonEquationSet3D(EquationSet):
         
         # y方向エッジ (x = nx-1, z = 0)
         edge_y_x_max_z_min_eqs = [
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_x(NeumannBoundaryEquation(), grid=grid),
+            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_x(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
@@ -356,11 +349,10 @@ class PoissonEquationSet3D(EquationSet):
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
             converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
             converter.to_y(Internal3rdDerivativeEquation(), grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
@@ -376,11 +368,10 @@ class PoissonEquationSet3D(EquationSet):
                 LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_y(NeumannBoundaryEquation(), grid=grid),
+            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_y(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(Internal1stDerivativeEquation(), grid=grid),
@@ -392,11 +383,10 @@ class PoissonEquationSet3D(EquationSet):
         
         # z方向エッジ (x = 0, y = ny-1)
         edge_z_x_min_y_max_eqs = [
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_x(NeumannBoundaryEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_x(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             DirichletBoundaryEquation3D(grid=grid),
@@ -415,11 +405,10 @@ class PoissonEquationSet3D(EquationSet):
         
         # z方向エッジ (x = nx-1, y = 0)
         edge_z_x_max_y_min_eqs = [
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_x(NeumannBoundaryEquation(), grid=grid),
+            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_x(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             DirichletBoundaryEquation3D(grid=grid),
@@ -445,11 +434,10 @@ class PoissonEquationSet3D(EquationSet):
                 RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_y(NeumannBoundaryEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_y(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(Internal1stDerivativeEquation(), grid=grid),
@@ -469,18 +457,16 @@ class PoissonEquationSet3D(EquationSet):
                 LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_y(NeumannBoundaryEquation(), grid=grid),
+            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_y(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
@@ -489,11 +475,10 @@ class PoissonEquationSet3D(EquationSet):
         
         # 頂点 (x = 0, y = 0, z = nz-1)
         vertex_x_min_y_min_z_max_eqs = [
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_x(NeumannBoundaryEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_x(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             DirichletBoundaryEquation3D(grid=grid),
@@ -503,11 +488,10 @@ class PoissonEquationSet3D(EquationSet):
                 LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
@@ -516,18 +500,16 @@ class PoissonEquationSet3D(EquationSet):
         
         # 頂点 (x = 0, y = ny-1, z = 0)
         vertex_x_min_y_max_z_min_eqs = [
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_x(NeumannBoundaryEquation(), grid=grid),
+            converter.to_x(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_x(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_y(NeumannBoundaryEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_y(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             DirichletBoundaryEquation3D(grid=grid),
@@ -550,18 +532,16 @@ class PoissonEquationSet3D(EquationSet):
                 LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_y(NeumannBoundaryEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_y(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
@@ -570,11 +550,10 @@ class PoissonEquationSet3D(EquationSet):
         
         # 頂点 (x = nx-1, y = 0, z = 0)
         vertex_x_max_y_min_z_min_eqs = [
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_x(NeumannBoundaryEquation(), grid=grid),
+            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_x(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             DirichletBoundaryEquation3D(grid=grid),
@@ -584,11 +563,10 @@ class PoissonEquationSet3D(EquationSet):
                 LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
@@ -597,18 +575,16 @@ class PoissonEquationSet3D(EquationSet):
         
         # 頂点 (x = nx-1, y = 0, z = nz-1)
         vertex_x_max_y_min_z_max_eqs = [
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_x(NeumannBoundaryEquation(), grid=grid),
+            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_x(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_y(NeumannBoundaryEquation(), grid=grid),
+            converter.to_y(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_y(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             DirichletBoundaryEquation3D(grid=grid),
@@ -631,18 +607,16 @@ class PoissonEquationSet3D(EquationSet):
                 RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_y(NeumannBoundaryEquation(), grid=grid),
+            converter.to_y(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_y(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(LeftBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 LeftBoundary1stDerivativeEquation()+
-                LeftBoundary2ndDerivativeEquation()+ 
                 LeftBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
@@ -651,11 +625,10 @@ class PoissonEquationSet3D(EquationSet):
         
         # 頂点 (x = nx-1, y = ny-1, z = nz-1)
         vertex_x_max_y_max_z_max_eqs = [
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_x(NeumannBoundaryEquation(), grid=grid),
+            converter.to_x(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_x(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             DirichletBoundaryEquation3D(grid=grid),
@@ -665,11 +638,10 @@ class PoissonEquationSet3D(EquationSet):
                 RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
-            DirichletBoundaryEquation3D(grid=grid),
             converter.to_z(NeumannBoundaryEquation(), grid=grid),
+            converter.to_z(RightBoundary2ndDerivativeEquation(), grid=grid),
             converter.to_z(
                 RightBoundary1stDerivativeEquation()+
-                RightBoundary2ndDerivativeEquation()+ 
                 RightBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
