@@ -359,13 +359,18 @@ class CCDVisualizer3D(BaseVisualizer):
         
         # 誤差が非常に小さい場合はログスケールを使用
         if np.max(error_slice) < 1e-5 and np.max(error_slice) > 0:
-            norm = LogNorm(vmin=max(np.min(error_slice[error_slice > 0]), 1e-15), 
-                         vmax=np.max(error_slice))
+            # 0値を最小の正の値に置き換えてログスケールの警告を防ぐ
+            error_slice_plot = error_slice.copy()
+            min_positive = np.min(error_slice_plot[error_slice_plot > 0])
+            error_slice_plot[error_slice_plot <= 0] = min_positive / 10.0
+            
+            norm = LogNorm(vmin=min_positive / 10.0, vmax=np.max(error_slice_plot))
+            im4 = ax4.contourf(X_np[:, :, mid_z], Y_np[:, :, mid_z], error_slice_plot, 
+                             50, cmap=self.cmap_error, norm=norm)
         else:
             norm = Normalize(vmin=0, vmax=np.max(error_slice))
-            
-        im4 = ax4.contourf(X_np[:, :, mid_z], Y_np[:, :, mid_z], error_slice, 
-                         50, cmap=self.cmap_error, norm=norm)
+            im4 = ax4.contourf(X_np[:, :, mid_z], Y_np[:, :, mid_z], error_slice, 
+                             50, cmap=self.cmap_error, norm=norm)
         
         # 誤差の等高線
         if np.max(error_slice) > 0:
