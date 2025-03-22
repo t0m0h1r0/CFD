@@ -2,12 +2,13 @@
 高精度コンパクト差分法 (CCD) の1次元結果可視化
 
 このモジュールは、1次元CCDソルバーの計算結果を可視化するための
-クラスと機能を提供します。可視化結果を統合し、一つのファイルに出力します。
+クラスと機能を提供します。数値解と誤差分布を効率的に一つのダッシュボードに表示します。
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import List
+from matplotlib.gridspec import GridSpec
+from typing import List, Dict, Tuple, Optional
 
 from core.base.base_visualizer import BaseVisualizer
 
@@ -16,17 +17,12 @@ class CCDVisualizer1D(BaseVisualizer):
     """CCDソルバーの1D結果を可視化するクラス"""
 
     def __init__(self, output_dir="results"):
-        """
-        初期化
-        
-        Args:
-            output_dir: 出力ディレクトリパス
-        """
+        """初期化"""
         super().__init__(output_dir)
 
     def visualize_derivatives(self, grid, function_name, numerical, exact, errors, prefix="", save=True, show=False, dpi=150):
         """
-        導関数の結果を可視化 (統合版)
+        導関数の結果を可視化 (統合ダッシュボード形式)
         
         Args:
             grid: Gridオブジェクト
@@ -42,100 +38,42 @@ class CCDVisualizer1D(BaseVisualizer):
         Returns:
             出力ファイルパス
         """
-        x = grid.get_points()
+        # グリッドデータ
+        x_np = self._to_numpy(grid.get_points())
         n_points = grid.n_points
-        titles = ["$\\psi$", "$\\psi'$", "$\\psi''$", "$\\psi'''$"]
-
-        # NumPy配列に変換
-        x_np = self._to_numpy(x)
-
-        # 1つの大きな図を作成 (3行2列: 上2行が微分結果、下段が誤差サマリー)
-        fig = plt.figure(figsize=(14, 12))
         
-        # グリッド定義 - 上部2x2のグリッド(微分結果用)と下部1x1(誤差サマリー用)
-        gs = plt.GridSpec(3, 2, height_ratios=[2, 2, 1.5])
-
-        # 微分結果の表示
+        # 成分名
+        component_names = self.get_error_types()
+        
+        # ダッシュボード作成 (3行2列)
+        fig = plt.figure(figsize=(12, 10))
+        gs = GridSpec(3, 2, height_ratios=[1, 1, 0.7])
+        
+        # 各導関数の可視化
         for i in range(4):
             row, col = divmod(i, 2)
             ax = fig.add_subplot(gs[row, col])
             
-            # データをNumPy配列に変換
+            # データ変換
             exact_data = self._to_numpy(exact[i])
             num_data = self._to_numpy(numerical[i])
-            err_data = np.abs(num_data - exact_data)
-
-            # 各成分のプロット
-            ax.plot(x_np, exact_data, "b-", label="Exact")
-            ax.plot(x_np, num_data, "r--", label="Numerical")
             
-            # 誤差を薄い緑色で表示
-            ax_err = ax.twinx()
-            ax_err.semilogy(x_np, err_data, "g-", alpha=0.3, label="Error")
-            ax_err.set_ylabel("Error (log scale)", color="g")
-            ax_err.tick_params(axis="y", labelcolor="g")
-            ax_err.grid(False)
-            
-            # 最大誤差をプロット上に表示
-            max_err = errors[i]
-            max_err_x = x_np[np.argmax(err_data)]
-            max_err_y = err_data[np.argmax(err_data)]
-            ax_err.plot(max_err_x, max_err_y, "go", ms=5)
-            ax_err.annotate(f"Max: {max_err:.2e}", 
-                           xy=(max_err_x, max_err_y),
-                           xytext=(10, 10),
-                           textcoords="offset points",
-                           arrowprops=dict(arrowstyle="->", color="g", alpha=0.5))
-            
-            # タイトルとラベル
-            ax.set_title(f"{titles[i]} (Max Error: {errors[i]:.2e})")
-            ax.set_xlabel("x")
-            ax.set_ylabel("Value")
-            
-            # 凡例
-            lines1, labels1 = ax.get_legend_handles_labels()
-            lines2, labels2 = ax_err.get_legend_handles_labels()
-            ax.legend(lines1 + lines2, labels1 + labels2, loc="best")
-            
-            ax.grid(True)
-
-        # 誤差サマリーのプロット (下段)
+            # 解と誤差を同時に可視化
+            self._plot_solution_with_error(ax, x_np, exact_data, num_data, component_names[i], errors[i])
+        
+        # 誤差サマリーの作成
         ax_summary = fig.add_subplot(gs[2, :])
+        self._plot_error_summary(ax_summary, component_names, errors)
         
-        x_pos = np.arange(len(titles))
-        bars = ax_summary.bar(x_pos, errors)
-        
-        # 対数スケール（ゼロを小さな値に置き換え）
-        error_values = errors.copy()
-        for i, err in enumerate(error_values):
-            if err == 0:
-                error_values[i] = self.min_log_value
-        
-        ax_summary.set_yscale('log')
-        ax_summary.set_title(f"Error Summary")
-        ax_summary.set_xlabel('Component')
-        ax_summary.set_ylabel('Maximum Error (log scale)')
-        ax_summary.set_xticks(x_pos)
-        ax_summary.set_xticklabels(titles)
-        ax_summary.grid(True, which='both', linestyle='--', alpha=0.7)
-        
-        # バーにラベルを追加
-        for bar, err in zip(bars, errors):
-            height = bar.get_height()
-            ax_summary.annotate(f'{err:.2e}',
-                            xy=(bar.get_x() + bar.get_width() / 2, height),
-                            xytext=(0, 3),
-                            textcoords="offset points",
-                            ha='center', va='bottom')
-
         # 全体のタイトル
         plt.suptitle(f"{function_name} Function Analysis ({n_points} points)", fontsize=16)
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0, 1, 0.96])  # タイトル用の余白確保
 
+        # 保存と表示
         filepath = ""
         if save:
             filepath = self.generate_filename(function_name, n_points, prefix)
-            plt.savefig(filepath, dpi=dpi)
+            plt.savefig(filepath, dpi=dpi, bbox_inches='tight')
 
         if show:
             plt.show()
@@ -143,6 +81,99 @@ class CCDVisualizer1D(BaseVisualizer):
             plt.close(fig)
 
         return filepath
+    
+    def _plot_solution_with_error(self, ax, x, exact, numerical, title, max_error):
+        """
+        解と誤差を単一のグラフに効率的に可視化
+        
+        Args:
+            ax: プロット用のAxis
+            x: x座標値
+            exact: 厳密解データ
+            numerical: 数値解データ
+            title: プロットタイトル
+            max_error: 最大誤差値
+        """
+        # 左側のY軸: 解の値
+        ax.plot(x, exact, "b-", label="Exact", linewidth=1.5)
+        ax.plot(x, numerical, "r--", label="Numerical", linewidth=1.5)
+        ax.set_xlabel("x")
+        ax.set_ylabel("Value")
+        
+        # 右側のY軸: 誤差 (対数スケール)
+        ax2 = ax.twinx()
+        error = np.abs(numerical - exact)
+        
+        # エラーが0の場合の処理
+        min_error = max(np.min(error[error > 0]) if np.any(error > 0) else 1e-15, 1e-15)
+        plot_error = np.maximum(error, min_error)
+        
+        # 誤差プロット (塗りつぶし付き)
+        ax2.semilogy(x, plot_error, "g-", alpha=0.3, label="Error")
+        ax2.fill_between(x, min_error, plot_error, color='green', alpha=0.1)
+        ax2.set_ylabel("Error (log)", color="g")
+        ax2.tick_params(axis="y", labelcolor="g")
+        
+        # 最大誤差点をマーク
+        max_err_idx = np.argmax(error)
+        max_err_x = x[max_err_idx]
+        max_err_y = error[max_err_idx]
+        
+        # 最大誤差値が0でない場合のみマーカー表示
+        if max_err_y > 0:
+            ax2.plot(max_err_x, max_err_y, "go", ms=4)
+            ax2.annotate(f"Max", 
+                      xy=(max_err_x, max_err_y),
+                      xytext=(5, 5),
+                      textcoords="offset points",
+                      fontsize=8,
+                      color="g")
+        
+        # タイトル (最大誤差含む)
+        ax.set_title(f"{title} (Error: {max_error:.2e})")
+        
+        # 凡例
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(lines1 + lines2, labels1 + labels2, loc="best", fontsize=9)
+        
+        # グリッド
+        ax.grid(True, alpha=0.3)
+    
+    def _plot_error_summary(self, ax, component_names, errors):
+        """
+        誤差サマリーグラフを描画
+        
+        Args:
+            ax: プロット用のAxis
+            component_names: 成分名リスト
+            errors: 各成分の誤差値
+        """
+        x_pos = np.arange(len(component_names))
+        
+        # 0値を処理
+        plot_errors = np.array(errors).copy()
+        plot_errors[plot_errors == 0] = self.min_log_value
+        
+        # バープロット
+        bars = ax.bar(x_pos, plot_errors)
+        ax.set_yscale('log')
+        ax.set_title("Error Summary")
+        ax.set_xlabel('Component')
+        ax.set_ylabel('Maximum Error (log scale)')
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(component_names)
+        ax.grid(True, which='both', linestyle='--', alpha=0.5)
+        
+        # 値のアノテーション
+        for i, (bar, err) in enumerate(zip(bars, errors)):
+            height = max(err, self.min_log_value)
+            ax.annotate(
+                f'{err:.2e}',
+                xy=(i, height * 1.1),
+                ha='center', va='bottom',
+                fontsize=10
+            )
 
     def visualize_grid_convergence(self, function_name, grid_sizes, results, prefix="", save=True, show=False, dpi=150):
         """
@@ -160,54 +191,57 @@ class CCDVisualizer1D(BaseVisualizer):
         Returns:
             成功したかどうかのブール値
         """
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-        titles = ["$\\psi$", "$\\psi'$", "$\\psi''$", "$\\psi'''$"]
+        component_names = self.get_error_types()
+        
+        # 2x2のレイアウト
+        fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+        axes = axes.flatten()
 
-        # グリッド間隔を計算（[-1, 1]の範囲を仮定）
+        # グリッド間隔計算
         grid_spacings = [2.0 / (n - 1) for n in grid_sizes]
 
-        for i, (ax, title) in enumerate(zip(axes.flat, titles)):
-            if i < len(titles):
-                # グリッドサイズごとの該当成分のエラーを取得
-                errors = [results[n][i] for n in grid_sizes]
+        for i, (ax, name) in enumerate(zip(axes, component_names)):
+            # 各グリッドサイズでの誤差
+            errors = [results[n][i] for n in grid_sizes]
+            
+            # 全て0の場合はスキップ
+            if all(err == 0 for err in errors):
+                ax.text(0.5, 0.5, f"All errors are 0", 
+                       ha='center', va='center', transform=ax.transAxes)
+                continue
                 
-                # エラーが全て0の場合はグラフを描画しない
-                if all(err == 0 for err in errors):
-                    ax.text(0.5, 0.5, f"All errors are 0 for {title}", 
-                           horizontalalignment='center', verticalalignment='center',
-                           transform=ax.transAxes)
-                    continue
-                    
-                # エラーが0の場合は小さな値に置き換え（対数スケール用）
-                plot_errors = [max(err, self.min_log_value) for err in errors]
+            # 対数プロットのための前処理
+            plot_errors = [max(err, self.min_log_value) for err in errors]
+            
+            # エラープロット
+            ax.loglog(grid_spacings, plot_errors, 'o-', label=name, linewidth=1.5)
+            
+            # 収束次数の参照線
+            if min(plot_errors) > 0:
+                x_ref = np.array([min(grid_spacings), max(grid_spacings)])
                 
-                # 対数スケールで誤差をプロット
-                ax.loglog(grid_spacings, plot_errors, 'o-', label=f"Error ({title})")
-                
-                # 基準となる傾きを示す参照線の追加
-                x_range = [min(grid_spacings), max(grid_spacings)]
-                
-                # 2次、4次、6次の収束線を描画
-                for order, style, color in zip([2, 4, 6], ['--', '-.', ':'], ['r', 'g', 'b']):
-                    # 参照線の位置を最後のポイントに合わせる
-                    ref_y0 = plot_errors[-1] * (x_range[-1] / x_range[-1]) ** order
-                    y_ref = [ref_y0 * (x / x_range[-1]) ** order for x in x_range]
-                    ax.loglog(x_range, y_ref, style, color=color, label=f"O(h^{order})")
-                
-                ax.set_title(f"{title} Error Convergence")
-                ax.set_xlabel("Grid Spacing (h)")
-                ax.set_ylabel("Error")
-                ax.grid(True)
-                ax.legend()
+                # 重要な2次と4次の収束線のみ表示
+                for order, style, color in zip([2, 4], ['--', '-.'], ['r', 'g']):
+                    # 最後の点に合わせて参照線をスケーリング
+                    scale = plot_errors[-1] / (grid_spacings[-1] ** order)
+                    y_ref = scale * x_ref ** order
+                    ax.loglog(x_ref, y_ref, style, color=color, label=f"O(h^{order})")
+            
+            ax.set_title(f"{name} Convergence")
+            ax.set_xlabel("Grid Spacing (h)")
+            ax.set_ylabel("Error")
+            ax.grid(True, which='both', alpha=0.3)
+            ax.legend(fontsize=9)
 
-        plt.suptitle(f"Grid Convergence for {function_name}")
-        plt.tight_layout()
+        # 全体タイトル
+        plt.suptitle(f"Grid Convergence: {function_name}")
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
 
+        # 保存と表示
         filepath = ""
         if save:
-            if prefix:
-                filepath = f"{self.output_dir}/{prefix}_{function_name.lower()}_grid_convergence.png"
-            else:
+            filepath = f"{self.output_dir}/{prefix}_{function_name.lower()}_grid_convergence.png"
+            if not prefix:
                 filepath = f"{self.output_dir}/{function_name.lower()}_grid_convergence.png"
             plt.savefig(filepath, dpi=dpi)
 
@@ -219,19 +253,9 @@ class CCDVisualizer1D(BaseVisualizer):
         return True
 
     def get_dimension_label(self) -> str:
-        """
-        次元ラベルを返す
-        
-        Returns:
-            "1D"
-        """
+        """次元ラベルを返す"""
         return "1D"
     
     def get_error_types(self) -> List[str]:
-        """
-        エラータイプのリストを返す
-        
-        Returns:
-            1D用のエラータイプリスト
-        """
+        """エラータイプのリストを返す"""
         return ["ψ", "ψ'", "ψ''", "ψ'''"]
