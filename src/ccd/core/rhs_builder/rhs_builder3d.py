@@ -230,8 +230,8 @@ class RHSBuilder3D(RHSBuilder):
             i, j, k: 格子点のインデックス
             boundary_values: 境界条件の値の辞書
         """
-        # 方向付きノイマン境界条件の適用
-        bc_key = f"{location}_neumann_{direction}"
+        # 修正: 正しいキーフォーマットを使用（方向サフィックスを削除）
+        bc_key = f"{location}_neumann"
         if bc_key in boundary_values and boundary_values[bc_key] is not None:
             boundary_value = self._get_boundary_value_for_3d(boundary_values[bc_key], i, j, k, location)
             if boundary_value is not None:

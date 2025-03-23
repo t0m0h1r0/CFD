@@ -258,7 +258,7 @@ class CCDVisualizer3D(BaseVisualizer):
         ax.set_title(f"3D Visualization (Max Error: {max_error:.2e})")
         
         # 表示角度の設定
-        ax.view_init(elev=30, azim=45)
+        ax.view_init(elev=15, azim=60)
         
         # カラーバー
         sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax))
