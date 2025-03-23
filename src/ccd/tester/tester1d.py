@@ -170,6 +170,12 @@ class CCDTester1D(CCDTester):
                 'x0': self.exact_solution  # 摂動が加えられた初期値を使用
             }
             
+            # x0のサイズを確認
+            x0_shape = solve_options['x0'].shape
+            expected_shape = (self.grid.n_points * 4,)  # [ψ, ψ', ψ'', ψ'''] x n_points
+            if x0_shape != expected_shape:
+                print(f"警告: x0のサイズが期待値と異なります: {x0_shape} vs {expected_shape}")
+            
             # 解計算（カスタムオプション付き）
             psi, psi_prime, psi_second, psi_third = self.solver.solve_with_options(
                 analyze_before_solve=False, 

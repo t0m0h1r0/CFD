@@ -168,7 +168,7 @@ def generate_filename(args, func_name, solver, scaling, extension="png"):
     else:
         size_str = f"{args.nx}"
         
-    perturbation_str = f"_pert{args.perturbation}" if args.perturbation is not None else ""
+    perturbation_str = f"_pert{args.perturbation*100}" if args.perturbation is not None else ""
     
     # 標準ファイル名パターン: バックエンド_解法_関数_スケーリング_サイズ_摂動
     filename = f"{args.backend}_{solver}_{func_name}_{scaling_str}_{size_str}{perturbation_str}.{extension}"
