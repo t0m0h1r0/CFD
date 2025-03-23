@@ -6,13 +6,15 @@
 """
 
 # 明示的にエクスポートするクラスとモジュールを指定
-__all__ = ['LinearSolver', 'CPULinearSolver', 'GPULinearSolver', 'JAXLinearSolver', 'create_solver']
+__all__ = ['LinearSolver', 'CPULinearSolver', 'GPULinearSolver', 'JAXLinearSolver', 
+           'OptimizedCPULinearSolver', 'create_solver']
 
 # ベースクラスと実装クラスをインポート
 from .base import LinearSolver
 from .cpu_solver import CPULinearSolver
 from .gpu_solver import GPULinearSolver
 from .jax_solver import JAXLinearSolver
+from .opt_solver import OptimizedGPULinearSolver
 
 def create_solver(A, enable_dirichlet=False, enable_neumann=False, scaling_method=None, backend="cuda"):
     """
@@ -23,7 +25,7 @@ def create_solver(A, enable_dirichlet=False, enable_neumann=False, scaling_metho
         enable_dirichlet: ディリクレ境界条件を使用するか
         enable_neumann: ノイマン境界条件を使用するか
         scaling_method: スケーリング手法名（オプション）
-        backend: 計算バックエンド ("cpu", "cuda", "jax")
+        backend: 計算バックエンド ("cpu", "cuda", "jax", "opt")
         
     Returns:
         LinearSolver: 適切なソルバーインスタンス
@@ -33,6 +35,8 @@ def create_solver(A, enable_dirichlet=False, enable_neumann=False, scaling_metho
         solver_class = GPULinearSolver
     elif backend == "jax":
         solver_class = JAXLinearSolver
+    elif backend == "opt":
+        solver_class = OptimizedGPULinearSolver
     else:
         solver_class = CPULinearSolver
     

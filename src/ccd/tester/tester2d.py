@@ -215,6 +215,12 @@ class CCDTester2D(CCDTester):
                 'x0': self.exact_solution  # 摂動が加えられた初期値を使用
             }
             
+            # x0のサイズを確認
+            x0_shape = solve_options['x0'].shape
+            expected_shape = (nx * ny * 7,)  # [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy] x (nx * ny)
+            if x0_shape != expected_shape:
+                print(f"警告: x0のサイズが期待値と異なります: {x0_shape} vs {expected_shape}")
+            
             # 解計算（カスタムオプション付き）
             sol = self.solver.solve_with_options(
                 analyze_before_solve=False, 

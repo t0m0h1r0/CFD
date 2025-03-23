@@ -59,9 +59,33 @@ class JAXLinearSolver(LinearSolver):
         self.solvers = self.cpu_solver.solvers
     
     def solve(self, b, method=None, options=None):
-        """JAXが使えない場合はCPUソルバーにフォールバック"""
+        """
+        Ax=b を解く（JAXが使えない場合はCPUソルバーにフォールバック）
+        
+        Args:
+            b: 右辺ベクトル
+            method: 解法メソッド名（設定済みのself.solver_methodを上書き）
+            options: 解法オプション（設定済みのself.solver_optionsを上書き）
+            
+        Returns:
+            解ベクトル x
+        """
         if not self.has_jax:
             return self.cpu_solver.solve(b, method, options)
+        
+        # オプションがある場合、x0をJAX配列に変換
+        if options and "x0" in options:
+            # 元のオプションを変更しないようにコピー
+            options = options.copy()
+            try:
+                # x0をJAX配列に変換
+                options["x0"] = self._preprocess_vector(options["x0"])
+                if hasattr(options["x0"], "shape"):
+                    print(f"JAX x0を設定しました (shape: {options['x0'].shape})")
+            except Exception as e:
+                print(f"x0変換エラー: {e}")
+                # 変換に失敗した場合は削除
+                del options["x0"]
         
         # 通常の処理
         return super().solve(b, method, options)
@@ -142,11 +166,18 @@ class JAXLinearSolver(LinearSolver):
         if 'jax' in str(type(b)):
             return b
             
-        # NumPy/CuPy配列からJAX配列に変換
-        if hasattr(b, 'get'):  # CuPy
-            return self.jnp.array(b.get())
-        else:
-            return self.jnp.array(b)
+        try:
+            # NumPy/CuPy配列からJAX配列に変換
+            if hasattr(b, 'get'):  # CuPy
+                return self.jnp.array(b.get())
+            else:
+                return self.jnp.array(b)
+        except Exception as e:
+            print(f"JAXベクトル変換エラー: {e}")
+            # CPUソルバーにフォールバック
+            self.has_jax = False
+            self._init_cpu_fallback()
+            return b
     
     def _apply_scaling_to_b(self, b):
         """右辺ベクトルにスケーリングを適用"""
@@ -233,11 +264,8 @@ class JAXLinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         restart = options.get("restart", min(20, max(5, b.size // 20)))
         
-        # 初期解ベクトルの安全な処理
-        x0 = options.get("x0")
-        x0 = (self.jnp.asarray(x0) if x0 is not None else 
-            self.jnp.zeros_like(b) if hasattr(b, 'size') and hasattr(x0, 'size') and x0.size != b.size else 
-            self.jnp.zeros_like(b))
+        # 初期解ベクトルの取得
+        x0 = options.get("x0", self.jnp.zeros_like(b))
         
         # GMRES実行（オプションを最適化）
         result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, restart=restart)
@@ -249,6 +277,8 @@ class JAXLinearSolver(LinearSolver):
         tol = options.get("tol", 1e-10)
         atol = options.get("atol", tol)
         maxiter = options.get("maxiter", 1000)
+        
+        # 初期解ベクトルの取得
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
         # CG実行
@@ -261,6 +291,8 @@ class JAXLinearSolver(LinearSolver):
         tol = options.get("tol", 1e-10)
         atol = options.get("atol", tol)
         maxiter = options.get("maxiter", 1000)
+        
+        # 初期解ベクトルの取得
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
         # BiCGSTAB実行

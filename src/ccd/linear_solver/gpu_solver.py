@@ -55,9 +55,33 @@ class GPULinearSolver(LinearSolver):
         self.solvers = self.cpu_solver.solvers
     
     def solve(self, b, method=None, options=None):
-        """CuPyが使えない場合はCPUソルバーにフォールバック"""
+        """
+        Ax=b を解く（CuPyが使えない場合はCPUソルバーにフォールバック）
+        
+        Args:
+            b: 右辺ベクトル
+            method: 解法メソッド名（設定済みのself.solver_methodを上書き）
+            options: 解法オプション（設定済みのself.solver_optionsを上書き）
+            
+        Returns:
+            解ベクトル x
+        """
         if not self.has_cupy:
             return self.cpu_solver.solve(b, method, options)
+        
+        # オプションがある場合、x0をCuPy配列に変換
+        if options and "x0" in options:
+            # 元のオプションを変更しないようにコピー
+            options = options.copy()
+            try:
+                # x0をCuPy配列に変換
+                options["x0"] = self._preprocess_vector(options["x0"])
+                if hasattr(options["x0"], "shape"):
+                    print(f"CuPy x0を設定しました (shape: {options['x0'].shape})")
+            except Exception as e:
+                print(f"x0変換エラー: {e}")
+                # 変換に失敗した場合は削除
+                del options["x0"]
         
         # 通常の処理
         return super().solve(b, method, options)
@@ -135,8 +159,16 @@ class GPULinearSolver(LinearSolver):
         if hasattr(b, 'device') and str(type(b)).find('cupy') >= 0:
             return b
         
-        # NumPy配列からCuPy配列に変換
-        return self.cp.array(b)
+        # NumPy配列やメモリビューからCuPy配列に変換
+        try:
+            # メモリビューやndarrayからの変換
+            return self.cp.array(b)
+        except Exception as e:
+            print(f"ベクトル変換エラー: {e}")
+            # CPUソルバーにフォールバック
+            self.has_cupy = False
+            self._init_cpu_fallback()
+            return b
     
     def _apply_scaling_to_b(self, b):
         """右辺ベクトルにスケーリングを適用"""
@@ -228,11 +260,8 @@ class GPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         restart = options.get("restart", min(200, max(20, b.size // 10)))
         
-        # 初期解ベクトルの安全な処理
-        x0 = options.get("x0")
-        x0 = (self.cp.asarray(x0) if x0 is not None else 
-            self.cp.zeros_like(b) if hasattr(b, 'size') and hasattr(x0, 'size') and x0.size != b.size else 
-            self.cp.zeros_like(b))
+        # 初期解ベクトルの取得
+        x0 = options.get("x0", self.cp.zeros_like(b))
         
         # GMRES実行（オプションを最適化）
         result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
@@ -243,6 +272,8 @@ class GPULinearSolver(LinearSolver):
         options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
+        
+        # 初期解ベクトル
         x0 = options.get("x0", self.cp.zeros_like(b))
         
         # CG実行
@@ -254,6 +285,8 @@ class GPULinearSolver(LinearSolver):
         options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
+        
+        # 初期解ベクトル
         x0 = options.get("x0", self.cp.zeros_like(b))
         
         # CGS実行
@@ -265,6 +298,8 @@ class GPULinearSolver(LinearSolver):
         options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
+        
+        # 初期解ベクトル
         x0 = options.get("x0", self.cp.zeros_like(b))
         
         # MINRES実行

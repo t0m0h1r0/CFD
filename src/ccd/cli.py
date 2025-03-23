@@ -37,7 +37,7 @@ def parse_args():
     # ソルバー
     parser.add_argument("--solver", type=str, default='direct', help="解法('all'=全解法)")
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法('all'=全手法)")
-    parser.add_argument("--backend", type=str, choices=['cpu', 'cuda', 'jax'], default='cpu', help="計算バックエンド")
+    parser.add_argument("--backend", type=str, choices=['cpu', 'cuda', 'jax', 'opt'], default='cpu', help="計算バックエンド")
     parser.add_argument("--tol", type=float, default=1e-10, help="許容誤差")
     parser.add_argument("--maxiter", type=int, default=1000, help="最大反復数")
     parser.add_argument("--perturbation", type=float, default=None, 
@@ -168,7 +168,7 @@ def generate_filename(args, func_name, solver, scaling, extension="png"):
     else:
         size_str = f"{args.nx}"
         
-    perturbation_str = f"_pert{args.perturbation}" if args.perturbation is not None else ""
+    perturbation_str = f"_pert{args.perturbation*100}" if args.perturbation is not None else ""
     
     # 標準ファイル名パターン: バックエンド_解法_関数_スケーリング_サイズ_摂動
     filename = f"{args.backend}_{solver}_{func_name}_{scaling_str}_{size_str}{perturbation_str}.{extension}"
