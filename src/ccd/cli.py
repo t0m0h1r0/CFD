@@ -594,11 +594,8 @@ def main():
                         # 行列システム可視化（--visualizeが指定された場合のみ）
                         if args.visualize:
                             try:
-                                vis_output = tester.visualize_matrix_system(
-                                    test_func, 
-                                    title=f"{function_name}_{equation_name}_{solver_name}", 
-                                    scaling=scaling_to_use
-                                )
+                                # 元のメソッドシグネチャに合わせる
+                                vis_output = tester.visualize_matrix_system(test_func)
                                 print(f"  行列システムの可視化: {vis_output}")
                             except Exception as e:
                                 print(f"  行列可視化エラー: {e}")
