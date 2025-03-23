@@ -37,7 +37,7 @@ def parse_args():
     # ソルバー
     parser.add_argument("--solver", type=str, default='direct', help="解法('all'=全解法)")
     parser.add_argument("--scaling", type=str, default=None, help="スケーリング手法('all'=全手法)")
-    parser.add_argument("--backend", type=str, choices=['cpu', 'cuda', 'jax'], default='cpu', help="計算バックエンド")
+    parser.add_argument("--backend", type=str, choices=['cpu', 'cuda', 'jax', 'opt'], default='cpu', help="計算バックエンド")
     parser.add_argument("--tol", type=float, default=1e-10, help="許容誤差")
     parser.add_argument("--maxiter", type=int, default=1000, help="最大反復数")
     parser.add_argument("--perturbation", type=float, default=None, 
