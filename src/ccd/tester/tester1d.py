@@ -162,12 +162,12 @@ class CCDTester1D(CCDTester):
 
         # 厳密解を初期値として使用する場合は、直接オプションを渡す
         if self.perturbation_level is not None and self.solver_method != 'direct' and self.exact_solution is not None:
-            print("直接x0を渡してsolve()を呼び出します")
-            # オプションを作成して厳密解（摂動あり/なし）を含める
+            print("摂動が加えられた初期値を使用してsolve()を呼び出します")
+            # オプションを作成して厳密解（摂動あり）を含める
             solve_options = {
                 'tol': self.solver_options.get('tol', 1e-10),
                 'maxiter': self.solver_options.get('maxiter', 1000),
-                'x0': self.exact_solution  # 厳密解を直接渡す
+                'x0': self.exact_solution  # 摂動が加えられた初期値を使用
             }
             
             # 解計算（カスタムオプション付き）

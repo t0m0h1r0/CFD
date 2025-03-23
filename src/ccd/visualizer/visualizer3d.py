@@ -2,13 +2,16 @@
 高精度コンパクト差分法 (CCD) の3次元結果可視化
 
 このモジュールは、3次元CCDソルバーの計算結果を可視化するための
-クラスと機能を提供します。
+クラスと機能を提供します。効率的な可視化と情報量の充実に重点を置いています。
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm, Normalize
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
+from matplotlib.colors import LogNorm, Normalize
+from matplotlib.gridspec import GridSpec
+from skimage import measure
 from typing import List, Optional, Tuple, Dict
 
 from core.base.base_visualizer import BaseVisualizer
@@ -18,33 +21,15 @@ class CCDVisualizer3D(BaseVisualizer):
     """CCDソルバーの3D結果を可視化するクラス"""
     
     def __init__(self, output_dir="results_3d"):
-        """
-        初期化
-        
-        Args:
-            output_dir: 出力ディレクトリパス
-        """
+        """初期化"""
         super().__init__(output_dir)
         # カラーマップ設定
-        self.cmap_solution = 'viridis'
-        self.cmap_error = 'hot'
-        # 解コンポーネント名
-        self.solution_names = ["ψ", "ψ_x", "ψ_y", "ψ_z", "ψ_xx", "ψ_yy", "ψ_zz", "ψ_xxx", "ψ_yyy", "ψ_zzz"]
+        self.cmap_solution = 'viridis'  # 解用
+        self.cmap_error = 'hot'         # 誤差用
+        self.cmap_gradient = 'coolwarm' # 勾配用
     
     def generate_filename(self, func_name, nx_points, ny_points=None, nz_points=None, prefix=""):
-        """
-        ファイル名を生成
-        
-        Args:
-            func_name: 関数名
-            nx_points: x方向の格子点数
-            ny_points: y方向の格子点数（Noneの場合はnx_pointsと同じ）
-            nz_points: z方向の格子点数（Noneの場合はnx_pointsと同じ）
-            prefix: 接頭辞
-            
-        Returns:
-            生成されたファイルパス
-        """
+        """ファイル名を生成"""
         if ny_points is None:
             ny_points = nx_points
         if nz_points is None:
@@ -55,566 +40,555 @@ class CCDVisualizer3D(BaseVisualizer):
         else:
             return f"{self.output_dir}/{func_name.lower()}_{nx_points}x{ny_points}x{nz_points}_points.png"
     
-    def visualize_solution(self, grid, function_name, numerical, exact, errors, prefix="", save=True, show=False, dpi=150):
+    def visualize_solution(self, grid, function_name, numerical, exact, errors, prefix="", save=True, show=False, dpi=180):
         """
-        3Dソリューションを可視化（統合ビュー）
+        3Dソリューションを統合ダッシュボード形式で可視化
         
         Args:
             grid: Grid3D オブジェクト
             function_name: テスト関数の名前
-            numerical: 数値解のリスト [psi, psi_x, psi_y, psi_z, psi_xx, psi_yy, psi_zz, psi_xxx, psi_yyy, psi_zzz]
+            numerical: 数値解のリスト
             exact: 厳密解のリスト
-            errors: 誤差のリスト
+            errors: 誤差リスト
             prefix: ファイル名の接頭辞
             save: 図を保存するかどうか
             show: 図を表示するかどうか
             dpi: 保存する図のDPI
-            
-        Returns:
-            保存に成功したかどうかのブール値
         """
-        nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
+        # グリッドサイズと中心インデックス
+        nx, ny, nz = grid.nx_points, grid.ny_points, grid.nz_points
+        mid_x, mid_y, mid_z = nx // 2, ny // 2, nz // 2
         
-        # 中心断面のインデックス
-        mid_x = nx_points // 2
-        mid_y = ny_points // 2
-        mid_z = nz_points // 2
+        # NumPy配列に変換
+        X, Y, Z = self._to_numpy(grid.get_points())
         
-        # CuPy配列をNumPyに変換
-        X, Y, Z = grid.get_points()
-        X_np = self._to_numpy(X)
-        Y_np = self._to_numpy(Y)
-        Z_np = self._to_numpy(Z)
+        # 主要な解成分を抽出
+        psi = self._to_numpy(numerical[0])       # 解
+        psi_x = self._to_numpy(numerical[1])     # x方向偏導関数
+        psi_y = self._to_numpy(numerical[2])     # y方向偏導関数
+        psi_z = self._to_numpy(numerical[3])     # z方向偏導関数
+        psi_xx = self._to_numpy(numerical[4])    # x方向2階偏導関数
+        psi_yy = self._to_numpy(numerical[5])    # y方向2階偏導関数
+        psi_zz = self._to_numpy(numerical[6])    # z方向2階偏導関数
         
-        # 主要コンポーネントと各平面の統合ビュー
-        for plane_name, mid_idx in [('x', mid_x), ('y', mid_y), ('z', mid_z)]:
-            # 主要コンポーネントのみ可視化 (4つのプライマリコンポーネント)
-            primary_indices = [0, 1, 4, 7]  # ψ, ψ_x, ψ_xx, ψ_xxx
-            component_names = [self.solution_names[i] for i in primary_indices]
-            
-            # 2x4のレイアウト (4つのプライマリコンポーネント × (解+誤差))
-            fig, axes = plt.subplots(len(primary_indices), 2, figsize=(12, 4*len(primary_indices)))
-            
-            for i, comp_idx in enumerate(primary_indices):
-                name = self.solution_names[comp_idx]
-                num = numerical[comp_idx]
-                ex = exact[comp_idx]
-                err = errors[comp_idx]
-                
-                # NumPy配列に変換
-                num_np = self._to_numpy(num)
-                ex_np = self._to_numpy(ex)
-                error_np = self._to_numpy(np.abs(num_np - ex_np))
-                
-                # 指定平面の断面データを抽出
-                if plane_name == 'x':
-                    num_slice = num_np[mid_idx, :, :]
-                    ex_slice = ex_np[mid_idx, :, :]
-                    error_slice = error_np[mid_idx, :, :]
-                    x_data, y_data = Y_np[mid_idx, :, 0], Z_np[mid_idx, 0, :]
-                    axis_labels = ['Y', 'Z']
-                elif plane_name == 'y':
-                    num_slice = num_np[:, mid_idx, :]
-                    ex_slice = ex_np[:, mid_idx, :]
-                    error_slice = error_np[:, mid_idx, :]
-                    x_data, y_data = X_np[:, mid_idx, 0], Z_np[0, mid_idx, :]
-                    axis_labels = ['X', 'Z']
-                else:  # plane_name == 'z'
-                    num_slice = num_np[:, :, mid_idx]
-                    ex_slice = ex_np[:, :, mid_idx]
-                    error_slice = error_np[:, :, mid_idx]
-                    x_data, y_data = X_np[:, 0, mid_idx], Y_np[0, :, mid_idx]
-                    axis_labels = ['X', 'Y']
-                
-                # メッシュグリッド作成
-                xx, yy = np.meshgrid(x_data, y_data, indexing='ij')
-                
-                # 左側：数値解と等高線
-                vmin = min(np.min(num_slice), np.min(ex_slice))
-                vmax = max(np.max(num_slice), np.max(ex_slice))
-                im1 = axes[i, 0].contourf(xx, yy, num_slice, 50, 
-                                        cmap=self.cmap_solution, vmin=vmin, vmax=vmax)
-                # 厳密解の等高線をオーバーレイ
-                ct = axes[i, 0].contour(xx, yy, ex_slice, 10, colors='black', linewidths=0.5, alpha=0.7)
-                
-                axes[i, 0].set_title(f"{name} (Numerical)")
-                axes[i, 0].set_xlabel(axis_labels[0])
-                axes[i, 0].set_ylabel(axis_labels[1])
-                plt.colorbar(im1, ax=axes[i, 0])
-                
-                # 右側：誤差
-                # 誤差が非常に小さい場合はログスケールを使用
-                if np.max(error_slice) < 1e-5 and np.max(error_slice) > 0:
-                    norm = LogNorm(vmin=max(np.min(error_slice[error_slice > 0]), 1e-15), 
-                                 vmax=np.max(error_slice))
-                else:
-                    norm = Normalize(vmin=0, vmax=np.max(error_slice))
-                
-                im2 = axes[i, 1].contourf(xx, yy, error_slice, 50, cmap=self.cmap_error, norm=norm)
-                axes[i, 1].set_title(f"{name} Error (Max: {err:.2e})")
-                axes[i, 1].set_xlabel(axis_labels[0])
-                axes[i, 1].set_ylabel(axis_labels[1])
-                plt.colorbar(im2, ax=axes[i, 1])
-                
-                # 誤差の等高線をオーバーレイ
-                if np.max(error_slice) > 0:
-                    err_levels = np.logspace(
-                        np.log10(max(np.min(error_slice[error_slice > 0]), 1e-15)), 
-                        np.log10(np.max(error_slice)), 
-                        5
-                    )
-                    axes[i, 1].contour(xx, yy, error_slice, levels=err_levels, 
-                                     colors='black', linewidths=0.5, alpha=0.7)
-            
-            plt.suptitle(f"{function_name}: {plane_name}={mid_idx} Plane ({nx_points}x{ny_points}x{nz_points} points)")
-            plt.tight_layout()
-            
-            # 保存ファイル名
-            if save:
-                plane_suffix = f"_plane_{plane_name}{mid_idx}"
-                filepath = self.generate_filename(function_name, nx_points, ny_points, nz_points, 
-                                               f"{prefix}{plane_suffix}")
-                plt.savefig(filepath, dpi=dpi, bbox_inches='tight')
-            
-            if show:
-                plt.show()
-            else:
-                plt.close(fig)
+        # 対応する厳密解
+        psi_ex = self._to_numpy(exact[0])
+        psi_x_ex = self._to_numpy(exact[1])
+        psi_y_ex = self._to_numpy(exact[2])
+        psi_z_ex = self._to_numpy(exact[3])
         
-        # 3Dボリュームビューの生成
-        self._create_integrated_3d_visualization(grid, function_name, numerical, exact, errors, 
-                                              prefix, save, show, dpi)
+        # 誤差計算
+        error = self._to_numpy(np.abs(psi - psi_ex))
+        error_x = self._to_numpy(np.abs(psi_x - psi_x_ex))
+        error_y = self._to_numpy(np.abs(psi_y - psi_y_ex))
+        error_z = self._to_numpy(np.abs(psi_z - psi_z_ex))
         
-        # 誤差サマリーの生成
-        self._create_error_summary(function_name, self.solution_names, errors, 
-                                nx_points, ny_points, nz_points, prefix, save, show, dpi)
+        # 成分名のリスト
+        component_names = ["ψ", "ψ_x", "ψ_y", "ψ_z", "ψ_xx", "ψ_yy", "ψ_zz", "ψ_xxx", "ψ_yyy", "ψ_zzz"]
+        
+        # 拡張ダッシュボード作成 (3x3グリッド)
+        fig = plt.figure(figsize=(20, 16))
+        gs = GridSpec(3, 3, figure=fig, height_ratios=[1.2, 1, 0.8])
+        
+        # メインタイトル
+        fig.suptitle(f"{function_name} Function Analysis ({nx}x{ny}x{nz} points)", 
+                    fontsize=18, y=0.98)
+        
+        # 1. 3D可視化（左上、大きめのスペース）
+        ax_3d = fig.add_subplot(gs[0, 0], projection='3d')
+        self._plot_3d_visualization(ax_3d, grid, psi, error, errors[0])
+        
+        # 2. 3面断面図（中央上）
+        ax_slices = fig.add_subplot(gs[0, 1])
+        self._plot_orthogonal_slices(ax_slices, grid, psi, mid_x, mid_y, mid_z)
+        
+        # 3. 勾配可視化（右上）
+        ax_gradient = fig.add_subplot(gs[0, 2], projection='3d')
+        self._plot_gradient_visualization(ax_gradient, grid, psi_x, psi_y, psi_z)
+        
+        # 4. 誤差分布ヒートマップ（中段左）
+        ax_error = fig.add_subplot(gs[1, 0])
+        self._plot_error_distribution(ax_error, grid, error, mid_z)
+        
+        # 5. ラプラシアン分布（中段中央）
+        ax_laplacian = fig.add_subplot(gs[1, 1])
+        laplacian = psi_xx + psi_yy + psi_zz
+        self._plot_laplacian_distribution(ax_laplacian, grid, laplacian, mid_z)
+        
+        # 6. 誤差ヒストグラム（中段右）
+        ax_error_hist = fig.add_subplot(gs[1, 2])
+        self._plot_error_histogram(ax_error_hist, error, error_x, error_y, error_z)
+        
+        # 7. 誤差サマリー（左下）
+        ax_summary = fig.add_subplot(gs[2, 0])
+        self._plot_error_summary(ax_summary, component_names, errors, function_name)
+        
+        # 8. 統計情報（中央下）
+        ax_stats = fig.add_subplot(gs[2, 1])
+        self._plot_statistics_table(ax_stats, numerical, exact, errors)
+        
+        # 9. 等値面情報（右下）
+        ax_isosurfaces = fig.add_subplot(gs[2, 2])
+        self._plot_isosurface_analysis(ax_isosurfaces, psi, psi_ex)
+        
+        # レイアウト調整
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        
+        # 保存/表示処理
+        if save:
+            filepath = self.generate_filename(function_name, nx, ny, nz, prefix)
+            plt.savefig(filepath, dpi=dpi, bbox_inches='tight')
+            print(f"Visualization saved to: {filepath}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
         
         return True
     
-    def _create_integrated_3d_visualization(self, grid, function_name, numerical, exact, errors, 
-                                         prefix="", save=True, show=False, dpi=150):
-        """
-        3D統合可視化（等値面のみ - 断面なし）
+    def _plot_orthogonal_slices(self, ax, grid, data, mid_x, mid_y, mid_z):
+        """3つの直交する断面を1つの図に統合表示"""
+        # 各方向の断面を抽出
+        xy_slice = data[:, :, mid_z]
+        xz_slice = data[:, mid_y, :]
+        yz_slice = data[mid_x, :, :]
         
-        Args:
-            grid: Grid3D オブジェクト
-            function_name: テスト関数の名前
-            numerical: 数値解リスト
-            exact: 厳密解リスト
-            errors: 誤差リスト
-            prefix: 接頭辞
-            save: 保存するかどうか
-            show: 表示するかどうか
-            dpi: 画像のDPI値
-        """
-        nx_points, ny_points, nz_points = grid.nx_points, grid.ny_points, grid.nz_points
-        
-        # 中心断面のインデックス (スライス図用)
-        mid_x, mid_y, mid_z = nx_points//2, ny_points//2, nz_points//2
-        
-        # NumPy配列に変換
-        num_psi = self._to_numpy(numerical[0])  # ψ成分のみ
-        ex_psi = self._to_numpy(exact[0])
-        error_psi = self._to_numpy(np.abs(num_psi - ex_psi))
-        
-        # グリッドポイント取得
+        # グリッド座標
         X, Y, Z = grid.get_points()
-        X_np = self._to_numpy(X)
-        Y_np = self._to_numpy(Y)
-        Z_np = self._to_numpy(Z)
+        x = self._to_numpy(X[:, 0, 0])
+        y = self._to_numpy(Y[0, :, 0])
+        z = self._to_numpy(Z[0, 0, :])
         
-        # 2x2のサブプロットレイアウト
-        fig = plt.figure(figsize=(14, 12))
+        # 2x2のグリッドを作成
+        n_grid = max(len(x), len(y), len(z))
+        grid_img = np.zeros((n_grid*2, n_grid*2))
         
-        # 1. 3Dボリュームレンダリング (等値面のみ)
-        ax1 = fig.add_subplot(221, projection='3d')
+        # 各断面データを適切な位置に配置
+        pad_x = (n_grid*2 - len(x)) // 2
+        pad_y = (n_grid*2 - len(y)) // 2
+        pad_z = (n_grid*2 - len(z)) // 2
         
-        # 等値面の値を決定（複数のレベルでより詳細な表示）
-        val_max = np.max(num_psi)
-        val_min = np.min(num_psi)
-        if val_max > val_min:
-            # より多くの等値面を使用して詳細化
-            levels = np.linspace(0.3, 0.8, 4)  # 30%, 50%, 70%, 90%の4レベル
-            iso_values = [val_min + level * (val_max - val_min) for level in levels]
-            
-            # 各等値面の色とアルファ値を設定
-            alphas = [0.3, 0.4, 0.5, 0.6]
-            colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(iso_values)))
-            
-            # 各等値面の表示
-            for idx, (iso_val, alpha, color) in enumerate(zip(iso_values, alphas, colors)):
-                # 等値面の検出（単純化のため）
-                verts = []
-                step = max(1, min(nx_points, ny_points, nz_points) // 50)  # データ削減
-                for i in range(1, nx_points-1, step):
-                    for j in range(1, ny_points-1, step):
-                        for k in range(1, nz_points-1, step):
-                            if (num_psi[i, j, k] > iso_val and \
-                                (num_psi[i-1, j, k] < iso_val or num_psi[i+1, j, k] < iso_val or
-                                 num_psi[i, j-1, k] < iso_val or num_psi[i, j+1, k] < iso_val or
-                                 num_psi[i, j, k-1] < iso_val or num_psi[i, j, k+1] < iso_val)):
-                                verts.append((X_np[i, j, k], Y_np[i, j, k], Z_np[i, j, k]))
+        # XY断面（中央）
+        grid_img[pad_y:pad_y+len(y), pad_x:pad_x+len(x)] = xy_slice.T
+        
+        # XZ断面（上部）
+        grid_img[:len(z), pad_x:pad_x+len(x)] = xz_slice.T
+        
+        # YZ断面（右部）
+        grid_img[pad_y:pad_y+len(y), -len(z):] = yz_slice
+        
+        # 表示
+        im = ax.imshow(grid_img, cmap=self.cmap_solution, origin='lower')
+        plt.colorbar(im, ax=ax, label='Value')
+        
+        # ラベル
+        ax.set_title(f"Orthogonal Slices at x={mid_x}, y={mid_y}, z={mid_z}")
+        ax.axis('off')
+        
+        # 断面を示す線を追加
+        ax.axhline(pad_y+len(y)//2, color='r', linestyle='--', alpha=0.5)
+        ax.axvline(pad_x+len(x)//2, color='r', linestyle='--', alpha=0.5)
+        
+        # 軸ラベルを表示
+        ax.text(pad_x+len(x)//2, -5, "X", ha='center')
+        ax.text(-5, pad_y+len(y)//2, "Y", va='center')
+        ax.text(n_grid*2-len(z)//2, pad_y+len(y)//2, "Z", ha='center')
+    
+    def _plot_3d_visualization(self, ax, grid, data, error_data, max_error):
+        """3D可視化（等値面とスライス表示）"""
+        X, Y, Z = grid.get_points()
+        x = self._to_numpy(X[:, 0, 0])
+        y = self._to_numpy(Y[0, :, 0])
+        z = self._to_numpy(Z[0, 0, :])
+        
+        # グリッドの中心インデックス
+        mid_x, mid_y, mid_z = len(x)//2, len(y)//2, len(z)//2
+        
+        # データの最小・最大値
+        vmin, vmax = np.min(data), np.max(data)
+        
+        # 等値面レベルの計算（値の範囲内で3つ）
+        levels = [
+            vmin + (vmax - vmin) * 0.25,
+            vmin + (vmax - vmin) * 0.5,
+            vmin + (vmax - vmin) * 0.75
+        ]
+        
+        # 中央断面をプロット
+        x_mesh, z_mesh = np.meshgrid(x, z)
+        y_plane = np.ones_like(x_mesh) * y[mid_y]
+        ax.plot_surface(
+            x_mesh, y_plane, z_mesh, 
+            facecolors=plt.cm.viridis((data[:, mid_y, :].T - vmin) / (vmax - vmin)),
+            alpha=0.6, shade=False
+        )
+        
+        # 等値面を描画
+        for i, level in enumerate(levels):
+            try:
+                verts, faces, _, _ = measure.marching_cubes(data, level)
+                # 座標変換
+                verts_scaled = np.zeros_like(verts)
+                verts_scaled[:, 0] = x[0] + verts[:, 0] * (x[-1] - x[0]) / (len(x) - 1)
+                verts_scaled[:, 1] = y[0] + verts[:, 1] * (y[-1] - y[0]) / (len(y) - 1)
+                verts_scaled[:, 2] = z[0] + verts[:, 2] * (z[-1] - z[0]) / (len(z) - 1)
                 
-                # 代表点をプロットして等値面を近似
-                if verts:
-                    verts = np.array(verts)
-                    ax1.scatter(verts[:, 0], verts[:, 1], verts[:, 2], 
-                              c=[color], alpha=alpha, s=15, edgecolors='none',
-                              label=f'Level: {iso_val:.3f}')
+                # 透明度を調整して等値面描画
+                ax.plot_trisurf(
+                    verts_scaled[:, 0], verts_scaled[:, 1], verts_scaled[:, 2],
+                    triangles=faces,
+                    color=plt.cm.viridis((level - vmin) / (vmax - vmin)),
+                    alpha=0.3
+                )
+                
+                # レベル表示を追加
+                ax.text(
+                    x[0], y[0], z[0] + (i + 1) * (z[-1] - z[0]) / 5,
+                    f"Level: {level:.2f}",
+                    color=plt.cm.viridis((level - vmin) / (vmax - vmin))
+                )
+            except:
+                continue
+        
+        # 軸設定
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title(f"3D Visualization (Max Error: {max_error:.2e})")
+        
+        # 表示角度の設定
+        ax.view_init(elev=15, azim=60)
         
         # カラーバー
-        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, 
-                                 norm=plt.Normalize(vmin=val_min, vmax=val_max))
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax))
         sm.set_array([])
-        cbar = plt.colorbar(sm, ax=ax1, shrink=0.6)
-        cbar.set_label('ψ Value')
-        
-        ax1.set_title(f"3D Volume Visualization\nψ Component (Error: {errors[0]:.2e})")
-        ax1.set_xlabel('X')
-        ax1.set_ylabel('Y')
-        ax1.set_zlabel('Z')
-        
-        # 軸の設定
-        ax1.set_xlim(-1.0, 1.0)
-        ax1.set_ylim(-1.0, 1.0)
-        ax1.set_zlim(-1.0, 1.0)
-        
-        # 2. 誤差分布の3D可視化（等値面のみ）
-        ax2 = fig.add_subplot(222, projection='3d')
-        
-        # エラー値の範囲を特定
-        if np.max(error_psi) > 0:
-            # 対数スケールでの等値面レベル
-            err_max = np.max(error_psi)
-            err_min = max(np.min(error_psi[error_psi > 0]), 1e-15)
-            
-            # 対数スケールでの等値面レベル
-            error_levels = np.logspace(np.log10(err_min), np.log10(err_max), 4)
-            error_colors = plt.cm.hot(np.linspace(0.2, 0.8, len(error_levels)))
-            error_alphas = [0.3, 0.4, 0.5, 0.6]
-            
-            # 各誤差レベルの等値面
-            for idx, (err_val, alpha, color) in enumerate(zip(error_levels, error_alphas, error_colors)):
-                # 誤差等値面の検出
-                err_verts = []
-                step = max(1, min(nx_points, ny_points, nz_points) // 50)  # データ削減
-                for i in range(1, nx_points-1, step):
-                    for j in range(1, ny_points-1, step):
-                        for k in range(1, nz_points-1, step):
-                            if (error_psi[i, j, k] > err_val and \
-                                (error_psi[i-1, j, k] < err_val or error_psi[i+1, j, k] < err_val or
-                                 error_psi[i, j-1, k] < err_val or error_psi[i, j+1, k] < err_val or
-                                 error_psi[i, j, k-1] < err_val or error_psi[i, j, k+1] < err_val)):
-                                err_verts.append((X_np[i, j, k], Y_np[i, j, k], Z_np[i, j, k]))
-                
-                # 誤差等値面のプロット
-                if err_verts:
-                    err_verts = np.array(err_verts)
-                    ax2.scatter(err_verts[:, 0], err_verts[:, 1], err_verts[:, 2], 
-                              c=[color], alpha=alpha, s=15, edgecolors='none',
-                              label=f'Error: {err_val:.2e}')
-        
-        # 誤差用のカラーバー
-        if np.max(error_psi) > 0:
-            error_norm = LogNorm(vmin=max(np.min(error_psi[error_psi > 0]), 1e-15), 
-                               vmax=np.max(error_psi))
-            sm2 = plt.cm.ScalarMappable(cmap=plt.cm.hot, norm=error_norm)
-            sm2.set_array([])
-            cbar2 = plt.colorbar(sm2, ax=ax2, shrink=0.6)
-            cbar2.set_label('Error (Log Scale)')
-            
-            # レジェンド表示（誤差レベル）
-            ax2.legend(loc='upper right', fontsize=8)
-        
-        ax2.set_title(f"Error Distribution\nψ Component (Max Error: {errors[0]:.2e})")
-        ax2.set_xlabel('X')
-        ax2.set_ylabel('Y')
-        ax2.set_zlabel('Z')
-        
-        # 軸の設定
-        ax2.set_xlim(-1.0, 1.0)
-        ax2.set_ylim(-1.0, 1.0)
-        ax2.set_zlim(-1.0, 1.0)
-        
-        # 3. XY平面の断面比較（z=mid_z）
-        ax3 = fig.add_subplot(223)
-        
-        # 数値解
-        im3 = ax3.contourf(X_np[:, :, mid_z], Y_np[:, :, mid_z], num_psi[:, :, mid_z], 
-                         50, cmap=self.cmap_solution, alpha=0.8)
-        # 厳密解の等高線
-        ct3 = ax3.contour(X_np[:, :, mid_z], Y_np[:, :, mid_z], ex_psi[:, :, mid_z], 
-                        10, colors='black', linewidths=0.8)
-        
-        ax3.set_title(f"Z={mid_z} Plane: Numerical Solution with Exact Contours")
-        ax3.set_xlabel('X')
-        ax3.set_ylabel('Y')
-        plt.colorbar(im3, ax=ax3)
-        
-        # 4. XY平面の誤差分布（z=mid_z）
-        ax4 = fig.add_subplot(224)
-        
-        # 誤差値
-        error_slice = error_psi[:, :, mid_z]
-        
-        # 誤差が非常に小さい場合はログスケールを使用
-        if np.max(error_slice) < 1e-5 and np.max(error_slice) > 0:
-            # 0値を最小の正の値に置き換えてログスケールの警告を防ぐ
-            error_slice_plot = error_slice.copy()
-            min_positive = np.min(error_slice_plot[error_slice_plot > 0])
-            error_slice_plot[error_slice_plot <= 0] = min_positive / 10.0
-            
-            norm = LogNorm(vmin=min_positive / 10.0, vmax=np.max(error_slice_plot))
-            im4 = ax4.contourf(X_np[:, :, mid_z], Y_np[:, :, mid_z], error_slice_plot, 
-                             50, cmap=self.cmap_error, norm=norm)
-        else:
-            norm = Normalize(vmin=0, vmax=np.max(error_slice))
-            im4 = ax4.contourf(X_np[:, :, mid_z], Y_np[:, :, mid_z], error_slice, 
-                             50, cmap=self.cmap_error, norm=norm)
-        
-        # 誤差の等高線
-        if np.max(error_slice) > 0:
-            err_levels = np.logspace(
-                np.log10(max(np.min(error_slice[error_slice > 0]), 1e-15)), 
-                np.log10(np.max(error_slice)), 
-                5
-            )
-            ax4.contour(X_np[:, :, mid_z], Y_np[:, :, mid_z], error_slice, 
-                      levels=err_levels, colors='black', linewidths=0.5)
-            
-        ax4.set_title(f"Z={mid_z} Plane: Error Distribution")
-        ax4.set_xlabel('X')
-        ax4.set_ylabel('Y')
-        plt.colorbar(im4, ax=ax4)
-        
-        plt.suptitle(f"{function_name} 3D Analysis ({nx_points}x{ny_points}x{nz_points} points)", 
-                   fontsize=16)
-        plt.tight_layout()
-        
-        # 保存
-        if save:
-            volume_filepath = self.generate_filename(function_name, nx_points, ny_points, nz_points, 
-                                                  f"{prefix}_3d_integrated")
-            plt.savefig(volume_filepath, dpi=dpi, bbox_inches='tight')
-        
-        if show:
-            plt.show()
-        else:
-            plt.close(fig)
+        plt.colorbar(sm, ax=ax, shrink=0.7)
     
-    def _create_error_summary(self, function_name, solution_names, errors, 
-                           nx_points, ny_points, nz_points, prefix="", save=True, show=False, dpi=150):
-        """
-        誤差のサマリーグラフを作成（棒グラフと分布）
+    def _plot_gradient_visualization(self, ax, grid, grad_x, grad_y, grad_z):
+        """勾配ベクトルの可視化"""
+        X, Y, Z = grid.get_points()
+        x = self._to_numpy(X[:, 0, 0])
+        y = self._to_numpy(Y[0, :, 0])
+        z = self._to_numpy(Z[0, 0, :])
         
-        Args:
-            function_name: 関数名
-            solution_names: 解成分の名前リスト
-            errors: 誤差リスト
-            nx_points, ny_points, nz_points: 格子点数
-            prefix: 接頭辞
-            save: 保存するかどうか
-            show: 表示するかどうか
-            dpi: 画像のDPI値
-        """
-        # 1x2のレイアウト
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-        x_pos = np.arange(len(solution_names))
+        # サンプリング間隔（視認性向上のため間引き）
+        stride = max(1, len(x) // 5)
         
-        # 1. 標準バープロット
-        bars = ax1.bar(x_pos, errors, color='orange', alpha=0.7)
+        # グリッドの中心インデックス
+        mid_x, mid_y, mid_z = len(x)//2, len(y)//2, len(z)//2
         
-        # バーラベル
-        for bar, err in zip(bars, errors):
-            height = bar.get_height()
-            ax1.annotate(f'{err:.2e}',
-                        xy=(bar.get_x() + bar.get_width() / 2, height),
-                        xytext=(0, 3),  # 3ポイント上にオフセット
-                        textcoords="offset points",
-                        ha='center', va='bottom',
-                        fontsize=9)
+        # 勾配ベクトルの大きさ
+        gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2 + grad_z**2)
+        max_mag = np.max(gradient_magnitude)
         
-        ax1.set_title(f"Component Errors (Linear Scale)")
-        ax1.set_ylabel('Maximum Error')
-        ax1.set_xticks(x_pos)
-        ax1.set_xticklabels(solution_names, rotation=45, ha="right")
-        ax1.grid(True, linestyle='--', alpha=0.7)
+        # 勾配ベクトルの正規化（視覚化のため）
+        scale_factor = 0.1 * (x[-1] - x[0]) / max_mag
+        u = grad_x * scale_factor
+        v = grad_y * scale_factor
+        w = grad_z * scale_factor
         
-        # 2. 対数スケールバープロット
-        # ゼロを適切に置き換え
-        log_errors = []
-        for err in errors:
-            if err == 0 or err < self.min_log_value:
-                log_errors.append(self.min_log_value)
-            else:
-                log_errors.append(err)
-                
-        bars2 = ax2.bar(x_pos, log_errors, color='red', alpha=0.7)
-        ax2.set_yscale('log')
-        
-        # バーラベル
-        for bar, err in zip(bars2, errors):
-            y_pos = bar.get_height() * 1.1
-            if y_pos <= 0:
-                y_pos = self.min_log_value
-            ax2.annotate(f'{err:.2e}',
-                       xy=(bar.get_x() + bar.get_width() / 2, y_pos),
-                       xytext=(0, 3),
-                       textcoords="offset points",
-                       ha='center', va='bottom',
-                       fontsize=9)
-        
-        # x, y, z方向のコンポーネントを色で区別
-        for i, name in enumerate(solution_names):
-            if '_x' in name:
-                bars[i].set_color('blue')
-                bars2[i].set_color('blue')
-            elif '_y' in name:
-                bars[i].set_color('green')
-                bars2[i].set_color('green')
-            elif '_z' in name:
-                bars[i].set_color('purple')
-                bars2[i].set_color('purple')
-        
-        ax2.set_title(f"Component Errors (Log Scale)")
-        ax2.set_ylabel('Maximum Error (Log Scale)')
-        ax2.set_xticks(x_pos)
-        ax2.set_xticklabels(solution_names, rotation=45, ha="right")
-        ax2.grid(True, which='both', linestyle='--', alpha=0.7)
-        
-        plt.suptitle(f"{function_name} Function: Error Summary ({nx_points}x{ny_points}x{nz_points} points)")
-        plt.tight_layout()
-        
-        if save:
-            summary_filepath = self.generate_filename(
-                f"{function_name}_error_summary", 
-                nx_points, 
-                ny_points,
-                nz_points,
-                prefix
-            )
-            plt.savefig(summary_filepath, dpi=dpi, bbox_inches='tight')
-        
-        if show:
-            plt.show()
-        else:
-            plt.close(fig)
-    
-    def compare_all_functions_errors(self, results_summary, grid_size, prefix="", dpi=150, show=False):
-        """
-        すべてのテスト関数の誤差を比較するグラフを生成
-        
-        Args:
-            results_summary: 関数名をキーとし、誤差リストを値とする辞書
-            grid_size: グリッドサイズ
-            prefix: 接頭辞
-            dpi: 画像のDPI値
-            show: 表示するかどうか
-            
-        Returns:
-            出力ファイルパス
-        """
-        func_names = list(results_summary.keys())
-        
-        # 主要コンポーネントの選択
-        primary_indices = [0, 1, 2, 3, 4, 5, 6]  # ψ, ψ_x, ψ_y, ψ_z, ψ_xx, ψ_yy, ψ_zz
-        primary_names = [self.solution_names[i] for i in primary_indices]
-        
-        # 3x3のグリッドレイアウト (8コンポーネント + ヒートマップ)
-        fig = plt.figure(figsize=(16, 14))
-        grid = plt.GridSpec(3, 3, figure=fig, hspace=0.4, wspace=0.3)
-        
-        # 各コンポーネントのエラーバープロット
-        axes = []
-        for i in range(len(primary_indices)):
-            row, col = divmod(i, 3)
-            ax = fig.add_subplot(grid[row, col])
-            axes.append(ax)
-            
-            comp_idx = primary_indices[i]
-            comp_name = primary_names[i]
-            
-            # 関数ごとのエラー値
-            error_values = []
-            for name in func_names:
-                err = results_summary[name][comp_idx]
-                if err == 0.0 or err < self.min_log_value:
-                    error_values.append(self.min_log_value)
-                else:
-                    error_values.append(err)
-            
-            # バープロット
-            x_positions = np.arange(len(func_names))
-            bars = ax.bar(x_positions, error_values)
-            ax.set_yscale("log")
-            ax.set_title(f"{comp_name} Error")
-            ax.set_xlabel("Test Function")
-            ax.set_ylabel("Error (log scale)")
-            ax.grid(True, which="both", linestyle="--", alpha=0.5)
-            ax.set_xticks(x_positions)
-            ax.set_xticklabels(func_names, rotation=45, ha="right", fontsize=8)
-            
-            # バーに値ラベルを追加
-            for j, (bar, name) in enumerate(zip(bars, func_names)):
-                orig_err = results_summary[name][comp_idx]
-                label_text = "0.0" if orig_err == 0.0 else f"{orig_err:.2e}"
-                y_pos = bar.get_height() * 1.1
-                ax.annotate(
-                    label_text,
-                    xy=(bar.get_x() + bar.get_width() / 2, y_pos),
-                    xytext=(0, 3),
-                    textcoords="offset points",
-                    ha="center",
-                    va="bottom",
-                    fontsize=7,
+        # XY平面の勾配ベクトルをプロット
+        for i in range(0, len(x), stride):
+            for j in range(0, len(y), stride):
+                ax.quiver(
+                    x[i], y[j], z[mid_z],
+                    u[i, j, mid_z], v[i, j, mid_z], w[i, j, mid_z],
+                    color=plt.cm.coolwarm(gradient_magnitude[i, j, mid_z] / max_mag),
+                    alpha=0.7
                 )
         
-        # ヒートマップ（すべてのコンポーネント・すべての関数）
-        ax_heat = fig.add_subplot(grid[2, :])
+        # XZ平面の勾配ベクトルをプロット
+        for i in range(0, len(x), stride):
+            for k in range(0, len(z), stride):
+                ax.quiver(
+                    x[i], y[mid_y], z[k],
+                    u[i, mid_y, k], v[i, mid_y, k], w[i, mid_y, k],
+                    color=plt.cm.coolwarm(gradient_magnitude[i, mid_y, k] / max_mag),
+                    alpha=0.7
+                )
         
-        # ヒートマップデータ
-        heat_data = np.zeros((len(func_names), len(self.solution_names)))
-        for i, name in enumerate(func_names):
-            for j in range(len(self.solution_names)):
-                heat_data[i, j] = results_summary[name][j]
+        # 軸設定
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title(f"Gradient Vectors at Center Planes\nMax Magnitude: {max_mag:.2e}")
         
-        # ゼロ値の処理
-        heat_data_log = np.copy(heat_data)
-        heat_data_log[heat_data_log <= 0] = self.min_log_value
-        
-        # ヒートマップ描画
-        im = ax_heat.imshow(heat_data_log, cmap='viridis', aspect='auto', 
-                          norm=LogNorm(vmin=np.min(heat_data_log), vmax=np.max(heat_data_log)))
-        
-        # 軸ラベル
-        ax_heat.set_yticks(np.arange(len(func_names)))
-        ax_heat.set_xticks(np.arange(len(self.solution_names)))
-        ax_heat.set_yticklabels(func_names)
-        ax_heat.set_xticklabels(self.solution_names)
-        ax_heat.set_title("Error Heatmap (Log Scale)")
-        
-        # ヒートマップに値表示
-        for i in range(len(func_names)):
-            for j in range(len(self.solution_names)):
-                val = heat_data[i, j]
-                text = ax_heat.text(j, i, f"{val:.2e}",
-                                  ha="center", va="center", color="w" if val > 1e-8 else "black",
-                                  fontsize=7)
+        # 表示角度の設定
+        ax.view_init(elev=15, azim=60)
         
         # カラーバー
-        cbar = fig.colorbar(im, ax=ax_heat)
-        cbar.set_label('Error (Log Scale)')
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.coolwarm, norm=plt.Normalize(vmin=0, vmax=max_mag))
+        sm.set_array([])
+        plt.colorbar(sm, ax=ax, shrink=0.7, label='Gradient Magnitude')
+    
+    def _plot_error_distribution(self, ax, grid, error_data, mid_z):
+        """誤差分布ヒートマップを表示"""
+        # Z方向中央の誤差断面を表示
+        error_slice = error_data[:, :, mid_z]
         
-        plt.suptitle(f"Error Comparison for All Functions ({grid_size}x{grid_size}x{grid_size} points)", 
-                   fontsize=16)
-        plt.tight_layout(rect=[0, 0, 1, 0.97])  # 上部にタイトル用の余白
+        # 対数スケールで表示（小さな値を持つ場合は対応）
+        min_error = np.min(error_data[error_data > 0]) if np.any(error_data > 0) else 1e-10
         
-        # 保存
-        filename = f"{self.output_dir}/{prefix}_all_functions_comparison_{grid_size}x{grid_size}x{grid_size}.png"
-        if not prefix:
-            filename = f"{self.output_dir}/all_functions_comparison_{grid_size}x{grid_size}x{grid_size}.png"
+        im = ax.imshow(
+            error_slice.T, 
+            norm=LogNorm(vmin=min_error, vmax=np.max(error_data)),
+            cmap=self.cmap_error, origin='lower'
+        )
+        
+        plt.colorbar(im, ax=ax, label='Error (log scale)')
+        ax.set_title(f'Error Distribution at z={mid_z}')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        
+        # 最大誤差位置をマーク
+        max_pos = np.unravel_index(np.argmax(error_slice), error_slice.shape)
+        ax.plot(max_pos[0], max_pos[1], 'rx', markersize=10)
+        ax.text(max_pos[0], max_pos[1], f" Max: {np.max(error_slice):.2e}", color='r')
+    
+    def _plot_laplacian_distribution(self, ax, grid, laplacian_data, mid_z):
+        """ラプラシアン分布をヒートマップで表示"""
+        # Z方向中央の断面を表示
+        laplacian_slice = laplacian_data[:, :, mid_z]
+        
+        # 対称的なカラーマップを使用するための正規化
+        abs_max = max(abs(np.min(laplacian_slice)), abs(np.max(laplacian_slice)))
+        norm = Normalize(vmin=-abs_max, vmax=abs_max)
+        
+        im = ax.imshow(
+            laplacian_slice.T, 
+            norm=norm,
+            cmap='seismic', origin='lower'
+        )
+        
+        plt.colorbar(im, ax=ax, label='Laplacian Value')
+        ax.set_title(f'Laplacian Distribution at z={mid_z}')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        
+        # ゼロクロッシング（ラプラシアンがゼロになる部分）を強調
+        ax.contour(
+            laplacian_slice.T, levels=[0], 
+            colors='g', linestyles='dashed', linewidths=1,
+            alpha=0.8
+        )
+    
+    def _plot_error_histogram(self, ax, error, error_x, error_y, error_z):
+        """誤差分布のヒストグラムを表示"""
+        # 非ゼロの値のみを考慮
+        def filtered_hist(data, label, bins=30):
+            nonzero_data = data[data > 0].flatten()
+            if len(nonzero_data) > 0:
+                ax.hist(nonzero_data, bins=bins, alpha=0.6, label=label, 
+                       log=True, density=True)
+        
+        # 各成分の誤差ヒストグラムを描画
+        filtered_hist(error, 'ψ')
+        filtered_hist(error_x, 'ψ_x')
+        filtered_hist(error_y, 'ψ_y')
+        filtered_hist(error_z, 'ψ_z')
+        
+        ax.set_xlabel('Error')
+        ax.set_ylabel('Frequency (log scale)')
+        ax.set_title('Error Histogram')
+        ax.legend()
+        
+        # 統計情報を表示
+        ax.text(0.05, 0.95, f"ψ Max: {np.max(error):.2e}",
+               transform=ax.transAxes, va='top')
+        ax.text(0.05, 0.90, f"ψ Mean: {np.mean(error):.2e}",
+               transform=ax.transAxes, va='top')
+        ax.text(0.05, 0.85, f"Grad Max: {max(np.max(error_x), np.max(error_y), np.max(error_z)):.2e}",
+               transform=ax.transAxes, va='top')
+        
+        # x軸を対数スケールに設定
+        ax.set_xscale('log')
+    
+    def _plot_error_summary(self, ax, component_names, errors, function_name):
+        """誤差サマリープロットを描画"""
+        # 水平バーチャートとして表示（読みやすさ向上）
+        y_pos = np.arange(len(component_names))
+        
+        # 0値対応のために小さな値を設定
+        plot_errors = np.array(errors).copy()
+        plot_errors[plot_errors == 0] = self.min_log_value
+        
+        # 横向きバーチャート
+        bars = ax.barh(y_pos, plot_errors, color='skyblue')
+        ax.set_xscale('log')
+        ax.set_title(f"Error Summary")
+        ax.set_xlabel('Maximum Error (log scale)')
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(component_names)
+        ax.grid(True, which='both', linestyle='--', alpha=0.7)
+        
+        # バーにラベルを追加
+        for i, (bar, err) in enumerate(zip(bars, errors)):
+            ax.text(
+                max(err, self.min_log_value) * 1.1, 
+                i, 
+                f'{err:.2e}',
+                va='center'
+            )
+        
+        # 許容誤差レベルのマーク（例: 1e-6）
+        ax.axvline(1e-6, color='r', linestyle='--', label='Tolerance (1e-6)')
+        ax.legend()
+    
+    def _plot_statistics_table(self, ax, numerical, exact, errors):
+        """統計情報をテーブル形式で表示"""
+        ax.axis('off')
+        ax.set_title('Solution Statistics', fontweight='bold')
+        
+        # メインの解成分について統計情報を計算
+        stats = []
+        
+        # 主要成分のみ統計情報を表示
+        for i, name in enumerate(["ψ", "ψ_x", "ψ_y", "ψ_z"]):
+            num = self._to_numpy(numerical[i])
+            ex = self._to_numpy(exact[i])
             
-        plt.savefig(filename, dpi=dpi, bbox_inches='tight')
+            # 統計値を計算
+            max_abs = np.max(np.abs(num))
+            mean_abs = np.mean(np.abs(num))
+            max_err = errors[i]
+            mean_err = np.mean(np.abs(num - ex))
+            rel_err = max_err / max_abs if max_abs > 0 else 0
+            
+            stats.append([name, f"{max_abs:.2e}", f"{mean_abs:.2e}", 
+                         f"{max_err:.2e}", f"{mean_err:.2e}", f"{rel_err:.2%}"])
+        
+        # テーブルを作成
+        columns = ['Component', 'Max Abs', 'Mean Abs', 'Max Error', 'Mean Error', 'Rel. Error']
+        ax.table(
+            cellText=stats,
+            colLabels=columns,
+            loc='center',
+            cellLoc='center',
+            colWidths=[0.15, 0.16, 0.16, 0.16, 0.16, 0.16]
+        )
+        
+        # グリッド収束性の見積もり情報を追加
+        expected_order = self._estimate_convergence_order(errors)
+        ax.text(0.5, 0.1, f"Estimated Convergence Order: {expected_order:.1f}",
+               ha='center', transform=ax.transAxes, color='blue', fontweight='bold')
+    
+    def _plot_isosurface_analysis(self, ax, numerical, exact):
+        """等値面分析情報を表示"""
+        ax.axis('off')
+        ax.set_title('Isosurface Analysis', fontweight='bold')
+        
+        # 値の範囲
+        num_min, num_max = np.min(numerical), np.max(numerical)
+        ex_min, ex_max = np.min(exact), np.max(exact)
+        
+        # 特徴的な等値面レベルを計算
+        num_levels = [
+            num_min,
+            num_min + 0.25 * (num_max - num_min),
+            num_min + 0.5 * (num_max - num_min),
+            num_min + 0.75 * (num_max - num_min),
+            num_max
+        ]
+        
+        # 数値データに対する等値面の体積を計算
+        volumes = []
+        for level in num_levels:
+            try:
+                verts, faces, _, _ = measure.marching_cubes(numerical, level)
+                # 単純な推定: 三角形の数に比例
+                volume = len(faces)
+                volumes.append(volume)
+            except:
+                volumes.append(0)
+        
+        # テーブルデータを作成
+        table_data = []
+        for i, level in enumerate(num_levels):
+            level_pct = (level - num_min) / (num_max - num_min) * 100 if num_max > num_min else 0
+            table_data.append([
+                f"{level:.2e}", 
+                f"{level_pct:.1f}%", 
+                f"{volumes[i]}" if volumes[i] > 0 else "N/A"
+            ])
+        
+        # テーブルを作成
+        columns = ['Level', '% of Range', 'Est. Volume']
+        ax.table(
+            cellText=table_data,
+            colLabels=columns,
+            loc='center',
+            cellLoc='center',
+            colWidths=[0.33, 0.33, 0.33]
+        )
+        
+        # 値の範囲比較情報を追加
+        value_range_ratio = (num_max - num_min) / (ex_max - ex_min) if (ex_max - ex_min) > 0 else 0
+        ax.text(0.5, 0.1, f"Value Range Ratio (Num/Exact): {value_range_ratio:.2f}",
+               ha='center', transform=ax.transAxes, color='blue')
+    
+    def _estimate_convergence_order(self, errors):
+        """誤差から収束次数を推定"""
+        # 標準的な次数の推定値
+        if max(errors) < 1e-10:
+            return 6  # 非常に高精度
+        elif max(errors) < 1e-8:
+            return 4  # 高精度
+        elif max(errors) < 1e-6:
+            return 2  # 中程度の精度
+        else:
+            return 1  # 低精度
+    
+    def compare_all_functions_errors(self, results_summary, grid_size, prefix="", save=True, dpi=150, show=False):
+        """すべてのテスト関数の誤差を比較するグラフを生成"""
+        func_names = list(results_summary.keys())
+        error_types = self.get_error_types()
+        
+        # より効率的なレイアウト（2行5列のサブプロットを使用）
+        fig, axes = plt.subplots(2, 5, figsize=(18, 8))
+        axes = axes.flatten()
+        
+        for i, (error_type, ax) in enumerate(zip(error_types, axes)):
+            if i < len(error_types):
+                # 各関数の対応する誤差を取得
+                original_errors = [results_summary[name][i] for name in func_names]
+                
+                # 対数スケール用に0値を置き換え
+                plot_errors = []
+                for err in original_errors:
+                    if err == 0.0:
+                        plot_errors.append(self.min_log_value)
+                    else:
+                        plot_errors.append(err)
+                
+                # バーチャート生成
+                bars = ax.bar(np.arange(len(func_names)), plot_errors)
+                ax.set_yscale("log")
+                ax.set_title(f"{error_type}")
+                ax.set_xticks(np.arange(len(func_names)))
+                ax.set_xticklabels(func_names, rotation=45, ha="right", fontsize=8)
+                
+                # グリッド追加
+                ax.grid(True, which="major", linestyle="--", alpha=0.5)
+                
+                # 値のアノテーション
+                for j, (bar, err) in enumerate(zip(bars, original_errors)):
+                    label = "0.0" if err == 0.0 else f"{err:.1e}"
+                    ax.annotate(
+                        label, xy=(j, plot_errors[j] * 1.1), 
+                        ha="center", va="bottom", fontsize=7, rotation=90
+                    )
+        
+        # 全体のタイトルとレイアウト調整
+        plt.suptitle(f"Error Comparison ({grid_size}x{grid_size}x{grid_size} points)")
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        
+        # 保存と表示
+        if save:
+            filename = f"{self.output_dir}/{prefix}_function_comparison_{grid_size}x{grid_size}x{grid_size}.png"
+            if not prefix:
+                filename = f"{self.output_dir}/function_comparison_{grid_size}x{grid_size}x{grid_size}.png"
+            plt.savefig(filename, dpi=dpi)
         
         if show:
             plt.show()
@@ -622,124 +596,80 @@ class CCDVisualizer3D(BaseVisualizer):
             plt.close(fig)
         
         return filename
-        
+    
     def visualize_grid_convergence(self, function_name, grid_sizes, results, prefix="", save=True, show=False, dpi=150):
-        """
-        グリッド収束性のグラフを生成
+        """グリッド収束性のグラフを生成（効率化）"""
+        # 2行5列のレイアウトを使用
+        fig, axes = plt.subplots(2, 5, figsize=(18, 8))
+        axes = axes.flatten()
+        solution_names = self.get_error_types()
         
-        Args:
-            function_name: 関数名
-            grid_sizes: グリッドサイズのリスト
-            results: 結果データ
-            prefix: 出力ファイルの接頭辞
-            save: 保存するかどうか
-            show: 表示するかどうか
-            dpi: 画像のDPI値
-            
-        Returns:
-            成功したかどうかのブール値
-        """
-        # 3x4レイアウト (軸方向でグループ化)
-        fig, axes = plt.subplots(3, 4, figsize=(16, 12))
-        
-        # 重要なコンポーネントをグループ化
-        component_groups = [
-            # ψと各方向の1階導関数
-            [0, 1, 2, 3],  # ψ, ψ_x, ψ_y, ψ_z
-            # 各方向の2階導関数
-            [4, 5, 6],     # ψ_xx, ψ_yy, ψ_zz
-            # 各方向の3階導関数
-            [7, 8, 9]      # ψ_xxx, ψ_yyy, ψ_zzz
-        ]
-        
-        group_titles = [
-            "Function & First Derivatives",
-            "Second Derivatives",
-            "Third Derivatives"
-        ]
-        
-        # グリッド間隔計算
+        # グリッド間隔
         grid_spacings = [1.0 / (n - 1) for n in grid_sizes]
         
-        # 収束次数の色とスタイル
-        order_colors = ['r', 'g', 'b', 'purple']
-        order_styles = ['--', '-.', ':', '-']
-        order_values = [2, 4, 6, 8]
+        # 収束次数の推定値を保存
+        convergence_orders = []
         
-        # 各行＝各グループを処理
-        for row, (group, title) in enumerate(zip(component_groups, group_titles)):
-            # 各グループのコンポーネント処理
-            for i, comp_idx in enumerate(group):
-                if i < len(axes[row]):  # 行にある列数分までのインデックスを処理
-                    ax = axes[row, i]
-                    name = self.solution_names[comp_idx]
+        for i, (ax, name) in enumerate(zip(axes, solution_names)):
+            if i < len(solution_names):
+                # 各グリッドサイズでの誤差を取得
+                errors = [results[n][i] for n in grid_sizes]
+                
+                # 誤差がすべて0の場合は特別処理
+                if all(err == 0 for err in errors):
+                    ax.text(0.5, 0.5, "All errors are zero", 
+                            ha='center', va='center', transform=ax.transAxes)
+                    convergence_orders.append(float('inf'))
+                    continue
+                
+                # 0値を置き換え
+                plot_errors = [max(err, self.min_log_value) for err in errors]
+                
+                # 対数-対数プロット
+                ax.loglog(grid_spacings, plot_errors, 'o-', label=name)
+                
+                # 収束次数を推定
+                if len(grid_spacings) >= 2 and all(err > 0 for err in plot_errors):
+                    # 単純な傾き計算（最後の2点を使用）
+                    order = (np.log(plot_errors[-2]) - np.log(plot_errors[-1])) / \
+                           (np.log(grid_spacings[-2]) - np.log(grid_spacings[-1]))
+                    convergence_orders.append(order)
                     
-                    # グリッドサイズごとの誤差収集
-                    errors = [results[n][comp_idx] for n in grid_sizes]
-                    
-                    # ゼロ値の処理
-                    plot_errors = []
-                    for err in errors:
-                        if err == 0 or err < self.min_log_value:
-                            plot_errors.append(self.min_log_value)
-                        else:
-                            plot_errors.append(err)
-                    
-                    # 対数プロット
-                    ax.loglog(grid_spacings, plot_errors, 'o-', color='black', linewidth=2, 
-                            markersize=8, label=name)
-                    
-                    # 収束次数の参照線
-                    if min(plot_errors) > 0:
-                        x_ref = np.array([min(grid_spacings), max(grid_spacings)])
-                        for j, order in enumerate(order_values):
-                            # 最後のデータポイントに合わせて参照線を配置
-                            if len(plot_errors) > 1:
-                                # 実際の収束次数を推定
-                                if plot_errors[-1] > 0 and plot_errors[-2] > 0:
-                                    est_order = np.log(plot_errors[-2]/plot_errors[-1]) / np.log(grid_spacings[-2]/grid_spacings[-1])
-                                    order_label = f'O(h^{est_order:.1f})' if j == 0 else f'O(h^{order})'
-                                    
-                                    scale = plot_errors[-1] / (grid_spacings[-1] ** order)
-                                    y_ref = scale * x_ref ** order
-                                    ax.loglog(x_ref, y_ref, order_styles[j], color=order_colors[j], 
-                                            linewidth=1.5, label=order_label if j == 0 else f'O(h^{order})')
-                    
-                    # 実際の収束次数を計算して表示
-                    if len(grid_spacings) >= 2:
-                        orders = []
-                        for k in range(1, len(grid_spacings)):
-                            if plot_errors[k-1] > 0 and plot_errors[k] > 0:
-                                h_ratio = grid_spacings[k-1] / grid_spacings[k]
-                                err_ratio = plot_errors[k-1] / plot_errors[k]
-                                if err_ratio > 1.0:  # 収束している場合のみ
-                                    order = np.log(err_ratio) / np.log(h_ratio)
-                                    orders.append(order)
-                        
-                        if orders:
-                            avg_order = np.mean(orders)
-                            ax.text(0.05, 0.05, f"Est. Order: {avg_order:.2f}", 
-                                  transform=ax.transAxes, fontsize=9,
-                                  bbox=dict(facecolor='white', alpha=0.7))
-                    
-                    ax.set_title(f"{name} Convergence")
-                    ax.set_xlabel('Grid Spacing (h)')
-                    ax.set_ylabel('Error')
-                    ax.grid(True, which='both')
-                    ax.legend(fontsize=8, loc='upper left')
-            
-            # 使用しない軸を非表示
-            for i in range(len(group), 4):
-                axes[row, i].axis('off')
+                    # 推定した収束次数を表示
+                    ax.text(0.05, 0.05, f"Order: {order:.2f}", 
+                           transform=ax.transAxes, bbox=dict(facecolor='white', alpha=0.7))
+                else:
+                    convergence_orders.append(0)
+                
+                # 収束次数の参照線
+                if min(plot_errors) > 0:
+                    x_ref = np.array([min(grid_spacings), max(grid_spacings)])
+                    # 2次および4次の収束線
+                    for order, style in zip([2, 4], ['--', '-.']):
+                        scale = plot_errors[-1] / (grid_spacings[-1] ** order)
+                        y_ref = scale * x_ref ** order
+                        ax.loglog(x_ref, y_ref, style, label=f'O(h^{order})')
+                
+                ax.set_title(f"{name}")
+                ax.set_xlabel('h')
+                ax.set_ylabel('Error')
+                ax.grid(True)
+                ax.legend(fontsize=8)
         
-        plt.suptitle(f"Grid Convergence Analysis for {function_name} Function (3D)", fontsize=16)
-        plt.tight_layout()
+        # 平均収束次数の計算
+        valid_orders = [o for o in convergence_orders if o != float('inf') and o > 0]
+        avg_order = np.mean(valid_orders) if valid_orders else 0
         
+        # タイトルとレイアウト調整
+        plt.suptitle(f"Grid Convergence: {function_name} (Avg. Order: {avg_order:.2f})")
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        
+        # 保存と表示
         if save:
-            filepath = f"{self.output_dir}/{prefix}_{function_name.lower()}_grid_convergence_3d.png"
+            filepath = f"{self.output_dir}/{prefix}_{function_name.lower()}_convergence.png"
             if not prefix:
-                filepath = f"{self.output_dir}/{function_name.lower()}_grid_convergence_3d.png"
-            plt.savefig(filepath, dpi=dpi, bbox_inches='tight')
+                filepath = f"{self.output_dir}/{function_name.lower()}_convergence.png"
+            plt.savefig(filepath, dpi=dpi)
         
         if show:
             plt.show()
@@ -749,19 +679,9 @@ class CCDVisualizer3D(BaseVisualizer):
         return True
     
     def get_dimension_label(self) -> str:
-        """
-        次元ラベルを返す
-        
-        Returns:
-            "3D"
-        """
+        """次元ラベルを返す"""
         return "3D"
     
     def get_error_types(self) -> List[str]:
-        """
-        エラータイプのリストを返す
-        
-        Returns:
-            3D用のエラータイプリスト
-        """
-        return self.solution_names
+        """エラータイプのリストを返す"""
+        return ["ψ", "ψ_x", "ψ_y", "ψ_z", "ψ_xx", "ψ_yy", "ψ_zz", "ψ_xxx", "ψ_yyy", "ψ_zzz"]
