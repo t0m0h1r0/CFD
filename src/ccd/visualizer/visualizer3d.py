@@ -315,7 +315,7 @@ class CCDVisualizer3D(BaseVisualizer):
         ax.set_title(f"Gradient Vectors at Center Planes\nMax Magnitude: {max_mag:.2e}")
         
         # 表示角度の設定
-        ax.view_init(elev=25, azim=30)
+        ax.view_init(elev=15, azim=60)
         
         # カラーバー
         sm = plt.cm.ScalarMappable(cmap=plt.cm.coolwarm, norm=plt.Normalize(vmin=0, vmax=max_mag))
