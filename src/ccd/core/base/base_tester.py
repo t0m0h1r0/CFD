@@ -153,15 +153,19 @@ class CCDTester(ABC):
         
         # 厳密解を初期値として使用する場合、計算して摂動を加える
         if self.perturbation_level is not None and self.solver_method != 'direct':
-            self.exact_solution = self._compute_exact(test_func)
+            # まず厳密解を計算
+            exact_solution_original = self._compute_exact(test_func)
             
-            # 厳密解に摂動を加える
-            perturbed_solution = self._add_perturbation(self.exact_solution, self.perturbation_level)
+            # 厳密解に摂動を加え、self.exact_solutionに保存
+            self.exact_solution = self._add_perturbation(exact_solution_original, self.perturbation_level)
             
-            print(f"厳密解を初期値として使用 (サイズ: {perturbed_solution.shape}, メソッド: {self.solver_method})")
-            # self.solver_optionsにx0を設定（ここでは後のために保存するだけ）
+            print(f"厳密解を初期値として使用 (サイズ: {self.exact_solution.shape}, メソッド: {self.solver_method})")
+            
+            # ソルバーオプションにx0を設定
             options = self.solver_options.copy()
-            options['x0'] = perturbed_solution
+            options['x0'] = self.exact_solution
+            
+            # ソルバーに設定を適用（このタイミングでのみ適用する）
             self.solver.set_solver(
                 method=self.solver_method, 
                 options=options, 
@@ -170,13 +174,7 @@ class CCDTester(ABC):
         else:
             self.exact_solution = None
         
-        # ソルバーオプションの再適用（念のため）
-        if hasattr(self, 'solver') and self.solver:
-            self.solver.set_solver(
-                method=self.solver_method, 
-                options=self.solver_options, 
-                scaling_method=self.scaling_method
-            )
+        # 上記でソルバー設定を適用済みなので、ここでの再適用は不要
         
         return self._process_solution(test_func)
     
