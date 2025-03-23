@@ -513,35 +513,38 @@ def main():
     # 全組み合わせの結果を保存
     all_results = []
     
-    # 組み合わせごとに実行
+    # ループの順序を変更: 一番内側にtest_functionを置き、行列Aを最大限再利用
     for equation_name in equation_list:
-        for function_name in function_list:
-            for solver_name in solver_list:
-                for scaling_name in scaling_list:
-                    if scaling_name is None and args.scaling is None:
-                        # None の場合は1回だけ実行
-                        scaling_to_use = None
-                    else:
-                        scaling_to_use = scaling_name
+        for solver_name in solver_list:
+            for scaling_name in scaling_list:
+                if scaling_name is None and args.scaling is None:
+                    # None の場合は1回だけ実行
+                    scaling_to_use = None
+                else:
+                    scaling_to_use = scaling_name
+                
+                print(f"\nセットアップ: {equation_name}, {solver_name}, {scaling_to_use or 'スケーリングなし'}")
+                
+                try:
+                    # テスターを作成（方程式・ソルバー・スケーリングの組み合わせごとに1回）
+                    tester = create_tester(args.dim, grid)
                     
-                    print(f"\n実行: {function_name}, {equation_name}, {solver_name}, {scaling_to_use or 'スケーリングなし'}")
+                    # 方程式セットを設定
+                    tester.set_equation_set(equation_name)
                     
-                    try:
-                        # テスターを作成
-                        tester = create_tester(args.dim, grid)
-                        
-                        # 方程式セットを設定
-                        tester.set_equation_set(equation_name)
-                        
-                        # ソルバーを設定
-                        tester.set_solver_options(solver_name, solver_options)
-                        
-                        # スケーリング手法を設定
-                        tester.scaling_method = scaling_to_use
-                        
-                        # 初期値摂動を設定
-                        if args.perturbation is not None:
-                            tester.perturbation_level = args.perturbation
+                    # ソルバーを設定
+                    tester.set_solver_options(solver_name, solver_options)
+                    
+                    # スケーリング手法を設定
+                    tester.scaling_method = scaling_to_use
+                    
+                    # 初期値摂動を設定
+                    if args.perturbation is not None:
+                        tester.perturbation_level = args.perturbation
+                    
+                    # 関数の内側ループ（行列Aを再利用）
+                    for function_name in function_list:
+                        print(f"  テスト関数: {function_name}")
                         
                         # テスト関数を取得
                         test_func = tester.get_test_function(function_name)
@@ -563,7 +566,7 @@ def main():
                                 # 各次元に応じた可視化処理
                                 if args.dim == 1:
                                     from visualizer.visualizer1d import CCDVisualizer1D
-                                    visualizer = CCDVisualizer1D()
+                                    visualizer = CCDVisualizer1D(output_dir="results")
                                     vis_file = visualizer.visualize_derivatives(
                                         grid, result['function'], result['numerical'], 
                                         result['exact'], result['errors'],
@@ -571,7 +574,7 @@ def main():
                                     )
                                 elif args.dim == 2:
                                     from visualizer.visualizer2d import CCDVisualizer2D
-                                    visualizer = CCDVisualizer2D()
+                                    visualizer = CCDVisualizer2D(output_dir="results")
                                     vis_file = visualizer.visualize_solution(
                                         grid, result['function'], result['numerical'], 
                                         result['exact'], result['errors'],
@@ -579,7 +582,7 @@ def main():
                                     )
                                 elif args.dim == 3:
                                     from visualizer.visualizer3d import CCDVisualizer3D
-                                    visualizer = CCDVisualizer3D()
+                                    visualizer = CCDVisualizer3D(output_dir="results")
                                     vis_file = visualizer.visualize_solution(
                                         grid, result['function'], result['numerical'], 
                                         result['exact'], result['errors'],
@@ -600,11 +603,11 @@ def main():
                             except Exception as e:
                                 print(f"  行列可視化エラー: {e}")
                     
-                    except Exception as e:
-                        print(f"エラー: {e}")
-                        if args.verbose:
-                            import traceback
-                            traceback.print_exc()
+                except Exception as e:
+                    print(f"エラー: {e}")
+                    if args.verbose:
+                        import traceback
+                        traceback.print_exc()
     
     # 結果サマリーを表示
     if len(all_results) > 1:

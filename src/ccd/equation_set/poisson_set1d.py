@@ -46,23 +46,21 @@ class PoissonEquationSet1D(EquationSet):
         system.add_equation('interior', Internal3rdDerivativeEquation(grid=grid))
         
         # 左境界の方程式設定
-        if self.enable_dirichlet:
-            system.add_equation('left', DirichletBoundaryEquation(grid=grid))
-        if self.enable_neumann:
-            system.add_equation('left', NeumannBoundaryEquation(grid=grid))
-            
-        system.add_equation('left', LeftBoundary1stDerivativeEquation(grid=grid))
-        system.add_equation('left', LeftBoundary2ndDerivativeEquation(grid=grid))
-        system.add_equation('left', LeftBoundary3rdDerivativeEquation(grid=grid))
+        system.add_equation('left', DirichletBoundaryEquation(grid=grid))
+        system.add_equation('left', NeumannBoundaryEquation(grid=grid))    
+        system.add_equation('left',
+                            LeftBoundary1stDerivativeEquation(grid=grid)+
+                            LeftBoundary2ndDerivativeEquation(grid=grid)+
+                            LeftBoundary3rdDerivativeEquation(grid=grid)
+        )
         
         # 右境界の方程式設定
-        if self.enable_dirichlet:
-            system.add_equation('right', DirichletBoundaryEquation(grid=grid))
-        if self.enable_neumann:
-            system.add_equation('right', NeumannBoundaryEquation(grid=grid))
-            
-        system.add_equation('right', RightBoundary1stDerivativeEquation(grid=grid))
-        system.add_equation('right', RightBoundary2ndDerivativeEquation(grid=grid))
-        system.add_equation('right', RightBoundary3rdDerivativeEquation(grid=grid))
-        
+        system.add_equation('right', DirichletBoundaryEquation(grid=grid))
+        system.add_equation('right', NeumannBoundaryEquation(grid=grid))
+        system.add_equation('right', 
+                            RightBoundary1stDerivativeEquation(grid=grid)+
+                            RightBoundary2ndDerivativeEquation(grid=grid)+
+                            RightBoundary3rdDerivativeEquation(grid=grid)
+        )
+
         return self.enable_dirichlet, self.enable_neumann
