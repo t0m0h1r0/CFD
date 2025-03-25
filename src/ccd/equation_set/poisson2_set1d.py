@@ -47,14 +47,12 @@ class PoissonEquationSet1D2(EquationSet):
         system.add_equation('left', DirichletBoundaryEquation(grid=grid))
         system.add_equation('left', LeftBoundary2ndDerivativeEquation(grid=grid))
         system.add_equation('left', 
-                          LeftBoundary1stDerivativeEquation(grid=grid)+
-                          LeftBoundary3rdDerivativeEquation(grid=grid))
+                          LeftBoundary1stDerivativeEquation(grid=grid))
         
         # 右境界の方程式設定
         system.add_equation('right', DirichletBoundaryEquation(grid=grid))
         system.add_equation('right', RightBoundary2ndDerivativeEquation(grid=grid))
         system.add_equation('right', 
-                          RightBoundary1stDerivativeEquation(grid=grid)+
-                          RightBoundary3rdDerivativeEquation(grid=grid))
+                          RightBoundary1stDerivativeEquation(grid=grid))
         
         return self.enable_dirichlet, self.enable_neumann

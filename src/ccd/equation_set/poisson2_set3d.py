@@ -74,8 +74,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_x(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
             converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
@@ -94,8 +94,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_x(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
             converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
@@ -117,8 +117,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(Internal1stDerivativeEquation(), grid=grid),
             converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
@@ -137,8 +137,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(Internal1stDerivativeEquation(), grid=grid),
             converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
@@ -160,8 +160,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_z(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
         
@@ -180,8 +180,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_z(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
         
@@ -198,8 +198,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(
                 LeftBoundary1stDerivativeEquation(),
@@ -224,8 +224,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(
                 RightBoundary1stDerivativeEquation(),
@@ -250,8 +250,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(
                 LeftBoundary1stDerivativeEquation(),
@@ -285,8 +285,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_z(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
         
@@ -311,8 +311,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_z(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
         
@@ -325,8 +325,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_x(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
             converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
@@ -351,8 +351,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_x(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(Internal1stDerivativeEquation(), grid=grid),
             converter.to_y(Internal2ndDerivativeEquation(), grid=grid),
@@ -389,8 +389,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_z(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
         
@@ -412,8 +412,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(Internal1stDerivativeEquation(), grid=grid),
             converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
@@ -429,8 +429,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_x(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(
                 RightBoundary1stDerivativeEquation(),
@@ -455,8 +455,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_x(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(
                 LeftBoundary1stDerivativeEquation(),
@@ -490,8 +490,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(Internal1stDerivativeEquation(), grid=grid),
             converter.to_z(Internal2ndDerivativeEquation(), grid=grid),
@@ -508,8 +508,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_x(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(
                 LeftBoundary1stDerivativeEquation(),
@@ -549,8 +549,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(
                 RightBoundary1stDerivativeEquation(),
@@ -590,8 +590,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_z(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
         
@@ -604,8 +604,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_x(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(
                 RightBoundary1stDerivativeEquation(),
@@ -645,8 +645,8 @@ class PoissonEquationSet3D2(EquationSet):
                 LeftBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                LeftBoundary2ndDerivativeEquation()+ 
-                LeftBoundary3rdDerivativeEquation(), 
+                LeftBoundary2ndDerivativeEquation(),
+                #LeftBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(
                 LeftBoundary1stDerivativeEquation(),
@@ -686,8 +686,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_z(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid)
         ]
         
@@ -700,8 +700,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_x(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_y(
                 RightBoundary1stDerivativeEquation(),
@@ -741,8 +741,8 @@ class PoissonEquationSet3D2(EquationSet):
                 RightBoundary1stDerivativeEquation(),
                 grid=grid),
             converter.to_y(
-                RightBoundary2ndDerivativeEquation()+ 
-                RightBoundary3rdDerivativeEquation(), 
+                RightBoundary2ndDerivativeEquation(),
+                #RightBoundary3rdDerivativeEquation(), 
                 grid=grid),
             converter.to_z(
                 RightBoundary1stDerivativeEquation(),
