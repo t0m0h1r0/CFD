@@ -47,6 +47,15 @@ class Equation(ABC):
             有効性を示すブール値
         """
         pass
+        
+    def get_equation_type(self):
+        """
+        方程式の種類を返す
+
+        Returns:
+            str: 方程式の種類 ('governing', 'dirichlet', 'neumann', 'auxiliary')
+        """
+        return "auxiliary"  # デフォルトは補助方程式
 
     def __add__(self, other):
         return CombinedEquation(self, other, "+")
@@ -161,6 +170,26 @@ class CombinedEquation(Equation):
             raise ValueError("グリッド点のインデックスiを指定する必要があります。")
         
         return self.eq1.is_valid_at(i) and self.eq2.is_valid_at(i)
+        
+    def get_equation_type(self):
+        """
+        結合された方程式の種類を返す
+        優先順位: governing > dirichlet > neumann > auxiliary
+        
+        Returns:
+            str: 方程式の種類
+        """
+        type1 = self.eq1.get_equation_type() if hasattr(self.eq1, 'get_equation_type') else "auxiliary"
+        type2 = self.eq2.get_equation_type() if hasattr(self.eq2, 'get_equation_type') else "auxiliary"
+        
+        # 優先順位に従って返す
+        if "governing" in [type1, type2]:
+            return "governing"
+        if "dirichlet" in [type1, type2]:
+            return "dirichlet"
+        if "neumann" in [type1, type2]:
+            return "neumann"
+        return "auxiliary"
 
 
 class ScaledEquation(Equation):
@@ -239,3 +268,14 @@ class ScaledEquation(Equation):
             raise ValueError("グリッド点のインデックスiを指定する必要があります。")
         
         return self.equation.is_valid_at(i)
+        
+    def get_equation_type(self):
+        """
+        スケールされた方程式の種類を返す
+        
+        Returns:
+            str: 方程式の種類
+        """
+        if hasattr(self.equation, 'get_equation_type'):
+            return self.equation.get_equation_type()
+        return "auxiliary"

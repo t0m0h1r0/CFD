@@ -130,41 +130,12 @@ class BaseEquationSystem(ABC):
             if not equation.is_valid_at(i):
                 return None
         
-        # クラス名から方程式種別を判定 (importはローカルに行う)
-        from equation.dim1.poisson import PoissonEquation
-        from equation.dim2.poisson import PoissonEquation2D
-        from equation.dim3.poisson import PoissonEquation3D
-        from equation.dim1.original import OriginalEquation
-        from equation.dim2.original import OriginalEquation2D
-        from equation.dim3.original import OriginalEquation3D
-        from equation.dim1.boundary import DirichletBoundaryEquation, NeumannBoundaryEquation
-        from equation.dim2.boundary import DirichletBoundaryEquation2D
-        from equation.dim3.boundary import DirichletBoundaryEquation3D
+        # 方程式自身に種類を問い合わせる
+        if hasattr(equation, 'get_equation_type'):
+            return equation.get_equation_type()
         
-        # 1D/2D/3D共通の方程式タイプ
-        if isinstance(equation, (PoissonEquation, PoissonEquation2D, PoissonEquation3D, 
-                              OriginalEquation, OriginalEquation2D, OriginalEquation3D)):
-            return "governing"
-        elif isinstance(equation, (DirichletBoundaryEquation, DirichletBoundaryEquation2D, DirichletBoundaryEquation3D)):
-            return "dirichlet"
-        elif isinstance(equation, NeumannBoundaryEquation):
-            return "neumann"
-        
-        # 2D/3D向けの方向性のある方程式を処理
-        from equation.converter import DirectionalEquation2D, DirectionalEquation3D
-        
-        if isinstance(equation, (DirectionalEquation2D, DirectionalEquation3D)):
-            # 内部の1D方程式がNeumannBoundaryEquationの場合
-            if hasattr(equation, 'equation_1d') and isinstance(equation.equation_1d, NeumannBoundaryEquation):
-                # 方向に基づいて適切なノイマンタイプを返す
-                if equation.direction == 'x':
-                    return "neumann_x"
-                elif equation.direction == 'y':
-                    return "neumann_y"
-                elif equation.direction == 'z' and isinstance(equation, DirectionalEquation3D):
-                    return "neumann_z"
-        
-        # それ以外は補助方程式
+        # もし get_equation_type メソッドが実装されていない場合のフォールバック
+        # (後方互換性のため)
         return "auxiliary"
     
     def _to_numpy(self, value):

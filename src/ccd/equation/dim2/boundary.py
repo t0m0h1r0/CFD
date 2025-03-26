@@ -49,3 +49,12 @@ class DirichletBoundaryEquation2D(Equation2D):
         
         return (i == 0 or i == self.grid.nx_points - 1 or 
                 j == 0 or j == self.grid.ny_points - 1)
+                
+    def get_equation_type(self):
+        """
+        2Dディリクレ境界条件の種類を返す
+
+        Returns:
+            str: "dirichlet"
+        """
+        return "dirichlet"

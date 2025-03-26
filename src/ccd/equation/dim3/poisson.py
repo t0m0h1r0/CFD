@@ -50,3 +50,12 @@ class PoissonEquation3D(Equation3D):
         """
         # Poisson equation is valid at all points
         return True
+        
+    def get_equation_type(self):
+        """
+        3Dポアソン方程式の種類を返す - 支配方程式
+
+        Returns:
+            str: "governing"
+        """
+        return "governing"

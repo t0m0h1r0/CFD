@@ -321,6 +321,24 @@ class DirectionalEquation2D(Equation2D):
             # 1次元方程式のvalid判定を使用
             emulator = Grid1DEmulator(self.grid.ny_points)
             return self.equation_1d.is_valid_at(j)
+            
+    def get_equation_type(self):
+        """
+        方程式の種類を方向を考慮して返す
+        
+        Returns:
+            str: 方程式の種類
+        """
+        if hasattr(self.equation_1d, 'get_equation_type'):
+            eq_type = self.equation_1d.get_equation_type()
+            # ノイマン条件の場合は方向を付加
+            if eq_type == "neumann":
+                if self.direction == 'x':
+                    return "neumann_x"
+                elif self.direction == 'y':
+                    return "neumann_y"
+            return eq_type
+        return super().get_equation_type()
 
 
 class CombinedDirectionalEquation2D(Equation2D):
@@ -425,6 +443,27 @@ class CombinedDirectionalEquation2D(Equation2D):
         
         # 両方の方程式が有効な場合のみ有効
         return self.x_eq.is_valid_at(i, j) and self.y_eq.is_valid_at(i, j)
+        
+    def get_equation_type(self):
+        """
+        組み合わせた方程式の種類を返す
+        
+        Returns:
+            str: 方程式の種類
+        """
+        x_type = self.x_eq.get_equation_type() if hasattr(self.x_eq, 'get_equation_type') else "auxiliary"
+        y_type = self.y_eq.get_equation_type() if hasattr(self.y_eq, 'get_equation_type') else "auxiliary"
+        
+        # 優先順位: governing > dirichlet > neumann_x/y > auxiliary
+        if "governing" in [x_type, y_type]:
+            return "governing"
+        if "dirichlet" in [x_type, y_type]:
+            return "dirichlet"
+        if "neumann_x" in [x_type, y_type]:
+            return "neumann_x"
+        if "neumann_y" in [x_type, y_type]:
+            return "neumann_y"
+        return "auxiliary"
 
 
 class DirectionalEquation3D(Equation3D):
@@ -648,6 +687,26 @@ class DirectionalEquation3D(Equation3D):
             # 1次元方程式のvalid判定を使用
             emulator = Grid1DEmulator(self.grid.nz_points)
             return self.equation_1d.is_valid_at(k)
+            
+    def get_equation_type(self):
+        """
+        方程式の種類を方向を考慮して返す
+        
+        Returns:
+            str: 方程式の種類
+        """
+        if hasattr(self.equation_1d, 'get_equation_type'):
+            eq_type = self.equation_1d.get_equation_type()
+            # ノイマン条件の場合は方向を付加
+            if eq_type == "neumann":
+                if self.direction == 'x':
+                    return "neumann_x"
+                elif self.direction == 'y':
+                    return "neumann_y"
+                elif self.direction == 'z':
+                    return "neumann_z"
+            return eq_type
+        return super().get_equation_type()
 
 
 class CombinedDirectionalEquation3D(Equation3D):
@@ -754,3 +813,31 @@ class CombinedDirectionalEquation3D(Equation3D):
         return (self.x_eq.is_valid_at(i, j, k) and 
                 self.y_eq.is_valid_at(i, j, k) and 
                 self.z_eq.is_valid_at(i, j, k))
+                
+    def get_equation_type(self):
+        """
+        組み合わせた方程式の種類を返す
+        
+        Returns:
+            str: 方程式の種類
+        """
+        x_type = self.x_eq.get_equation_type() if hasattr(self.x_eq, 'get_equation_type') else "auxiliary"
+        y_type = self.y_eq.get_equation_type() if hasattr(self.y_eq, 'get_equation_type') else "auxiliary"
+        z_type = self.z_eq.get_equation_type() if hasattr(self.z_eq, 'get_equation_type') else "auxiliary"
+        
+        # 優先順位: governing > dirichlet > neumann_x/y/z > auxiliary
+        types = [x_type, y_type, z_type]
+        if "governing" in types:
+            return "governing"
+        if "dirichlet" in types:
+            return "dirichlet"
+        
+        # ノイマン境界条件の優先順位: x > y > z
+        if "neumann_x" in types:
+            return "neumann_x"
+        if "neumann_y" in types:
+            return "neumann_y"
+        if "neumann_z" in types:
+            return "neumann_z"
+        
+        return "auxiliary"

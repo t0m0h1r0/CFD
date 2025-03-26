@@ -4,3 +4,4 @@
 src/test_results/
 src/ccd/results/
 *.png
+*.pdf

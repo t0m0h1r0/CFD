@@ -37,3 +37,12 @@ class OriginalEquation(Equation):
         """
         # すべての点で有効
         return True
+        
+    def get_equation_type(self):
+        """
+        元の関数使用方程式の種類を返す - 支配方程式
+
+        Returns:
+            str: "governing"
+        """
+        return "governing"
