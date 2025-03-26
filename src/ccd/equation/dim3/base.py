@@ -53,6 +53,15 @@ class Equation3D(ABC):
             Boolean indicating if equation is valid at (i,j,k)
         """
         pass
+        
+    def get_equation_type(self):
+        """
+        方程式の種類を返す
+
+        Returns:
+            str: 方程式の種類 ('governing', 'dirichlet', 'neumann_x', 'neumann_y', 'neumann_z', 'auxiliary')
+        """
+        return "auxiliary"  # デフォルトは補助方程式
     
     def __add__(self, other):
         """Add two equations"""
@@ -173,6 +182,35 @@ class CombinedEquation3D(Equation3D):
         
         # Valid only if both equations are valid
         return self.eq1.is_valid_at(i, j, k) and self.eq2.is_valid_at(i, j, k)
+        
+    def get_equation_type(self):
+        """
+        結合された方程式の種類を返す
+        優先順位: governing > dirichlet > neumann_x/neumann_y/neumann_z > auxiliary
+        
+        Returns:
+            str: 方程式の種類
+        """
+        type1 = self.eq1.get_equation_type() if hasattr(self.eq1, 'get_equation_type') else "auxiliary"
+        type2 = self.eq2.get_equation_type() if hasattr(self.eq2, 'get_equation_type') else "auxiliary"
+        
+        # 優先順位に従って返す
+        if "governing" in [type1, type2]:
+            return "governing"
+        if "dirichlet" in [type1, type2]:
+            return "dirichlet"
+        
+        # ノイマン境界条件の優先順位: x > y > z
+        neumann_types = [t for t in [type1, type2] if t.startswith("neumann_")]
+        if neumann_types:
+            if "neumann_x" in neumann_types:
+                return "neumann_x"
+            if "neumann_y" in neumann_types:
+                return "neumann_y"
+            if "neumann_z" in neumann_types:
+                return "neumann_z"
+        
+        return "auxiliary"
 
 
 class ScaledEquation3D(Equation3D):
@@ -255,3 +293,14 @@ class ScaledEquation3D(Equation3D):
         
         # Valid only if sub-equation is valid
         return self.equation.is_valid_at(i, j, k)
+        
+    def get_equation_type(self):
+        """
+        スケールされた方程式の種類を返す
+        
+        Returns:
+            str: 方程式の種類
+        """
+        if hasattr(self.equation, 'get_equation_type'):
+            return self.equation.get_equation_type()
+        return "auxiliary"

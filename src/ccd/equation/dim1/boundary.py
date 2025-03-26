@@ -43,6 +43,15 @@ class DirichletBoundaryEquation(Equation):
             
         n = self.grid.n_points
         return i == 0 or i == n - 1
+        
+    def get_equation_type(self):
+        """
+        ディリクレ境界条件の種類を返す
+
+        Returns:
+            str: "dirichlet"
+        """
+        return "dirichlet"
 
 
 class NeumannBoundaryEquation(Equation):
@@ -87,3 +96,12 @@ class NeumannBoundaryEquation(Equation):
             
         n = self.grid.n_points
         return i == 0 or i == n - 1
+        
+    def get_equation_type(self):
+        """
+        ノイマン境界条件の種類を返す
+
+        Returns:
+            str: "neumann"
+        """
+        return "neumann"

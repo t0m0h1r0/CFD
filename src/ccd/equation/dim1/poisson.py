@@ -36,3 +36,12 @@ class PoissonEquation(Equation):
         """
         # ポアソン方程式は全ての点で有効
         return True
+        
+    def get_equation_type(self):
+        """
+        ポアソン方程式の種類を返す - 支配方程式
+
+        Returns:
+            str: "governing"
+        """
+        return "governing"

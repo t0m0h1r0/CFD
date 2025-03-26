@@ -48,3 +48,12 @@ class PoissonEquation2D(Equation2D):
         """
         # Poisson equation is valid at all points
         return True
+        
+    def get_equation_type(self):
+        """
+        2Dポアソン方程式の種類を返す - 支配方程式
+
+        Returns:
+            str: "governing"
+        """
+        return "governing"

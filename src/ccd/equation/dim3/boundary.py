@@ -50,3 +50,12 @@ class DirichletBoundaryEquation3D(Equation3D):
         
         # 3Dグリッドの境界上にあるかどうかをチェック
         return self.grid.is_boundary_point(i, j, k)
+        
+    def get_equation_type(self):
+        """
+        3Dディリクレ境界条件の種類を返す
+
+        Returns:
+            str: "dirichlet"
+        """
+        return "dirichlet"

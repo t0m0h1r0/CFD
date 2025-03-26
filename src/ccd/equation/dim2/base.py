@@ -52,6 +52,15 @@ class Equation2D(ABC):
             Boolean indicating if equation is valid at (i,j)
         """
         pass
+        
+    def get_equation_type(self):
+        """
+        方程式の種類を返す
+
+        Returns:
+            str: 方程式の種類 ('governing', 'dirichlet', 'neumann_x', 'neumann_y', 'auxiliary')
+        """
+        return "auxiliary"  # デフォルトは補助方程式
     
     def __add__(self, other):
         """Add two equations"""
@@ -172,6 +181,27 @@ class CombinedEquation2D(Equation2D):
         
         # Valid only if both equations are valid
         return self.eq1.is_valid_at(i, j) and self.eq2.is_valid_at(i, j)
+        
+    def get_equation_type(self):
+        """
+        結合された方程式の種類を返す
+        優先順位: governing > dirichlet > neumann_x/neumann_y > auxiliary
+        
+        Returns:
+            str: 方程式の種類
+        """
+        type1 = self.eq1.get_equation_type() if hasattr(self.eq1, 'get_equation_type') else "auxiliary"
+        type2 = self.eq2.get_equation_type() if hasattr(self.eq2, 'get_equation_type') else "auxiliary"
+        
+        # 優先順位に従って返す
+        if "governing" in [type1, type2]:
+            return "governing"
+        if "dirichlet" in [type1, type2]:
+            return "dirichlet"
+        if "neumann_x" in [type1, type2] or "neumann_y" in [type1, type2]:
+            # neumann_xとneumann_yは同等だが、両方ある場合はx方向を優先
+            return "neumann_x" if "neumann_x" in [type1, type2] else "neumann_y"
+        return "auxiliary"
 
 
 class ScaledEquation2D(Equation2D):
@@ -254,3 +284,14 @@ class ScaledEquation2D(Equation2D):
         
         # Valid only if sub-equation is valid
         return self.equation.is_valid_at(i, j)
+        
+    def get_equation_type(self):
+        """
+        スケールされた方程式の種類を返す
+        
+        Returns:
+            str: 方程式の種類
+        """
+        if hasattr(self.equation, 'get_equation_type'):
+            return self.equation.get_equation_type()
+        return "auxiliary"
