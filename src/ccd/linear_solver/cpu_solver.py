@@ -46,6 +46,14 @@ class CPULinearSolver(LinearSolver):
         # JAX配列からの変換
         if 'jax' in str(type(A)):
             return np.array(A)
+        
+        # スパース行列の処理
+        if hasattr(A, 'format'):
+            # すでにCSR形式ならそのまま返す
+            if A.format == 'csr':
+                return A
+            # 他の形式はCSRに変換
+            return A.tocsr()
             
         # 既にNumPy/SciPyの場合はそのまま
         return A

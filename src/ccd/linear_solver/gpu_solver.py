@@ -102,7 +102,7 @@ class GPULinearSolver(LinearSolver):
                 if A.format != 'csr':
                     A = A.tocsr()
                 
-                # CSR行列を直接CuPyに転送
+                # CSR行列を直接CuPyに転送（効率的）
                 return self.cp.sparse.csr_matrix(
                     (self.cp.array(A.data), 
                      self.cp.array(A.indices), 
