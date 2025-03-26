@@ -8,7 +8,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
-from typing import List, Dict, Tuple, Optional
+from typing import List
 
 from core.base.base_visualizer import BaseVisualizer
 
@@ -122,7 +122,7 @@ class CCDVisualizer1D(BaseVisualizer):
         # 最大誤差値が0でない場合のみマーカー表示
         if max_err_y > 0:
             ax2.plot(max_err_x, max_err_y, "go", ms=4)
-            ax2.annotate(f"Max", 
+            ax2.annotate("Max", 
                       xy=(max_err_x, max_err_y),
                       xytext=(5, 5),
                       textcoords="offset points",
@@ -206,7 +206,7 @@ class CCDVisualizer1D(BaseVisualizer):
             
             # 全て0の場合はスキップ
             if all(err == 0 for err in errors):
-                ax.text(0.5, 0.5, f"All errors are 0", 
+                ax.text(0.5, 0.5, "All errors are 0", 
                        ha='center', va='center', transform=ax.transAxes)
                 continue
                 

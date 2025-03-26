@@ -6,7 +6,7 @@
 """
 
 import numpy as np
-from typing import Dict, Any, Optional, List, Tuple, Union
+from typing import Dict, Any, Optional, List
 
 from core.base.base_rhs_builder import RHSBuilder
 from equation.converter import DirectionalEquation3D
@@ -81,11 +81,11 @@ class RHSBuilder3D(RHSBuilder):
         
         if self.enable_dirichlet:
             dirichlet_info = [f"{face}={face+'_dirichlet' in boundary_values}" for face in faces]
-            print(f"[3Dソルバー] ディリクレ境界条件: " + ", ".join(dirichlet_info))
+            print("[3Dソルバー] ディリクレ境界条件: " + ", ".join(dirichlet_info))
             
         if self.enable_neumann:
             neumann_info = [f"{face}={face+'_neumann' in boundary_values}" for face in faces]
-            print(f"[3Dソルバー] ノイマン境界条件: " + ", ".join(neumann_info))
+            print("[3Dソルバー] ノイマン境界条件: " + ", ".join(neumann_info))
     
     def _get_point_location(self, i: int, j: int, k: int) -> str:
         """

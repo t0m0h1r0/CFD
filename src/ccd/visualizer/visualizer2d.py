@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.gridspec import GridSpec
-from typing import List, Dict, Optional, Tuple
+from typing import List
 
 from core.base.base_visualizer import BaseVisualizer
 

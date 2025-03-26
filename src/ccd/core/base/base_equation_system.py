@@ -210,7 +210,7 @@ class BaseEquationSystem(ABC):
         # 中間処理の一時メモリ（リスト形式時）
         memory_lists_MB = (nnz * 20) / (1024 * 1024)  # 値8バイト + 2つのインデックス各4バイト + Pythonオーバーヘッド4バイト
         
-        print(f"\n行列メモリ使用量の分析:")
+        print("\n行列メモリ使用量の分析:")
         print(f"  行列サイズ: {system_size} x {system_size}")
         print(f"  非ゼロ要素数: {nnz}")
         print(f"  疎密比率: {nnz / (system_size * system_size):.6f}")

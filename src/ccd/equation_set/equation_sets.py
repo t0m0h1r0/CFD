@@ -9,7 +9,7 @@
 """
 
 # 基底クラスのインポート
-from core.base.base_equation_set import EquationSet, DimensionalEquationSetWrapper
+from core.base.base_equation_set import EquationSet
 
 from equation_set.derivative_set1d import DerivativeEquationSet1D
 from equation_set.poisson_set1d import PoissonEquationSet1D

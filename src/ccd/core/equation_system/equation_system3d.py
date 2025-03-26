@@ -5,7 +5,6 @@
 3次元問題の格子点方程式を管理し、線形方程式系の行列を構築するための機能を提供します。
 """
 
-import numpy as np
 import scipy.sparse as sp_cpu
 from typing import Dict, List, Any
 
