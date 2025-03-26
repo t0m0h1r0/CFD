@@ -49,7 +49,7 @@ class RHSBuilder2D(RHSBuilder):
             'top_neumann': self._to_numpy(top_neumann)
         }
         
-        # 境界条件の整合性を検証
+        # 境界条件の整合性を検証 (基底クラスの共通機能を使用)
         warnings = self._validate_boundary_conditions(boundary_values)
         if warnings:
             for warning in warnings:
@@ -62,7 +62,11 @@ class RHSBuilder2D(RHSBuilder):
         for j in range(ny):
             for i in range(nx):
                 base_idx = (j * nx + i) * var_per_point
+                
+                # 点の位置を特定
                 location = self._get_point_location(i, j)
+                
+                # その位置に対応する方程式群を取得
                 location_equations = self.system.equations[location]
                 
                 # 右辺ベクトルの値をセット
@@ -85,6 +89,7 @@ class RHSBuilder2D(RHSBuilder):
             print(f"[2Dソルバー] ディリクレ境界条件: "
                   f"左={left_dirichlet}, 右={right_dirichlet}, "
                   f"下={bottom_dirichlet}, 上={top_dirichlet}")
+            
         if self.enable_neumann:
             left_neumann = boundary_values.get('left_neumann') is not None
             right_neumann = boundary_values.get('right_neumann') is not None
@@ -151,7 +156,7 @@ class RHSBuilder2D(RHSBuilder):
             f_values: ソース項の値
             boundary_values: 境界条件の値の辞書
         """
-        # 方程式の種類ごとに整理
+        # 方程式の種類ごとに整理 (基底クラスの共通機能を使用)
         eq_by_type = self._classify_equations(equations, i, j)
         
         # 方程式の割り当てを決定
@@ -165,35 +170,6 @@ class RHSBuilder2D(RHSBuilder):
         
         # 境界条件の処理
         self._apply_boundary_conditions(b, base_idx, location, assignments, i, j, boundary_values)
-    
-    def _classify_equations(self, equations: List, i: int, j: int) -> Dict[str, Any]:
-        """
-        方程式をタイプごとに分類
-        
-        Args:
-            equations: 方程式のリスト
-            i: x方向インデックス
-            j: y方向インデックス
-            
-        Returns:
-            方程式の種類をキー、方程式（または方程式のリスト）を値とする辞書
-        """
-        eq_by_type = {
-            "governing": None, 
-            "dirichlet": None, 
-            "neumann_x": None, 
-            "neumann_y": None, 
-            "auxiliary": []
-        }
-        
-        for eq in equations:
-            eq_type = self.system._identify_equation_type(eq, i, j)
-            if eq_type == "auxiliary":
-                eq_by_type["auxiliary"].append(eq)
-            elif eq_type:  # Noneでない場合
-                eq_by_type[eq_type] = eq
-        
-        return eq_by_type
     
     def _find_governing_row(self, assignments: List) -> Optional[int]:
         """
@@ -330,25 +306,3 @@ class RHSBuilder2D(RHSBuilder):
             boundary_value = self._get_boundary_value(boundary_values, 'top_neumann', i)
             if boundary_value is not None:
                 b[base_idx + row] = boundary_value
-    
-    def _get_boundary_value(self, boundary_values: Dict[str, Any], key: str, idx: int) -> Optional[float]:
-        """
-        境界値を取得
-        
-        Args:
-            boundary_values: 境界条件の値の辞書
-            key: 境界条件の種類を示すキー
-            idx: インデックス
-            
-        Returns:
-            境界値、または境界値が指定されていない場合はNone
-        """
-        value = boundary_values.get(key)
-        if value is None:
-            return None
-            
-        # 配列の場合はインデックスを使用
-        if isinstance(value, (list, np.ndarray)) and idx < len(value):
-            return value[idx]
-        # スカラーの場合はそのまま返す
-        return value

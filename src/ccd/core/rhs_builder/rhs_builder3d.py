@@ -6,7 +6,7 @@
 """
 
 import numpy as np
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple, Union
 
 from core.base.base_rhs_builder import RHSBuilder
 from equation.converter import DirectionalEquation3D
@@ -29,9 +29,8 @@ class RHSBuilder3D(RHSBuilder):
                     face_y_min_dirichlet, face_y_max_dirichlet,
                     face_z_min_dirichlet, face_z_max_dirichlet,
                     face_x_min_neumann, face_x_max_neumann, ...
-                辺の境界値:
+                辺と頂点の境界値:
                     edge_*_dirichlet, edge_*_neumann
-                頂点の境界値:
                     vertex_*_dirichlet
             
         Returns:
@@ -45,6 +44,15 @@ class RHSBuilder3D(RHSBuilder):
         # 入力値を NumPy に変換（必要な場合）
         if f_values is not None:
             f_values = self._to_numpy(f_values)
+        
+        # 境界条件の整合性を検証 (基底クラスの共通機能を使用)
+        warnings = self._validate_boundary_conditions(boundary_values)
+        if warnings:
+            for warning in warnings:
+                print(f"警告: {warning}")
+        
+        # 主要な面の境界条件情報を出力 (簡略化のため)
+        self._print_boundary_info_summary(boundary_values)
         
         # 各格子点について処理
         for k in range(nz):
@@ -62,6 +70,23 @@ class RHSBuilder3D(RHSBuilder):
         
         return b
     
+    def _print_boundary_info_summary(self, boundary_values: Dict[str, Any]):
+        """
+        主要な境界条件に関する情報を出力 (簡略化版)
+        
+        Args:
+            boundary_values: 境界条件の値の辞書
+        """
+        faces = ["face_x_min", "face_x_max", "face_y_min", "face_y_max", "face_z_min", "face_z_max"]
+        
+        if self.enable_dirichlet:
+            dirichlet_info = [f"{face}={face+'_dirichlet' in boundary_values}" for face in faces]
+            print(f"[3Dソルバー] ディリクレ境界条件: " + ", ".join(dirichlet_info))
+            
+        if self.enable_neumann:
+            neumann_info = [f"{face}={face+'_neumann' in boundary_values}" for face in faces]
+            print(f"[3Dソルバー] ノイマン境界条件: " + ", ".join(neumann_info))
+    
     def _get_point_location(self, i: int, j: int, k: int) -> str:
         """
         格子点の位置を取得
@@ -74,6 +99,7 @@ class RHSBuilder3D(RHSBuilder):
         Returns:
             位置を表す文字列
         """
+        # Grid3Dクラスの境界判定機能を利用
         return self.grid.get_boundary_type(i, j, k)
     
     def _set_rhs_for_point(self, b: np.ndarray, base_idx: int, location: str, 
@@ -92,7 +118,7 @@ class RHSBuilder3D(RHSBuilder):
             f_values: ソース項の値
             boundary_values: 境界条件の値の辞書
         """
-        # 方程式の種類ごとに整理
+        # 方程式の種類ごとに整理 (基底クラスの共通機能を使用)
         eq_by_type = self._classify_equations(equations, i, j, k)
         
         # 方程式の割り当てを決定
@@ -106,35 +132,6 @@ class RHSBuilder3D(RHSBuilder):
         
         # 境界条件の処理
         self._apply_boundary_conditions(b, base_idx, location, assignments, equations, i, j, k, boundary_values)
-    
-    def _classify_equations(self, equations: List, i: int, j: int, k: int) -> Dict[str, Any]:
-        """
-        方程式をタイプごとに分類
-        
-        Args:
-            equations: 方程式のリスト
-            i, j, k: 格子点のインデックス
-            
-        Returns:
-            方程式の種類をキー、方程式（または方程式のリスト）を値とする辞書
-        """
-        eq_by_type = {
-            "governing": None, 
-            "dirichlet": None, 
-            "neumann_x": None, 
-            "neumann_y": None, 
-            "neumann_z": None,
-            "auxiliary": []
-        }
-        
-        for eq in equations:
-            eq_type = self.system._identify_equation_type(eq, i, j, k)
-            if eq_type == "auxiliary":
-                eq_by_type["auxiliary"].append(eq)
-            elif eq_type:  # Noneでない場合
-                eq_by_type[eq_type] = eq
-        
-        return eq_by_type
     
     def _find_governing_row(self, assignments: List) -> Optional[int]:
         """
@@ -230,7 +227,7 @@ class RHSBuilder3D(RHSBuilder):
             i, j, k: 格子点のインデックス
             boundary_values: 境界条件の値の辞書
         """
-        # 修正: 正しいキーフォーマットを使用（方向サフィックスを削除）
+        # 正しいキーフォーマットを使用
         bc_key = f"{location}_neumann"
         if bc_key in boundary_values and boundary_values[bc_key] is not None:
             boundary_value = self._get_boundary_value_for_3d(boundary_values[bc_key], i, j, k, location)

@@ -54,7 +54,7 @@ class RHSBuilder1D(RHSBuilder):
         
         # 各格子点について処理
         for i in range(n):
-            # 点の位置を特定 (内部/左境界/右境界)
+            # 点の位置を特定
             location = self._get_point_location(i)
             base_idx = i * var_per_point
             
@@ -118,7 +118,7 @@ class RHSBuilder1D(RHSBuilder):
             f_values: ソース項の値
             boundary_values: 境界条件の値の辞書
         """
-        # 方程式の種類ごとに整理
+        # 方程式の種類ごとに整理 (基底クラスの共通機能を使用)
         eq_by_type = self._classify_equations(equations, i)
         
         # 各方程式タイプに対応する行のインデックスを決定
@@ -131,33 +131,6 @@ class RHSBuilder1D(RHSBuilder):
         
         # 境界条件の処理
         self._apply_boundary_conditions(b, base_idx, location, row_assignments, boundary_values)
-    
-    def _classify_equations(self, equations: List, i: int) -> Dict[str, Any]:
-        """
-        方程式をタイプごとに分類
-        
-        Args:
-            equations: 方程式のリスト
-            i: 格子点のインデックス
-            
-        Returns:
-            方程式の種類をキー、方程式（または方程式のリスト）を値とする辞書
-        """
-        eq_by_type = {
-            "governing": None, 
-            "dirichlet": None, 
-            "neumann": None, 
-            "auxiliary": []
-        }
-        
-        for eq in equations:
-            eq_type = self.system._identify_equation_type(eq, i)
-            if eq_type == "auxiliary":
-                eq_by_type["auxiliary"].append(eq)
-            elif eq_type:  # Noneでない場合
-                eq_by_type[eq_type] = eq
-        
-        return eq_by_type
     
     def _assign_equations_to_rows(self, eq_by_type: Dict[str, Any]) -> Dict[str, int]:
         """
