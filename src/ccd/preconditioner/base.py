@@ -1,14 +1,15 @@
+# preconditioner/base.py
 """
-前処理手法の基底クラス
+前処理器の基底クラス
 
-このモジュールは、CCD法の反復ソルバーの収束を加速するための
-前処理手法の基底クラスを定義します。
+このモジュールは、反復法で使用する前処理行列Mを計算するための
+基底クラスを定義します。
 """
 
 from abc import ABC, abstractmethod
 
 class BasePreconditioner(ABC):
-    """前処理手法の抽象基底クラス"""
+    """前処理器の抽象基底クラス"""
     
     def __init__(self):
         """初期化"""
@@ -17,7 +18,7 @@ class BasePreconditioner(ABC):
     @abstractmethod
     def setup(self, A):
         """
-        行列Aに対して前処理を設定
+        行列Aに対して前処理行列Mを計算
         
         Args:
             A: システム行列
@@ -29,36 +30,24 @@ class BasePreconditioner(ABC):
     
     def __call__(self, b):
         """
-        前処理を適用 (M*x = bを解く)
+        前処理を適用 (M⁻¹b を計算)
         
         Args:
-            b: 右辺ベクトル
+            b: ベクトル
             
         Returns:
-            前処理適用後のベクトル
+            前処理したベクトル
         """
-        # デフォルト実装: Mは近似逆行列と仮定
         if self.M is None:
             return b
         return self.M @ b
     
     @property
-    def matrix(self):
-        """前処理行列または演算子を返す"""
-        return self.M
-    
-    @property
-    @abstractmethod
     def name(self):
-        """前処理手法の名前を返す"""
-        pass
+        """前処理器の名前"""
+        return self.__class__.__name__
     
     @property
-    @abstractmethod
     def description(self):
-        """前処理手法の説明を返す"""
-        pass
-    
-    def is_sparse(self, matrix):
-        """行列が疎行列かどうか判定"""
-        return hasattr(matrix, 'format') or 'sparse' in str(type(matrix))
+        """前処理器の説明"""
+        return "抽象基底クラス"

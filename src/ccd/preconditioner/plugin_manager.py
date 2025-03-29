@@ -1,162 +1,112 @@
+# preconditioner/plugin_manager.py
 """
-前処理プラグインマネージャー
+前処理器プラグインマネージャー
 
-このモジュールは、CCD法で使用する前処理手法のプラグインを
-動的に検出して管理するマネージャークラスを提供します。
+このモジュールは、前処理器プラグインを動的に検出して管理する
+機能を提供します。
 """
 
 import os
 import importlib
 import inspect
-import logging
-from pathlib import Path
-from typing import Dict, Optional
 from .base import BasePreconditioner
 
 class PreconditionerPluginManager:
-    """前処理プラグインマネージャー"""
+    """前処理器プラグインマネージャー"""
     
     def __init__(self):
         """初期化"""
-        self._plugins: Dict[str, BasePreconditioner] = {}
-        self._default_plugin: Optional[BasePreconditioner] = None
-        self._plugins_loaded: bool = False
-        self._logger = logging.getLogger(__name__)
-        
-        # ロガー設定
-        self._logger.setLevel(logging.ERROR)
-        if not self._logger.handlers:
-            handler = logging.StreamHandler()
-            handler.setLevel(logging.ERROR)
-            self._logger.addHandler(handler)
-        
-        # 詳細出力用フラグ
-        self._verbose = False
+        self._plugins = {}
+        self._default_plugin = None
     
-    @property
-    def verbose(self):
-        """詳細出力フラグの取得"""
-        return self._verbose
-    
-    @verbose.setter
-    def verbose(self, value):
-        """詳細出力フラグの設定"""
-        self._verbose = value
-        
-        # フラグに応じてログレベルを更新
-        if value:
-            self._logger.setLevel(logging.DEBUG)
-            for handler in self._logger.handlers:
-                handler.setLevel(logging.DEBUG)
-        else:
-            self._logger.setLevel(logging.ERROR)
-            for handler in self._logger.handlers:
-                handler.setLevel(logging.ERROR)
-    
-    def discover_plugins(self) -> Dict[str, BasePreconditioner]:
+    def discover_plugins(self):
         """
-        利用可能な前処理プラグインを検出
+        利用可能なプラグインを検出
         
         Returns:
-            Dict[str, BasePreconditioner]: 検出されたプラグインの辞書
+            検出されたプラグインの辞書 {名前: インスタンス}
         """
-        if self._plugins_loaded:
+        if self._plugins:  # 既に検出済みの場合
             return self._plugins
-        
-        # プラグインディレクトリのパスを取得
-        current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-        self._logger.debug(f"プラグイン検索場所: {current_dir}")
-        
-        # ディレクトリの存在確認
-        if not current_dir.exists():
-            self._logger.warning(f"ディレクトリが存在しません: {current_dir}")
-            return self._plugins
-        
-        # ディレクトリ内のPythonファイルを検索
-        py_files = list(current_dir.glob("*.py"))
-        self._logger.debug(f"ディレクトリ内の.pyファイル数: {len(py_files)}")
-        
-        for py_file in py_files:
-            # 特殊ファイルはスキップ
-            if py_file.name in ["__init__.py", "base.py", "plugin_manager.py"]:
-                self._logger.debug(f"特殊ファイルをスキップ: {py_file.name}")
-                continue
             
-            module_name = py_file.stem
-            self._logger.debug(f"モジュールインポート試行: {module_name}")
-            
-            try:
-                # モジュールを動的にインポート
-                full_module_name = f"preconditioner.{module_name}"
-                module = importlib.import_module(full_module_name)
+        # 現在のパッケージディレクトリのパスを取得
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # 対象外ファイル
+        exclude_files = ['__init__.py', 'base.py', 'plugin_manager.py']
+        
+        # Pythonファイルを探索
+        for filename in os.listdir(current_dir):
+            if filename.endswith('.py') and filename not in exclude_files:
+                module_name = filename[:-3]  # .pyを除去
                 
-                # モジュール内のすべてのクラスを検査
-                classes_found = 0
-                for name, obj in inspect.getmembers(module, inspect.isclass):
+                try:
+                    # モジュールをインポート
+                    module = importlib.import_module(f".{module_name}", package=__package__)
+                    
                     # BasePreconditionerのサブクラスを検索
-                    if issubclass(obj, BasePreconditioner) and obj is not BasePreconditioner:
-                        classes_found += 1
-                        instance = obj()  # インスタンスを作成
-                        self._plugins[instance.name] = instance
-                        self._logger.debug(f"プラグイン追加: {instance.name} from {module_name}")
-                        
-                        # デフォルトプラグインを設定
-                        if self._default_plugin is None:
-                            self._default_plugin = instance
-                        
-                        # IdentityPreconditionerがあればデフォルトとして使用
-                        if instance.name.lower() == "identitypreconditioner":
-                            self._default_plugin = instance
-                
-                self._logger.debug(f"{module_name}で{classes_found}個のプラグインクラスを発見")
-            
-            except Exception as e:
-                self._logger.warning(f"プラグイン {module_name} 読み込みエラー: {e}")
-                import traceback
-                self._logger.debug(traceback.format_exc())
+                    for obj_name, obj in inspect.getmembers(module, inspect.isclass):
+                        if issubclass(obj, BasePreconditioner) and obj != BasePreconditioner:
+                            # インスタンスを作成
+                            instance = obj()
+                            
+                            # プラグイン辞書に追加
+                            self._plugins[instance.name] = instance
+                            
+                            # 最初のプラグインをデフォルトに設定
+                            if self._default_plugin is None:
+                                self._default_plugin = instance
+                                
+                            # Identity前処理器をデフォルトとして優先
+                            if 'Identity' in instance.name:
+                                self._default_plugin = instance
+                except Exception as e:
+                    print(f"プラグイン '{module_name}' のロード中にエラー: {e}")
         
-        # プラグインが見つからない場合、デフォルトを作成
-        if not self._plugins:
+        # Identity前処理器がない場合は作成
+        if not self._plugins or not any('Identity' in name for name in self._plugins):
             from .identity import IdentityPreconditioner
-            self._default_plugin = IdentityPreconditioner()
-            self._plugins[self._default_plugin.name] = self._default_plugin
-            self._logger.debug("デフォルトのIdentityPreconditionerを作成")
-        
-        self._plugins_loaded = True
-        self._logger.debug(f"{len(self._plugins)}個のプラグインを読み込み: {list(self._plugins.keys())}")
+            identity = IdentityPreconditioner()
+            self._plugins[identity.name] = identity
+            self._default_plugin = identity
+            
         return self._plugins
     
-    def get_plugin(self, name: Optional[str] = None) -> BasePreconditioner:
+    def get_plugin(self, name=None):
         """
-        指定した名前の前処理プラグインを取得
+        指定した名前の前処理器を取得
         
         Args:
-            name: プラグイン名（Noneの場合はデフォルト）
+            name: 前処理器名（Noneの場合はデフォルト）
             
         Returns:
-            BasePreconditioner: 前処理インスタンス
+            前処理器インスタンス
         """
-        if not self._plugins_loaded:
+        # プラグインがまだ検出されていない場合
+        if not self._plugins:
             self.discover_plugins()
-        
-        if name is None:
-            if self._default_plugin is None:
-                self._logger.warning("デフォルトプラグインがNone。IdentityPreconditionerを作成。")
-                from .identity import IdentityPreconditioner
-                self._default_plugin = IdentityPreconditioner()
-                self._plugins[self._default_plugin.name] = self._default_plugin
+            
+        # Noneまたは空文字列の場合はデフォルト
+        if name is None or name == '':
             return self._default_plugin
-        
-        # 大文字小文字を区別せずに検索
+            
+        # 名前で検索（大文字小文字を区別しない）
         for plugin_name, plugin in self._plugins.items():
             if plugin_name.lower() == name.lower():
                 return plugin
-        
-        # 見つからない場合はデフォルトを返す
-        self._logger.warning(f"警告: 前処理プラグイン '{name}' が見つかりません。デフォルトを使用します。")
-        if self._default_plugin is None:
-            self._logger.warning("デフォルトプラグインがNone。IdentityPreconditionerを作成。")
-            from .identity import IdentityPreconditioner
-            self._default_plugin = IdentityPreconditioner()
-            self._plugins[self._default_plugin.name] = self._default_plugin
+                
+        # 見つからない場合はデフォルト
+        print(f"警告: 前処理器 '{name}' が見つかりません。デフォルトを使用します。")
         return self._default_plugin
+    
+    def list_plugins(self):
+        """
+        利用可能な前処理器の一覧を取得
+        
+        Returns:
+            前処理器名のリスト
+        """
+        if not self._plugins:
+            self.discover_plugins()
+            
+        return list(self._plugins.keys())
