@@ -24,9 +24,6 @@ class GPULinearSolver(LinearSolver):
             # 行列をCuPy CSR形式に変換
             self.A = self._to_gpu_csr(self.original_A)
             
-            # 前処理器のセットアップ
-            self.setup_preconditioner()
-            
             # 解法メソッド辞書
             self.solvers = {
                 "direct": self._solve_direct,
@@ -52,7 +49,7 @@ class GPULinearSolver(LinearSolver):
             self.enable_dirichlet, 
             self.enable_neumann,
             None,  # scaling_method
-            self.preconditioner  # 前処理器は引き継ぐ
+            None   # preconditioner
         )
         # CPU版の属性を継承
         self.__dict__.update(cpu_solver.__dict__)
@@ -83,7 +80,7 @@ class GPULinearSolver(LinearSolver):
             return A
     
     def _to_numpy_matrix(self, A):
-        """行列をNumPy形式に変換 (前処理用)"""
+        """行列をNumPy形式に変換"""
         if hasattr(A, 'get'):
             return A.get()
         return A
@@ -124,31 +121,6 @@ class GPULinearSolver(LinearSolver):
             print(f"GPU変換エラー: {e}")
             return b
     
-    def _create_preconditioner_operator(self):
-        """
-        前処理演算子を作成
-        
-        Returns:
-            前処理演算子またはNone
-        """
-        if self.preconditioner is None or not self.has_cupy:
-            return None
-            
-        # 前処理行列を使用するLinearOperator
-        from cupyx.scipy.sparse.linalg import LinearOperator
-        
-        n = self.A.shape[0]
-        
-        def precond_matvec(x):
-            # 前処理を適用（CuPy配列を前提）
-            try:
-                return self.preconditioner(x)
-            except Exception as e:
-                print(f"前処理適用エラー: {e}")
-                return x
-                
-        return LinearOperator((n, n), matvec=precond_matvec)
-    
     # 各解法メソッド
     
     def _solve_direct(self, A, b, options=None):
@@ -181,22 +153,14 @@ class GPULinearSolver(LinearSolver):
         x0 = options.get("x0", self.cp.zeros_like(b))
         
         try:
-            # 前処理演算子を取得
-            M = self._create_preconditioner_operator()
-            
             # GMRESを実行
-            result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, M=M)
+            result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
             return result[0], result[1]
         except Exception as e:
             print(f"GMRES実行エラー: {e}")
             
-            try:
-                # 前処理なしで再試行
-                result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
-                return result[0], result[1]
-            except Exception:
-                # 直接解法にフォールバック
-                return self._solve_direct(A, b)
+            # 直接解法にフォールバック
+            return self._solve_direct(A, b)
     
     def _solve_cg(self, A, b, options=None):
         """共役勾配法"""
@@ -206,22 +170,14 @@ class GPULinearSolver(LinearSolver):
         x0 = options.get("x0", self.cp.zeros_like(b))
         
         try:
-            # 前処理演算子を取得
-            M = self._create_preconditioner_operator()
-            
             # CGを実行
-            result = self.splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
+            result = self.splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter)
             return result[0], result[1]
         except Exception as e:
             print(f"CG実行エラー: {e}")
             
-            try:
-                # 前処理なしで再試行
-                result = self.splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter)
-                return result[0], result[1]
-            except Exception:
-                # 直接解法にフォールバック
-                return self._solve_direct(A, b)
+            # 直接解法にフォールバック
+            return self._solve_direct(A, b)
     
     def _solve_cgs(self, A, b, options=None):
         """CGS法"""
@@ -231,22 +187,14 @@ class GPULinearSolver(LinearSolver):
         x0 = options.get("x0", self.cp.zeros_like(b))
         
         try:
-            # 前処理演算子を取得
-            M = self._create_preconditioner_operator()
-            
             # CGSを実行
-            result = self.splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
+            result = self.splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter)
             return result[0], result[1]
         except Exception as e:
             print(f"CGS実行エラー: {e}")
             
-            try:
-                # 前処理なしで再試行
-                result = self.splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter)
-                return result[0], result[1]
-            except Exception:
-                # 直接解法にフォールバック
-                return self._solve_direct(A, b)
+            # 直接解法にフォールバック
+            return self._solve_direct(A, b)
     
     def _solve_minres(self, A, b, options=None):
         """MINRES法"""
@@ -256,22 +204,14 @@ class GPULinearSolver(LinearSolver):
         x0 = options.get("x0", self.cp.zeros_like(b))
         
         try:
-            # 前処理演算子を取得
-            M = self._create_preconditioner_operator()
-            
             # MINRESを実行
-            result = self.splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
+            result = self.splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter)
             return result[0], result[1]
         except Exception as e:
             print(f"MINRES実行エラー: {e}")
             
-            try:
-                # 前処理なしで再試行
-                result = self.splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter)
-                return result[0], result[1]
-            except Exception:
-                # 直接解法にフォールバック
-                return self._solve_direct(A, b)
+            # 直接解法にフォールバック
+            return self._solve_direct(A, b)
     
     def _solve_bicgstab(self, A, b, options=None):
         """BiCGSTAB法"""
@@ -281,22 +221,14 @@ class GPULinearSolver(LinearSolver):
         x0 = options.get("x0", self.cp.zeros_like(b))
         
         try:
-            # 前処理演算子を取得
-            M = self._create_preconditioner_operator()
-            
             # BiCGSTABを実行
-            result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
+            result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter)
             return result[0], result[1]
         except Exception as e:
             print(f"BiCGSTAB実行エラー: {e}")
             
-            try:
-                # 前処理なしで再試行
-                result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter)
-                return result[0], result[1]
-            except Exception:
-                # 直接解法にフォールバック
-                return self._solve_direct(A, b)
+            # 直接解法にフォールバック
+            return self._solve_direct(A, b)
     
     def _solve_lsqr(self, A, b, options=None):
         """LSQR最小二乗法ソルバー"""
@@ -305,7 +237,7 @@ class GPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         
         try:
-            # LSQRは前処理をサポートしない
+            # LSQR実行
             result = self.splinalg.lsqr(A, b, atol=tol, btol=tol, iter_lim=maxiter)
             return result[0], result[2]  # LSQRは異なるインデックスを使用
         except Exception as e:
@@ -320,7 +252,7 @@ class GPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         
         try:
-            # LSMRは前処理をサポートしない
+            # LSMR実行
             result = self.splinalg.lsmr(A, b, atol=tol, btol=tol, maxiter=maxiter)
             return result[0], result[2]  # LSMRは異なるインデックスを使用
         except Exception as e:

@@ -24,7 +24,7 @@ def create_solver(A, enable_dirichlet=False, enable_neumann=False, scaling_metho
         enable_dirichlet: ディリクレ境界条件を使用するか
         enable_neumann: ノイマン境界条件を使用するか
         scaling_method: 無視される (従来との互換性のため)
-        preconditioner: 前処理器名または前処理器インスタンス
+        preconditioner: 無視される (従来との互換性のため)
         backend: 計算バックエンド ("cpu", "cuda", "jax")
         
     Returns:
@@ -39,12 +39,12 @@ def create_solver(A, enable_dirichlet=False, enable_neumann=False, scaling_metho
         solver_class = CPULinearSolver
     
     try:
-        return solver_class(A, enable_dirichlet, enable_neumann, scaling_method, preconditioner)
+        return solver_class(A, enable_dirichlet, enable_neumann, scaling_method, None)
     except Exception as e:
         print(f"{backend}ソルバー初期化エラー: {e}")
         if backend != "cpu":
             print("CPUソルバーにフォールバック")
-            return CPULinearSolver(A, enable_dirichlet, enable_neumann, scaling_method, preconditioner)
+            return CPULinearSolver(A, enable_dirichlet, enable_neumann, scaling_method, None)
         raise
 
 # 便宜上のエイリアス

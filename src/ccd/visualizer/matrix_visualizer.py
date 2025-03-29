@@ -2,7 +2,7 @@
 Matrix System Visualization Utility
 
 Provides robust visualization of linear system matrices, solution vectors, 
-and associated statistical information with improved LinearOperator support.
+and associated statistical information.
 """
 
 import os
@@ -88,65 +88,6 @@ class MatrixVisualizer:
             print(f"Matrix absolute value computation error: {e}")
             return None
     
-    def _get_preconditioner_matrix(self, preconditioner, A_size=None):
-        """
-        Extract matrix representation from preconditioner
-        
-        Args:
-            preconditioner: Preconditioner object
-            A_size: Size of system matrix for identity creation (optional)
-            
-        Returns:
-            Matrix representation of preconditioner or None
-        """
-        if preconditioner is None:
-            return None
-        
-        try:
-            # Special case for IdentityPreconditioner
-            precond_type = type(preconditioner).__name__
-            if precond_type == 'IdentityPreconditioner':
-                # Create identity matrix of appropriate size
-                if A_size is not None:
-                    n = A_size[0]
-                    return np.eye(n)
-                else:
-                    # Default size if we can't determine actual size
-                    print("Creating default sized identity matrix for visualization")
-                    return np.eye(128)
-            
-            # Check for explicit matrix M
-            if hasattr(preconditioner, 'M') and preconditioner.M is not None:
-                return self._to_numpy(preconditioner.M)
-            
-            # Check for matrix attribute
-            if hasattr(preconditioner, 'matrix') and preconditioner.matrix is not None:
-                return self._to_numpy(preconditioner.matrix)
-            
-            # Check for toarray method
-            if hasattr(preconditioner, 'toarray') and callable(getattr(preconditioner, 'toarray')):
-                return self._to_numpy(preconditioner.toarray())
-            
-            # Handle diagonal preconditioners (like JacobiPreconditioner)
-            if hasattr(preconditioner, 'diag_vals') and preconditioner.diag_vals is not None:
-                diag_vals = self._to_numpy(preconditioner.diag_vals)
-                if diag_vals is not None:
-                    n = len(diag_vals)
-                    # Create diagonal matrix efficiently
-                    M = np.zeros((n, n))
-                    np.fill_diagonal(M, diag_vals)
-                    return M
-            
-            # Debug info
-            print(f"Attempting to extract matrix from {precond_type}")
-            if hasattr(preconditioner, '__dict__'):
-                print(f"Available attributes: {list(preconditioner.__dict__.keys())}")
-                
-            return None
-        except Exception as e:
-            print(f"Preconditioner matrix extraction failed: {e}")
-            return None
-    
     def visualize(self, A, b, x, exact_x, title, dimension, scaling=None, preconditioner=None):
         """
         Generate comprehensive matrix system visualization with robust error handling
@@ -159,7 +100,7 @@ class MatrixVisualizer:
             title: Base visualization title
             dimension: Problem dimension
             scaling: Optional scaling method
-            preconditioner: Optional preconditioner
+            preconditioner: Ignored (legacy parameter)
         
         Returns:
             Output file path
@@ -176,9 +117,6 @@ class MatrixVisualizer:
                 error_np = np.abs(x_np.flatten() - exact_np.flatten())
             except Exception as e:
                 print(f"Error computation failed: {e}")
-        
-        # Preconditioner matrix extraction using improved method
-        M_np = self._get_preconditioner_matrix(preconditioner, A.shape if hasattr(A, 'shape') else None)
         
         # Create visualization with fallback mechanism
         try:
@@ -200,17 +138,17 @@ class MatrixVisualizer:
             plt.subplot(gs[0, 2])
             self._plot_error_distribution(error_np)
             
-            # 4. Preconditioner Matrix (if available)
+            # 4. Eigenvalue estimation (empty space where preconditioner was)
             plt.subplot(gs[1, 0])
-            self._plot_matrix(M_np, "Preconditioner Matrix M")
+            self._plot_eigenvalue_estimate(A_np)
             
-            # 5. Matrix Product Visualization
+            # 5. Sparsity pattern (empty space where product was)
             plt.subplot(gs[1, 1])
-            self._plot_matrix_product(A_np, M_np)
+            self._plot_sparsity_pattern(A_np)
             
             # 6. Statistics
             plt.subplot(gs[1, 2])
-            self._plot_system_statistics(A_np, M_np, error_np, dimension, scaling, preconditioner)
+            self._plot_system_statistics(A_np, error_np, dimension, scaling)
             
             # Finalize and save
             plt.tight_layout()
@@ -315,52 +253,118 @@ class MatrixVisualizer:
         plt.text(0.05, 0.95, f"Max Error: {np.max(error):.2e}", 
                  transform=plt.gca().transAxes, va='top')
     
-    def _plot_matrix_product(self, A, M):
+    def _plot_eigenvalue_estimate(self, A):
         """
-        Visualize matrix-preconditioner product with robust error handling
+        Estimate and plot eigenvalues for small matrices
         
         Args:
             A: System matrix
-            M: Preconditioner matrix
         """
-        plt.title("Matrix Product")
+        plt.title("Matrix Properties")
         
-        if A is None or M is None:
-            plt.text(0.5, 0.5, "Cannot Compute Product", ha='center', va='center')
+        if A is None or A.size == 0:
+            plt.text(0.5, 0.5, "No Matrix Data", ha='center', va='center')
             return
         
         try:
-            # Compute and visualize matrix product
-            product = self._safe_matrix_abs(A @ M)
-            
-            if product is None or product.size == 0:
-                plt.text(0.5, 0.5, "Product Computation Failed", ha='center', va='center')
-                return
-            
-            non_zero = product[product > 0]
-            if len(non_zero) == 0:
-                plt.imshow(product, cmap='inferno')
+            # Only compute eigenvalues for small matrices to avoid memory issues
+            if A.shape[0] <= 1000:
+                # For sparse matrices
+                if hasattr(A, 'todense'):
+                    A_dense = A.todense()
+                else:
+                    A_dense = A
+                
+                # For very large matrices, use a subset
+                if A_dense.shape[0] > 500:
+                    # Get a subset of eigenvalues
+                    from scipy.sparse.linalg import eigs
+                    try:
+                        # Try to get a few eigenvalues
+                        eigvals = eigs(A, k=min(20, A.shape[0]-2), return_eigenvectors=False)
+                        plt.scatter(np.real(eigvals), np.imag(eigvals), color='blue', alpha=0.6)
+                        plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                        plt.axvline(x=0, color='k', linestyle='--', alpha=0.3)
+                        plt.xlabel("Real Part")
+                        plt.ylabel("Imaginary Part")
+                        plt.text(0.05, 0.95, "Eigenvalue Estimates (subset)", 
+                                transform=plt.gca().transAxes, va='top')
+                    except Exception as e:
+                        plt.text(0.5, 0.5, f"Eigenvalue computation failed: {str(e)}", 
+                                ha='center', va='center')
+                else:
+                    # For small matrices, compute full spectrum
+                    try:
+                        eigvals = np.linalg.eigvals(A_dense)
+                        plt.scatter(np.real(eigvals), np.imag(eigvals), color='blue', alpha=0.6)
+                        plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                        plt.axvline(x=0, color='k', linestyle='--', alpha=0.3)
+                        plt.xlabel("Real Part")
+                        plt.ylabel("Imaginary Part")
+                        
+                        # Condition number
+                        cond = np.linalg.cond(A_dense)
+                        plt.text(0.05, 0.95, f"Condition Number: {cond:.2e}", 
+                                transform=plt.gca().transAxes, va='top')
+                    except Exception as e:
+                        plt.text(0.5, 0.5, f"Eigenvalue computation failed: {str(e)}", 
+                                ha='center', va='center')
             else:
-                plt.imshow(product, norm=LogNorm(), cmap='inferno')
+                plt.text(0.5, 0.5, "Matrix too large for eigenvalue computation", 
+                        ha='center', va='center')
+        except Exception as e:
+            plt.text(0.5, 0.5, f"Analysis Error: {str(e)}", ha='center', va='center')
+    
+    def _plot_sparsity_pattern(self, A):
+        """
+        Visualize the sparsity pattern of the matrix
+        
+        Args:
+            A: System matrix
+        """
+        plt.title("Sparsity Pattern")
+        
+        if A is None or A.size == 0:
+            plt.text(0.5, 0.5, "No Matrix Data", ha='center', va='center')
+            return
+        
+        try:
+            # Create a binary pattern (0 for zero, 1 for non-zero)
+            if A.shape[0] > 1000:
+                # For large matrices, sample a subset
+                n = A.shape[0]
+                stride = max(1, n // 1000)
+                pattern = np.zeros((n//stride + 1, n//stride + 1))
+                for i in range(0, n, stride):
+                    for j in range(0, n, stride):
+                        i_idx, j_idx = i//stride, j//stride
+                        if i_idx < pattern.shape[0] and j_idx < pattern.shape[1]:
+                            submatrix = A[i:min(i+stride, n), j:min(j+stride, n)]
+                            pattern[i_idx, j_idx] = np.any(submatrix != 0)
+            else:
+                pattern = (A != 0).astype(float)
             
-            plt.colorbar(label='Product Magnitude')
+            plt.imshow(pattern, cmap='binary', aspect='auto')
             plt.xlabel("Column Index")
             plt.ylabel("Row Index")
+            
+            # Pattern statistics
+            nnz = np.count_nonzero(pattern)
+            sparsity = 1 - nnz/pattern.size
+            plt.text(0.05, 0.05, f"Pattern Density: {1-sparsity:.6f}", 
+                    transform=plt.gca().transAxes, fontsize=8)
         except Exception as e:
-            print(f"Matrix product visualization error: {e}")
-            plt.text(0.5, 0.5, f"Product Error: {str(e)}", ha='center', va='center')
+            plt.text(0.5, 0.5, f"Pattern Analysis Error: {str(e)}", ha='center', va='center')
     
-    def _plot_system_statistics(self, A, M, error, dimension, scaling, preconditioner):
+    def _plot_system_statistics(self, A, error, dimension, scaling):
         """
         Generate textual statistics about the matrix system with robust error handling
         
         Args:
             A: System matrix
-            M: Preconditioner matrix
             error: Error vector
             dimension: Problem dimension
             scaling: Scaling method
-            preconditioner: Preconditioner object
         """
         plt.axis('off')
         stats = []
@@ -372,14 +376,14 @@ class MatrixVisualizer:
                 f"Sparsity: {1 - np.count_nonzero(A)/A.size:.4f}",
                 f"Non-zeros: {np.count_nonzero(A)}"
             ])
-        
-        # Preconditioner stats
-        if M is not None and M.size > 0:
-            stats.extend([
-                "\nPreconditioner Stats:",
-                f"Sparsity: {1 - np.count_nonzero(M)/M.size:.4f}",
-                f"Non-zeros: {np.count_nonzero(M)}"
-            ])
+            
+            # Try to compute condition number for small matrices
+            if A.shape[0] <= 500:
+                try:
+                    cond = np.linalg.cond(A)
+                    stats.append(f"Condition Number: {cond:.2e}")
+                except:
+                    pass
         
         # Error stats
         if error is not None and len(error) > 0:
@@ -389,16 +393,10 @@ class MatrixVisualizer:
                 f"Mean Error: {np.mean(error):.2e}"
             ])
         
-        # Preconditioner info
-        if preconditioner:
-            precond_name = type(preconditioner).__name__
-            stats.append(f"\nPreconditioner: {precond_name}")
-            if hasattr(preconditioner, 'description'):
-                desc = preconditioner.description
-                # Check if description is in Japanese and convert to English if needed
-                if "単位行列" in desc:
-                    desc = "Identity matrix preconditioner (effectively no preconditioning)"
-                stats.append(f"{desc}")
+        # System info
+        stats.append(f"\nDimension: {dimension}D")
+        if scaling:
+            stats.append(f"Scaling: {scaling}")
         
         plt.text(0.05, 0.95, '\n'.join(stats), 
                  transform=plt.gca().transAxes, va='top', fontsize=9)
