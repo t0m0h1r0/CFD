@@ -1,31 +1,31 @@
 """
-CPU-based linear system solver using SciPy
+CPU (SciPy) を使用した線形方程式系ソルバー
 
-This module provides an efficient implementation of the LinearSolver
-using SciPy's sparse linear algebra solvers.
+このモジュールは、CPUとSciPy疎行列ライブラリを使用して
+線形方程式系を効率的に解くためのクラスを提供します。
 """
 
-from typing import Dict, Any, Tuple, Optional, List
 import numpy as np
 import scipy.sparse.linalg as splinalg
 from scipy.sparse.linalg import LinearOperator
 
 from .base import LinearSolver
 
-
 class CPULinearSolver(LinearSolver):
-    """CPU-based linear solver implementation using SciPy"""
+    """CPU (SciPy) を使用した線形方程式系ソルバー"""
     
-    def _initialize(self) -> None:
-        """Initialize CPU-specific properties"""
-        # Convert matrix to NumPy/SciPy format
+    def _initialize(self):
+        """CPU固有の初期化処理"""
+        # 行列をNumPy/SciPy形式に変換
         self.A = self._ensure_scipy_matrix(self.original_A)
         
-        # Initialize scaling if specified
-        if self.scaling_method:
-            self._initialize_scaling()
+        # スケーリングの初期化
+        self._initialize_scaling()
         
-        # Register available solvers
+        # 前処理器の初期セットアップ
+        self.setup_preconditioner()
+        
+        # 解法メソッド辞書
         self.solvers = {
             "direct": self._solve_direct,
             "gmres": self._solve_gmres,
@@ -42,221 +42,222 @@ class CPULinearSolver(LinearSolver):
             "lsmr": self._solve_lsmr
         }
     
-    def _initialize_scaling(self) -> None:
-        """Initialize scaling method"""
-        try:
-            from scaling import plugin_manager
-            self.scaler = plugin_manager.get_plugin(self.scaling_method)
-            
-            # Compute scaling information
-            dummy_b = np.ones(self.A.shape[0])
-            _, _, self.scaling_info = self.scaler.scale(self.A, dummy_b)
-        except Exception as e:
-            print(f"Scaling initialization error: {e}")
-            self.scaler = None
-            self.scaling_info = None
-    
-    def _ensure_scipy_matrix(self, A: Any) -> Any:
-        """Convert matrix to SciPy/NumPy format from any backend"""
-        # Handle CuPy arrays
+    def _ensure_scipy_matrix(self, A):
+        """行列をSciPy形式に変換"""
+        # CuPy配列からの変換
         if hasattr(A, 'get'):
             return A.get()
         
-        # Handle JAX arrays
+        # JAX配列からの変換
         if 'jax' in str(type(A)):
             return np.array(A)
             
-        # Return as is if already in NumPy/SciPy format
+        # 既にNumPy/SciPyの場合はそのまま
         return A
     
-    def _preprocess_vector(self, b: Any) -> np.ndarray:
-        """Convert vector to NumPy format from any backend"""
-        # Handle CuPy arrays
+    def _prepare_scaling(self):
+        """スケーリング前処理"""
+        if not self.scaler:
+            return
+            
+        # ダミーベクトルでスケーリング情報を計算
+        dummy_b = np.ones(self.A.shape[0])
+        
+        try:
+            _, _, self.scaling_info = self.scaler.scale(self.A, dummy_b)
+        except Exception as e:
+            print(f"Scaling preprocessing error: {e}")
+            self.scaler = None
+    
+    def _preprocess_vector(self, b):
+        """ベクトルをNumPy形式に変換"""
+        # CuPy配列からNumPy配列への変換
         if hasattr(b, 'get'):
             return b.get()
         
-        # Handle JAX arrays
+        # JAX配列からNumPy配列への変換
         if 'jax' in str(type(b)):
             return np.array(b)
         
-        # Return as is if already in NumPy format
+        # 既にNumPy配列の場合はそのまま
         return b
     
-    def _to_numpy_matrix(self, A: Any) -> np.ndarray:
-        """Convert matrix to NumPy format (identity for CPU solver)"""
-        return self._ensure_scipy_matrix(A)
+    def _to_numpy_matrix(self, A):
+        """行列をNumPy形式に変換 (前処理用)"""
+        # CuPy配列からの変換
+        if hasattr(A, 'get'):
+            return A.get()
+        
+        # JAX配列からの変換
+        if 'jax' in str(type(A)):
+            return np.array(A)
+            
+        # 既にNumPy/SciPyの場合はそのまま
+        return A
     
-    # ===== Solver implementations =====
+    # 以下、各解法メソッド (簡潔版)
     
-    def _solve_direct(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, None]:
-        """Direct solver implementation using spsolve"""
+    def _solve_direct(self, A, b, options=None):
+        """直接解法"""
         return splinalg.spsolve(A, b), None
     
-    def _solve_gmres(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """GMRES solver implementation"""
-        # Extract options with defaults
+    def _solve_gmres(self, A, b, options=None):
+        """GMRES法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         restart = options.get("restart", 200)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
         
-        # Solve
-        result = splinalg.gmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, restart=restart, M=M)
+        result = splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, M=M)
         return result[0], result[1]
     
-    def _solve_lgmres(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """LGMRES solver implementation"""
-        # Extract options with defaults
+    def _solve_lgmres(self, A, b, options=None):
+        """LGMRES法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         inner_m = options.get("inner_m", 30)
         outer_k = options.get("outer_k", 3)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
         
-        # Solve
-        result = splinalg.lgmres(A, b, x0=x0, rtol=tol, maxiter=maxiter, 
+        result = splinalg.lgmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
                                 inner_m=inner_m, outer_k=outer_k, M=M)
         return result[0], result[1]
     
-    def _solve_cg(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """Conjugate Gradient solver implementation"""
-        # Extract options with defaults
+    def _solve_cg(self, A, b, options=None):
+        """共役勾配法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
         
-        # Solve
-        result = splinalg.cg(A, b, x0=x0, rtol=tol, maxiter=maxiter, M=M)
+        result = splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
-    def _solve_bicg(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """BiCG solver implementation"""
-        # Extract options with defaults
+    def _solve_bicg(self, A, b, options=None):
+        """BiCG法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
         
-        # Solve
-        result = splinalg.bicg(A, b, x0=x0, rtol=tol, maxiter=maxiter, M=M)
+        result = splinalg.bicg(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
-    def _solve_bicgstab(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """BiCGSTAB solver implementation"""
-        # Extract options with defaults
+    def _solve_bicgstab(self, A, b, options=None):
+        """BiCGSTAB法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
         
-        # Solve
-        result = splinalg.bicgstab(A, b, x0=x0, rtol=tol, maxiter=maxiter, M=M)
+        result = splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
-    def _solve_cgs(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """CGS solver implementation"""
-        # Extract options with defaults
+    def _solve_cgs(self, A, b, options=None):
+        """CGS法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
         
-        # Solve
-        result = splinalg.cgs(A, b, x0=x0, rtol=tol, maxiter=maxiter, M=M)
+        result = splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
-    def _solve_qmr(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """QMR solver implementation"""
-        # Extract options with defaults
+    def _solve_qmr(self, A, b, options=None):
+        """QMR法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
-        # QMR supports different left/right preconditioners
-        M1, M2 = M, None
+        # QMRは左右で異なる前処理に対応
+        M1, M2 = None, None
+        if M is not None:
+            M1 = M  # M2は不要な場合が多い
         
-        # Solve
-        result = splinalg.qmr(A, b, x0=x0, rtol=tol, maxiter=maxiter, M1=M1, M2=M2)
+        result = splinalg.qmr(A, b, x0=x0, tol=tol, maxiter=maxiter, M1=M1, M2=M2)
         return result[0], result[1]
     
-    def _solve_tfqmr(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """TFQMR solver implementation"""
-        # Extract options with defaults
+    def _solve_tfqmr(self, A, b, options=None):
+        """TFQMR法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
         
-        # Solve
-        result = splinalg.tfqmr(A, b, x0=x0, rtol=tol, maxiter=maxiter, M=M)
+        result = splinalg.tfqmr(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
-    def _solve_minres(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """MINRES solver implementation"""
-        # Extract options with defaults
+    def _solve_minres(self, A, b, options=None):
+        """MINRES法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
         
-        # Solve
-        result = splinalg.minres(A, b, x0=x0, rtol=tol, maxiter=maxiter, M=M)
+        result = splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
-    def _solve_gcrotmk(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """GCROT(m,k) solver implementation"""
-        # Extract options with defaults
+    def _solve_gcrotmk(self, A, b, options=None):
+        """GCROT(m,k)法"""
+        options = options or {}
         tol = options.get("tol", 1e-10)
         maxiter = options.get("maxiter", 1000)
         m = options.get("m", 20)
         k = options.get("k", 10)
         x0 = options.get("x0", np.zeros_like(b))
         
-        # Get preconditioner
+        # 前処理演算子を取得
         M = self._create_preconditioner_operator()
         
-        # Solve
-        result = splinalg.gcrotmk(A, b, x0=x0, rtol=tol, maxiter=maxiter, m=m, k=k, M=M)
+        result = splinalg.gcrotmk(A, b, x0=x0, tol=tol, maxiter=maxiter, m=m, k=k, M=M)
         return result[0], result[1]
     
-    def _solve_lsqr(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """LSQR solver implementation (no preconditioner support)"""
-        # Extract options with defaults
+    def _solve_lsqr(self, A, b, options=None):
+        """LSQR最小二乗法ソルバー"""
+        options = options or {}
         damp = options.get("damp", 0.0)
         atol = options.get("atol", 1e-6)
         btol = options.get("btol", 1e-6)
         conlim = options.get("conlim", 1e8)
         iter_lim = options.get("maxiter", options.get("iter_lim", None))
         
-        # Solve (note: LSQR doesn't support preconditioners)
+        # LSQRには前処理器のサポートがないことに注意
         result = splinalg.lsqr(A, b, damp=damp, atol=atol, btol=btol,
                              conlim=conlim, iter_lim=iter_lim)
-        return result[0], result[2]  # results[2] contains iteration count
+        return result[0], result[2]
 
-    def _solve_lsmr(self, A: Any, b: np.ndarray, options: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-        """LSMR solver implementation (no preconditioner support)"""
-        # Extract options with defaults
+    def _solve_lsmr(self, A, b, options=None):
+        """LSMR最小二乗法ソルバー"""
+        options = options or {}
         damp = options.get("damp", 0.0)
         atol = options.get("atol", 1e-6)
         btol = options.get("btol", 1e-6)
@@ -264,7 +265,7 @@ class CPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", None)
         x0 = options.get("x0", None)
         
-        # Solve (note: LSMR doesn't support preconditioners)
+        # LSMRには前処理器のサポートがないことに注意
         result = splinalg.lsmr(A, b, damp=damp, atol=atol, btol=btol,
                              conlim=conlim, maxiter=maxiter, x0=x0)
-        return result[0], result[2]  # results[2] contains iteration count
+        return result[0], result[2]
