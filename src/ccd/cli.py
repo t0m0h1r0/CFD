@@ -625,24 +625,15 @@ def main():
                         # 方程式セットを設定
                         tester.set_equation_set(equation_name)
                         
-                        # ソルバーを設定
-                        tester.set_solver_options(solver_name, solver_options)
-                        
-                        # スケーリング手法を設定
-                        tester.scaling_method = scaling_to_use
-                        
-                        # 前処理手法を設定
-                        if hasattr(tester, 'linear_solver'):
-                            # 既に作成されているソルバーを更新
-                            if hasattr(tester.linear_solver, 'preconditioner'):
-                                tester.linear_solver.preconditioner_name = preconditioner_to_use
-                            # ソルバーを再作成
-                            tester.set_solver(
-                                method=solver_name,
-                                options=solver_options,
-                                scaling_method=scaling_to_use,
-                                preconditioner=preconditioner_to_use
-                            )
+                        # ソルバーを設定（前処理器も一緒に設定）
+                        tester.setup(
+                            equation=equation_name,
+                            method=solver_name,
+                            options=solver_options,
+                            scaling=scaling_to_use,
+                            backend=args.backend,
+                            preconditioner=preconditioner_to_use
+                        )
                         
                         # 初期値摂動を設定
                         if args.perturbation is not None:
@@ -704,11 +695,22 @@ def main():
                             # 行列システム可視化（--visualizeが指定された場合のみ）
                             if args.visualize:
                                 try:
-                                    # 元のメソッドシグネチャに合わせる
+                                    # 前処理器が確実に適用されるようにする
+                                    tester.set_solver(
+                                        method=solver_name,
+                                        options=solver_options,
+                                        scaling_method=scaling_to_use,
+                                        preconditioner=preconditioner_to_use
+                                    )
+                                    
+                                    # 行列可視化実行
                                     vis_output = tester.visualize_matrix_system(test_func)
                                     print(f"  行列システムの可視化: {vis_output}")
                                 except Exception as e:
                                     print(f"  行列可視化エラー: {e}")
+                                    import traceback
+                                    if args.verbose:
+                                        traceback.print_exc()
                         
                     except Exception as e:
                         print(f"エラー: {e}")

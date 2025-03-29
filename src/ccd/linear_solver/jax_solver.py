@@ -1,5 +1,8 @@
 """
-JAX を使用した線形方程式系ソルバー（リファクタリング版）
+JAX を使用した線形方程式系ソルバー
+
+このモジュールは、JAXを使用して線形方程式系を効率的に解くためのクラスを提供します。
+JAXのJIT (Just-In-Time) コンパイルを活用し、GPUまたはTPUで高速に実行できます。
 """
 
 import numpy as np
@@ -11,6 +14,11 @@ class JAXLinearSolver(LinearSolver):
     
     def _initialize(self):
         """JAX固有の初期化処理"""
+        self.has_jax = False
+        self.jax = None
+        self.jnp = None
+        self.splinalg = None
+        
         try:
             import jax
             import jax.numpy as jnp
@@ -29,10 +37,10 @@ class JAXLinearSolver(LinearSolver):
             self.A = self._to_jax_matrix(self.original_A)
             
             # スケーリングの初期化
-            if self.scaling_method:
-                from scaling import plugin_manager
-                self.scaler = plugin_manager.get_plugin(self.scaling_method)
-                self._prepare_scaling()
+            self._initialize_scaling()
+            
+            # 前処理器の初期セットアップ
+            self.setup_preconditioner()
             
             # 解法メソッド辞書
             self.solvers = {
@@ -42,72 +50,9 @@ class JAXLinearSolver(LinearSolver):
                 "bicgstab": self._solve_bicgstab
             }
             
-            # 前処理器の初期セットアップ
-            if self.preconditioner and hasattr(self.preconditioner, 'setup'):
-                try:
-                    # CPU行列で前処理をセットアップ
-                    A_cpu = self._to_numpy_matrix(self.A)
-                    self.preconditioner.setup(A_cpu)
-                    print(f"JAX前処理器をセットアップしました: {self.preconditioner.name}")
-                    
-                    # JAX環境に前処理行列を変換
-                    if hasattr(self.preconditioner, 'M') and self.preconditioner.M is not None:
-                        self._convert_preconditioner_to_jax()
-                except Exception as e:
-                    print(f"JAX前処理器セットアップエラー: {e}")
-            
-        except (ImportError, Exception) as e:
-            print(f"警告: JAXが利用できないか初期化エラー: {e}")
-            self.has_jax = False
+        except ImportError as e:
+            print(f"警告: JAXが利用できません: {e}")
             self._init_cpu_fallback()
-    
-    def _convert_preconditioner_to_jax(self):
-        """
-        前処理行列をJAX形式に変換
-        """
-        if not hasattr(self.preconditioner, 'M') or self.preconditioner.M is None:
-            return
-            
-        try:
-            # 現在の前処理行列
-            M = self.preconditioner.M
-            
-            # 行列形式の前処理
-            if hasattr(M, 'toarray') or hasattr(M, 'todense'):
-                # 疎行列をJAX用配列に変換
-                M_cpu = M.toarray() if hasattr(M, 'toarray') else M.todense()
-                M_jax = self.jnp.array(M_cpu)
-                
-                # 前処理器の行列を更新
-                self.preconditioner.M = M_jax
-                print(f"前処理行列をJAXに転送しました ({M_jax.shape})")
-            
-            # LinearOperator形式の前処理
-            elif hasattr(M, 'matvec'):
-                # JAX用のLinearOperatorラッパーを作成
-                from jax.scipy.sparse.linalg import LinearOperator
-                
-                shape = M.shape
-                
-                # JAX対応のmatvec関数
-                def jax_matvec(x):
-                    if 'jax' in str(type(x)):
-                        x_cpu = np.array(x)
-                    else:
-                        x_cpu = x
-                    
-                    # CPU上で前処理を適用
-                    y_cpu = M.matvec(x_cpu)
-                    
-                    # 結果をJAXに変換
-                    return self.jnp.array(y_cpu)
-                
-                # JAX対応のLinearOperatorを作成
-                self.preconditioner.M = LinearOperator(shape, matvec=jax_matvec)
-                print("LinearOperator形式の前処理をJAX対応に変換しました")
-        except Exception as e:
-            print(f"前処理行列のJAX変換エラー: {e}")
-            # エラー時はCPU版の前処理を維持
     
     def _init_cpu_fallback(self):
         """CPUソルバーにフォールバック"""
@@ -121,7 +66,10 @@ class JAXLinearSolver(LinearSolver):
         # CPU版のsolversをコピー
         self.solvers = self.cpu_solver.solvers
         
-        # 前処理器も引き継ぐ
+        # 行列もCPU版に設定
+        self.A = self.cpu_solver.A
+        
+        # CPUソルバーの前処理器を継承
         if hasattr(self.cpu_solver, 'preconditioner'):
             self.preconditioner = self.cpu_solver.preconditioner
     
@@ -153,24 +101,56 @@ class JAXLinearSolver(LinearSolver):
                 print(f"x0変換エラー: {e}")
                 # 変換に失敗した場合は削除
                 del options["x0"]
-        
-        # 前処理機能の設定（未設定の場合のみ）
-        if self.preconditioner and hasattr(self.preconditioner, 'setup'):
-            if not hasattr(self.preconditioner, 'M') or self.preconditioner.M is None:
-                try:
-                    # CPU版の行列を使って前処理を設定
-                    A_cpu = self._to_numpy_matrix(self.A)
-                    self.preconditioner.setup(A_cpu)
-                    print(f"前処理を設定しました: {self.preconditioner.name}")
-                    
-                    # JAX変換を試みる
-                    self._convert_preconditioner_to_jax()
-                except Exception as e:
-                    print(f"JAX前処理設定エラー: {e}")
-        
-        # 通常の処理
+                
         return super().solve(b, method, options)
+        
+    def _prepare_scaling(self):
+        """スケーリング前処理"""
+        if not self.scaler or not self.has_jax:
+            return
+            
+        try:
+            # NumPy用ダミーベクトルでスケーリング情報を計算
+            dummy_b = np.ones(self.A.shape[0])
+            
+            # NumPy版の行列を作成
+            A_np = self._to_numpy_matrix(self.A)
+            # NumPyでスケーリング情報を計算
+            _, _, scale_info_np = self.scaler.scale(A_np, dummy_b)
+            
+            # スケーリング情報をJAXに変換
+            self.scaling_info = {}
+            for key, value in scale_info_np.items():
+                if isinstance(value, np.ndarray):
+                    self.scaling_info[key] = self.jnp.array(value)
+                else:
+                    self.scaling_info[key] = value
+        except Exception as e:
+            print(f"スケーリング前処理エラー: {e}")
+            self.scaler = None
     
+    def _preprocess_vector(self, b):
+        """ベクトルをJAX配列に変換"""
+        if not self.has_jax:
+            return b
+            
+        # すでにJAX配列の場合
+        if 'jax' in str(type(b)):
+            return b
+            
+        try:
+            # NumPy/CuPy配列からJAX配列に変換
+            if hasattr(b, 'get'):  # CuPy
+                return self.jnp.array(b.get())
+            else:
+                return self.jnp.array(b)
+        except Exception as e:
+            print(f"JAXベクトル変換エラー: {e}")
+            # CPUソルバーにフォールバック
+            self.has_jax = False
+            self._init_cpu_fallback()
+            return b
+            
     def _to_jax_matrix(self, A):
         """行列をJAX形式に変換"""
         if not self.has_jax:
@@ -235,96 +215,7 @@ class JAXLinearSolver(LinearSolver):
             self.has_jax = False
             self._init_cpu_fallback()
             return A
-    
-    def _prepare_scaling(self):
-        """スケーリング前処理"""
-        if not self.scaler or not self.has_jax:
-            return
             
-        try:
-            # NumPy用ダミーベクトルでスケーリング情報を計算
-            dummy_b = np.ones(self.A.shape[0])
-            
-            # NumPy版の行列を作成
-            A_np = self._to_numpy_matrix(self.A)
-            # NumPyでスケーリング情報を計算
-            _, _, scale_info_np = self.scaler.scale(A_np, dummy_b)
-            
-            # スケーリング情報をJAXに変換
-            self.scaling_info = {}
-            for key, value in scale_info_np.items():
-                if isinstance(value, np.ndarray):
-                    self.scaling_info[key] = self.jnp.array(value)
-                else:
-                    self.scaling_info[key] = value
-        except Exception as e:
-            print(f"スケーリング前処理エラー: {e}")
-            self.scaler = None
-    
-    def _preprocess_vector(self, b):
-        """ベクトルをJAX配列に変換"""
-        if not self.has_jax:
-            return b
-            
-        # すでにJAX配列の場合
-        if 'jax' in str(type(b)):
-            return b
-            
-        try:
-            # NumPy/CuPy配列からJAX配列に変換
-            if hasattr(b, 'get'):  # CuPy
-                return self.jnp.array(b.get())
-            else:
-                return self.jnp.array(b)
-        except Exception as e:
-            print(f"JAXベクトル変換エラー: {e}")
-            # CPUソルバーにフォールバック
-            self.has_jax = False
-            self._init_cpu_fallback()
-            return b
-    
-    def _apply_scaling_to_b(self, b):
-        """右辺ベクトルにスケーリングを適用"""
-        if not self.has_jax:
-            return self.cpu_solver._apply_scaling_to_b(b)
-            
-        if self.scaler and self.scaling_info:
-            row_scale = self.scaling_info.get('row_scale')
-            if row_scale is not None:
-                return b * row_scale
-            else:
-                D_sqrt_inv = self.scaling_info.get('D_sqrt_inv')
-                if D_sqrt_inv is not None:
-                    return b * D_sqrt_inv
-        return b
-    
-    def _apply_unscaling_to_x(self, x):
-        """解ベクトルにアンスケーリングを適用"""
-        if not self.has_jax:
-            return self.cpu_solver._apply_unscaling_to_x(x)
-            
-        if self.scaler and self.scaling_info:
-            col_scale = self.scaling_info.get('col_scale')
-            if col_scale is not None:
-                return x / col_scale
-            else:
-                D_sqrt_inv = self.scaling_info.get('D_sqrt_inv')
-                if D_sqrt_inv is not None:
-                    return x * D_sqrt_inv
-        return x
-    
-    def _direct_fallback(self, A, b):
-        """CPUソルバーを使用した直接解法フォールバック"""
-        if not self.has_jax:
-            return self.cpu_solver._direct_fallback(A, b)
-            
-        # JAX->NumPyに変換してCPUソルバーを使用
-        import scipy.sparse.linalg as splinalg
-        A_np = self._to_numpy_matrix(A)
-        b_np = self._to_numpy_vector(b)
-        x = splinalg.spsolve(A_np, b_np)
-        return self.jnp.array(x), None
-    
     def _to_numpy_matrix(self, A):
         """JAX行列をNumPy形式に変換"""
         return np.array(A)
@@ -332,6 +223,73 @@ class JAXLinearSolver(LinearSolver):
     def _to_numpy_vector(self, b):
         """JAXベクトルをNumPy形式に変換"""
         return np.array(b)
+    
+    def setup_preconditioner(self, A=None):
+        """
+        前処理行列をセットアップし、必要ならJAXに転送
+        
+        Args:
+            A: 行列 (Noneの場合はself.Aを使用)
+        """
+        if not self.has_jax:
+            if hasattr(self, 'cpu_solver'):
+                self.cpu_solver.setup_preconditioner(A)
+            return
+            
+        # 通常の前処理セットアップを実行
+        super().setup_preconditioner(A)
+        
+        # 前処理行列をJAXに転送
+        if self.preconditioner and hasattr(self.preconditioner, 'M') and self.preconditioner.M is not None:
+            self._convert_preconditioner_to_jax()
+    
+    def _convert_preconditioner_to_jax(self):
+        """
+        前処理行列をJAX形式に変換
+        """
+        if not self.has_jax or not hasattr(self.preconditioner, 'M') or self.preconditioner.M is None:
+            return
+            
+        try:
+            # 現在の前処理行列
+            M = self.preconditioner.M
+            
+            # 行列形式の前処理
+            if hasattr(M, 'toarray') or hasattr(M, 'todense'):
+                # 疎行列をJAX用配列に変換
+                M_cpu = M.toarray() if hasattr(M, 'toarray') else M.todense()
+                M_jax = self.jnp.array(M_cpu)
+                
+                # 前処理器の行列を更新
+                self.preconditioner.M = M_jax
+                print(f"前処理行列をJAXに転送しました ({M_jax.shape})")
+            
+            # LinearOperator形式の前処理
+            elif hasattr(M, 'matvec'):
+                # JAX用のLinearOperatorラッパーを作成
+                from jax.scipy.sparse.linalg import LinearOperator
+                
+                shape = M.shape
+                
+                # JAX対応のmatvec関数
+                def jax_matvec(x):
+                    if 'jax' in str(type(x)):
+                        x_cpu = np.array(x)
+                    else:
+                        x_cpu = x
+                    
+                    # CPU上で前処理を適用
+                    y_cpu = M.matvec(x_cpu)
+                    
+                    # 結果をJAXに変換
+                    return self.jnp.array(y_cpu)
+                
+                # JAX対応のLinearOperatorを作成
+                self.preconditioner.M = LinearOperator(shape, matvec=jax_matvec)
+                print("LinearOperator形式の前処理をJAX対応に変換しました")
+        except Exception as e:
+            print(f"前処理行列のJAX変換エラー: {e}")
+            # エラー時はCPU版の前処理を維持
     
     def _create_preconditioner_operator(self):
         """
@@ -412,6 +370,8 @@ class JAXLinearSolver(LinearSolver):
             print(f"JAX前処理演算子作成エラー: {e}")
         
         return None
+        
+    # JAX用ソルバーメソッド
     
     def _solve_direct(self, A, b, options=None):
         """直接解法"""
@@ -421,41 +381,41 @@ class JAXLinearSolver(LinearSolver):
         
         # JAXはsparse.linalg.solveを持っていない場合がある
         if hasattr(self.jax.scipy.linalg, 'solve'):
-            x = self.jax.scipy.linalg.solve(A, b, assume_a='gen')
-            return x, None
+            try:
+                x = self.jax.scipy.linalg.solve(A, b, assume_a='gen')
+                return x, None
+            except Exception as e:
+                print(f"JAX直接解法エラー: {e}")
+                print("代替としてCGにフォールバックします")
         else:
-            # 代替として反復法を使用
             print("JAX直接解法が利用できないため、CGにフォールバックします")
-            return self._solve_cg(A, b, {"tol": tol})
+            
+        # 代替として反復法を使用
+        return self._solve_cg(A, b, {"tol": tol})
+    
+    def _direct_fallback(self, A, b):
+        """CPUソルバーを使用した直接解法フォールバック"""
+        print("CPU直接解法にフォールバックします")
+        import scipy.sparse.linalg as splinalg
+        A_np = self._to_numpy_matrix(A)
+        b_np = self._to_numpy_vector(b)
+        x = splinalg.spsolve(A_np, b_np)
+        return self.jnp.array(x), None
     
     def _solve_gmres(self, A, b, options=None):
-        """
-        JAX上でのGMRES解法の効率的な実装
-        
-        Args:
-            A: システム行列
-            b: 右辺ベクトル
-            options: 解法オプション
-        
-        Returns:
-            解ベクトルと反復回数のタプル
-        """
+        """GMRES法"""
         options = options or {}
-        
-        # オプションから設定を取得（デフォルト値を最適化）
         tol = options.get("tol", 1e-10)
         atol = options.get("atol", tol)
         maxiter = options.get("maxiter", 1000)
         restart = options.get("restart", min(20, max(5, b.size // 20)))
-        
-        # 初期解ベクトルの取得
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
         # 前処理演算子の作成
         M = self._create_preconditioner_operator()
         
         try:
-            # GMRES実行（オプションを最適化）
+            # GMRES実行
             result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, restart=restart, M=M)
             return result[0], result[1]
         except Exception as e:
@@ -471,8 +431,6 @@ class JAXLinearSolver(LinearSolver):
         tol = options.get("tol", 1e-10)
         atol = options.get("atol", tol)
         maxiter = options.get("maxiter", 1000)
-        
-        # 初期解ベクトルの取得
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
         # 前処理演算子の作成
@@ -495,8 +453,6 @@ class JAXLinearSolver(LinearSolver):
         tol = options.get("tol", 1e-10)
         atol = options.get("atol", tol)
         maxiter = options.get("maxiter", 1000)
-        
-        # 初期解ベクトルの取得
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
         # 前処理演算子の作成
