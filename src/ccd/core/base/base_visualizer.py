@@ -1,8 +1,8 @@
 """
-高精度コンパクト差分法 (CCD) の結果可視化の基底クラス
+Base Visualizer for High-Precision Compact Difference (CCD) Method Results
 
-このモジュールは、CCDソルバーの計算結果を可視化するための
-共通基底クラスと機能を提供します。
+This module provides the base class and common functionality for visualizing
+CCD solver calculation results across different dimensions.
 """
 
 import os
@@ -13,30 +13,30 @@ from typing import List
 
 
 class BaseVisualizer(ABC):
-    """CCDソルバーの結果可視化の基底クラス"""
+    """Base class for visualizing CCD solver results"""
 
     def __init__(self, output_dir="results"):
         """
-        初期化
-        
+        Initialize visualizer
+
         Args:
-            output_dir: 出力ディレクトリパス
+            output_dir: Output directory path for saving visualizations
         """
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
-        self.min_log_value = 1e-16  # 対数スケール用の最小値
+        self.min_log_value = 1e-16  # Minimum value for log-scale plotting
 
     def generate_filename(self, func_name, n_points, prefix=""):
         """
-        ファイル名生成
-        
+        Generate filename for output visualization
+
         Args:
-            func_name: 関数名
-            n_points: 格子点数（文字列または数値）
-            prefix: 接頭辞（オプション）
-            
+            func_name: Name of the test function
+            n_points: Number of grid points (string or numeric)
+            prefix: Optional prefix for filename
+
         Returns:
-            生成されたファイルパス
+            Generated file path
         """
         if prefix:
             return f"{self.output_dir}/{prefix}_{func_name.lower()}_{n_points}_points.png"
@@ -45,32 +45,33 @@ class BaseVisualizer(ABC):
 
     def compare_all_functions_errors(self, results_summary, grid_size=None, prefix="", dpi=150, show=False):
         """
-        全テスト関数の誤差比較グラフを生成
-        
+        Generate error comparison graph for all test functions
+
         Args:
-            results_summary: 全関数の結果サマリー辞書
-            grid_size: グリッドサイズ
-            prefix: 出力ファイルの接頭辞
-            dpi: 画像のDPI値
-            show: 図を表示するか否か
-            
+            results_summary: Summary dictionary of results for all functions
+            grid_size: Grid size
+            prefix: Output file prefix
+            dpi: Image resolution
+            show: Whether to display the figure
+
         Returns:
-            出力ファイルパス
+            Output file path
         """
         func_names = list(results_summary.keys())
         
-        # 次元に応じたラベル設定
+        # Set labels based on dimension
         self.get_dimension_label()
         error_types = self.get_error_types()
         
-        # 図とサブプロットの作成
+        # Create figure and subplots
         fig, axes = plt.subplots(2, 4, figsize=(15, 10))
         
         for i, (ax, error_type) in enumerate(zip(axes.flat, error_types)):
             if i < len(error_types):
+                # Get original errors for the specific error type
                 original_errors = [results_summary[name][i] for name in func_names]
                 
-                # 対数スケール用に0を小さな値に置き換え
+                # Replace zero values with a small value for log scale
                 errors = []
                 for err in original_errors:
                     if err == 0.0:
@@ -88,7 +89,7 @@ class BaseVisualizer(ABC):
                 ax.set_xticks(x_positions)
                 ax.set_xticklabels(func_names, rotation=45, ha="right")
                 
-                # 値をバーの上に表示
+                # Annotate bars with values
                 for j, (bar, orig_err) in enumerate(zip(bars, original_errors)):
                     height = bar.get_height()
                     label_text = "0.0" if orig_err == 0.0 else f"{orig_err:.2e}"
@@ -106,7 +107,7 @@ class BaseVisualizer(ABC):
         plt.suptitle(f"Error Comparison for All Functions ({grid_size} points)")
         plt.tight_layout()
         
-        # 出力ファイル名の生成
+        # Generate output filename
         if prefix:
             filename = f"{self.output_dir}/{prefix}_all_functions_comparison"
         else:
@@ -129,50 +130,50 @@ class BaseVisualizer(ABC):
     @abstractmethod
     def visualize_grid_convergence(self, function_name, grid_sizes, results, prefix="", save=True, show=False, dpi=150):
         """
-        グリッド収束性のグラフを生成
-        
+        Generate grid convergence graph
+
         Args:
-            function_name: 関数名
-            grid_sizes: グリッドサイズのリスト
-            results: 結果データ
-            prefix: 出力ファイルの接頭辞
-            save: 保存するかどうか
-            show: 表示するかどうか
-            dpi: 画像のDPI値
-            
+            function_name: Name of the test function
+            grid_sizes: List of grid sizes
+            results: Result data
+            prefix: Output file prefix
+            save: Whether to save the figure
+            show: Whether to display the figure
+            dpi: Image resolution
+
         Returns:
-            成功したかどうかのブール値
+            Boolean indicating success
         """
         pass
     
     @abstractmethod
     def get_dimension_label(self) -> str:
         """
-        次元ラベルを返す
-        
+        Return dimension label
+
         Returns:
-            "1D" または "2D"
+            "1D" or "2D"
         """
         pass
     
     @abstractmethod
     def get_error_types(self) -> List[str]:
         """
-        エラータイプのリストを返す
-        
+        Return list of error types
+
         Returns:
-            エラータイプのリスト（次元に応じて異なる）
+            List of error type names depending on dimension
         """
         pass
     
     def _to_numpy(self, arr):
         """
-        配列をNumPy形式に変換（必要な場合のみ）
-        
+        Convert array to NumPy format (if necessary)
+
         Args:
-            arr: 入力配列（CuPyまたはNumPy）
-            
+            arr: Input array (CuPy or NumPy)
+
         Returns:
-            NumPy配列
+            NumPy array
         """
         return arr.get() if hasattr(arr, 'get') else arr
