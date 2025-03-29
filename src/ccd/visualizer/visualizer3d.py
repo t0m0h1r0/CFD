@@ -3,13 +3,15 @@ High-Precision Compact Difference (CCD) 3D Visualization Module
 
 This module provides visualization tools for 3D CCD solver results,
 with specialized techniques for visualizing volumetric data through
-slices, projections, and statistical analysis.
+slices, projections, isosurfaces and statistical analysis.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.gridspec import GridSpec
+from mpl_toolkits.mplot3d import Axes3D
+from skimage import measure
 from typing import List
 
 from core.base.base_visualizer import BaseVisualizer
@@ -23,6 +25,7 @@ class CCDVisualizer3D(BaseVisualizer):
         super().__init__(output_dir)
         # Additional colormap settings
         self.cmap_gradient = 'coolwarm'  # For gradients
+        self.cmap_isosurface = 'viridis'  # For isosurfaces
     
     def get_dimension_label(self) -> str:
         """Return dimension label"""
@@ -35,7 +38,7 @@ class CCDVisualizer3D(BaseVisualizer):
     def visualize_solution(self, grid, function_name, numerical, exact, errors, prefix="",
                           save=True, show=False, dpi=180):
         """
-        Visualize 3D solution with a simplified dashboard approach
+        Visualize 3D solution with isosurface display and analysis dashboard
         
         Args:
             grid: Grid object
@@ -63,21 +66,21 @@ class CCDVisualizer3D(BaseVisualizer):
         # Component names
         component_names = self.get_error_types()
         
-        # Create 3x2 dashboard grid (simplified)
-        fig = plt.figure(figsize=(16, 14))
+        # Create 3x2 dashboard grid
+        fig = plt.figure(figsize=(18, 16))
         gs = GridSpec(3, 2)
         
-        # 1. Solution slices (top-left)
-        ax1 = fig.add_subplot(gs[0, 0])
-        self._plot_solution_slices(ax1, grid, psi, mid_x, mid_y, mid_z)
+        # 1. 3D Isosurface visualization (top-left)
+        ax1 = fig.add_subplot(gs[0, 0], projection='3d')
+        self._plot_3d_isosurface(ax1, grid, psi)
         
-        # 2. Error heatmap (top-right)
+        # 2. Solution slices (top-right)
         ax2 = fig.add_subplot(gs[0, 1])
-        self._plot_error_heatmap(ax2, grid, error, mid_z)
+        self._plot_solution_slices(ax2, grid, psi, mid_x, mid_y, mid_z)
         
-        # 3. Error histogram (middle-left)
+        # 3. Error heatmap (middle-left)
         ax3 = fig.add_subplot(gs[1, 0])
-        self._plot_error_histogram(ax3, error)
+        self._plot_error_heatmap(ax3, grid, error, mid_z)
         
         # 4. Gradient slice (middle-right)
         ax4 = fig.add_subplot(gs[1, 1])
@@ -111,6 +114,106 @@ class CCDVisualizer3D(BaseVisualizer):
         
         return filepath
     
+    def _plot_3d_isosurface(self, ax, grid, data):
+        """
+        Visualize 3D isosurfaces of the solution
+        
+        Args:
+            ax: matplotlib 3D Axes
+            grid: Grid object
+            data: 3D solution data
+        """
+        # Get grid coordinates
+        x = self._to_numpy(grid.x)
+        y = self._to_numpy(grid.y)
+        z = self._to_numpy(grid.z)
+        
+        # Compute value range for isosurface levels
+        vmin, vmax = np.min(data), np.max(data)
+        
+        # Define isosurface levels (3-4 levels distributed across the range)
+        if abs(vmin - vmax) < 1e-10:  # Handle near-constant data
+            levels = [vmin]
+        else:
+            levels = [
+                vmin + (vmax - vmin) * 0.25,
+                vmin + (vmax - vmin) * 0.5,
+                vmin + (vmax - vmin) * 0.75
+            ]
+        
+        # Setup 3D coordinate scaling for proper display
+        x_min, x_max = x[0], x[-1]
+        y_min, y_max = y[0], y[-1]
+        z_min, z_max = z[0], z[-1]
+        
+        # Generate isosurfaces using scikit-image's marching cubes
+        for i, level in enumerate(levels):
+            try:
+                # Generate isosurface using marching cubes
+                verts, faces, _, _ = measure.marching_cubes(data, level)
+                
+                # Scale vertices to match the actual coordinate system
+                verts_scaled = np.zeros_like(verts)
+                verts_scaled[:, 0] = x_min + verts[:, 0] * (x_max - x_min) / (len(x) - 1)
+                verts_scaled[:, 1] = y_min + verts[:, 1] * (y_max - y_min) / (len(y) - 1)
+                verts_scaled[:, 2] = z_min + verts[:, 2] * (z_max - z_min) / (len(z) - 1)
+                
+                # Create color based on isosurface level
+                color_val = (level - vmin) / (vmax - vmin) if vmax > vmin else 0.5
+                color = plt.cm.viridis(color_val)
+                
+                # Plot the isosurface
+                ax.plot_trisurf(
+                    verts_scaled[:, 0], verts_scaled[:, 1], verts_scaled[:, 2],
+                    triangles=faces,
+                    color=color,
+                    alpha=0.3 + 0.2 * i,  # Increasing opacity for higher levels
+                    shade=True
+                )
+            except Exception as e:
+                # Handle error if isosurface generation fails
+                print(f"Warning: Could not generate isosurface at level {level}: {e}")
+                continue
+        
+        # Plot coordinate system reference
+        max_range = max(x_max - x_min, y_max - y_min, z_max - z_min)
+        mid_x = (x_max + x_min) / 2
+        mid_y = (y_max + y_min) / 2
+        mid_z = (z_max + z_min) / 2
+        ax.set_xlim(mid_x - max_range/2, mid_x + max_range/2)
+        ax.set_ylim(mid_y - max_range/2, mid_y + max_range/2)
+        ax.set_zlim(mid_z - max_range/2, mid_z + max_range/2)
+        
+        # Add reference plane at z = 0
+        if z_min <= 0 <= z_max:
+            xx, yy = np.meshgrid(
+                np.linspace(x_min, x_max, 2),
+                np.linspace(y_min, y_max, 2)
+            )
+            z_plane = np.zeros_like(xx)
+            ax.plot_surface(xx, yy, z_plane, alpha=0.1, color='gray')
+        
+        # Settings
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title(f"3D Isosurfaces")
+        
+        # Add a legend for isosurface levels
+        import matplotlib.patches as mpatches
+        handles = []
+        for i, level in enumerate(levels):
+            color_val = (level - vmin) / (vmax - vmin) if vmax > vmin else 0.5
+            color = plt.cm.viridis(color_val)
+            patch = mpatches.Patch(color=color, alpha=0.5, label=f"Level: {level:.2e}")
+            handles.append(patch)
+        
+        # Keep the legend outside the plot area for clarity
+        ax.legend(handles=handles, loc='upper right', bbox_to_anchor=(1.2, 1))
+        
+        # Set a good viewing angle
+        ax.view_init(elev=30, azim=45)
+    
     def _plot_solution_slices(self, ax, grid, data, mid_x, mid_y, mid_z):
         """Display solution slices"""
         # Extract the middle slice
@@ -120,7 +223,7 @@ class CCDVisualizer3D(BaseVisualizer):
         x = self._to_numpy(grid.x)
         y = self._to_numpy(grid.y)
         
-        # Display middle slice (simplified)
+        # Display middle slice
         im = ax.imshow(xy_slice.T, extent=[x[0], x[-1], y[0], y[-1]], origin='lower', 
                      cmap=self.cmap_solution, interpolation='bilinear')
         
