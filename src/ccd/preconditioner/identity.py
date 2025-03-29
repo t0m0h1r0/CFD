@@ -5,6 +5,8 @@
 主にデフォルト前処理として、または前処理効果の基準比較用に使用されます。
 """
 
+import numpy as np
+import scipy.sparse as sp
 from .base import BasePreconditioner
 
 class IdentityPreconditioner(BasePreconditioner):
@@ -13,10 +15,11 @@ class IdentityPreconditioner(BasePreconditioner):
     def __init__(self):
         """初期化"""
         super().__init__()
+        self.M = None
     
     def setup(self, A):
         """
-        単位行列前処理の設定（実質的に何もしない）
+        単位行列前処理の設定
         
         Args:
             A: システム行列
@@ -24,8 +27,28 @@ class IdentityPreconditioner(BasePreconditioner):
         Returns:
             self: メソッドチェーン用
         """
-        # 単位行列前処理は何も設定しない
-        self.M = None
+        try:
+            # 行列サイズを取得
+            if hasattr(A, 'shape'):
+                n = A.shape[0]
+                
+                # 明示的に単位行列を作成
+                # 注: 単位行列を直接設定することで、視覚化に使用できるようにする
+                if hasattr(A, 'format') or 'sparse' in str(type(A)):
+                    # 疎行列用の単位行列
+                    self.M = sp.eye(n, format='csr')
+                else:
+                    # 密行列用の単位行列
+                    self.M = np.eye(n)
+                
+                print(f"単位行列前処理を設定しました (サイズ: {n}x{n})")
+            else:
+                print("警告: 行列の形状が取得できません")
+                self.M = None
+        except Exception as e:
+            print(f"単位行列前処理設定エラー: {e}")
+            self.M = None
+            
         return self
     
     def __call__(self, b):
@@ -38,6 +61,7 @@ class IdentityPreconditioner(BasePreconditioner):
         Returns:
             前処理適用後のベクトル（変更なし）
         """
+        # 単位行列なので入力をそのまま返す
         return b
     
     @property
