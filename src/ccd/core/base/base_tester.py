@@ -37,7 +37,6 @@ class CCDTester(ABC):
         self.matrix_basename = None  # 行列可視化用のベース名
         self.perturbation_level = None  # 厳密解に加える摂動レベル (None=厳密解を使用しない、0=摂動なし)
         self.exact_solution = None  # 厳密解を保存
-        self.preconditioner_name = None  # 前処理器の名前を保存
         
         # 結果ディレクトリの作成
         os.makedirs(self.results_dir, exist_ok=True)
@@ -52,7 +51,7 @@ class CCDTester(ABC):
             options: ソルバーオプション辞書
             scaling: スケーリング手法名
             backend: 計算バックエンド名
-            preconditioner: 前処理器の名前
+            preconditioner: 無視される (従来互換性のため)
         
         Returns:
             self: メソッドチェーン用
@@ -62,7 +61,6 @@ class CCDTester(ABC):
         self.solver_options = options or {}
         self.scaling_method = scaling
         self.backend = backend
-        self.preconditioner_name = preconditioner
         return self
         
     def set_solver_options(self, method, options=None, analyze_matrix=False):
@@ -90,8 +88,7 @@ class CCDTester(ABC):
             self.solver.set_solver(
                 method=self.solver_method, 
                 options=self.solver_options, 
-                scaling_method=self.scaling_method,
-                preconditioner=self.preconditioner_name
+                scaling_method=self.scaling_method
             )
         
         return self
@@ -104,7 +101,7 @@ class CCDTester(ABC):
             method: 解法メソッド名
             options: ソルバーオプション辞書
             scaling_method: スケーリング手法
-            preconditioner: 前処理器名
+            preconditioner: 無視される (従来互換性のため)
             
         Returns:
             self: メソッドチェーン用
@@ -115,16 +112,13 @@ class CCDTester(ABC):
             self.solver_options = options
         if scaling_method is not None:
             self.scaling_method = scaling_method
-        if preconditioner is not None:
-            self.preconditioner_name = preconditioner
             
         # ソルバーが既に作成されている場合は、設定を適用
         if hasattr(self, 'solver') and self.solver:
             self.solver.set_solver(
                 method=self.solver_method,
                 options=self.solver_options,
-                scaling_method=self.scaling_method,
-                preconditioner=self.preconditioner_name
+                scaling_method=self.scaling_method
             )
             
         return self
@@ -207,8 +201,7 @@ class CCDTester(ABC):
             self.solver.set_solver(
                 method=self.solver_method, 
                 options=options, 
-                scaling_method=self.scaling_method,
-                preconditioner=self.preconditioner_name
+                scaling_method=self.scaling_method
             )
         else:
             self.exact_solution = None
@@ -245,7 +238,6 @@ class CCDTester(ABC):
             'scaling': self.scaling_method,
             'backend': self.backend,
             'perturbation_level': self.perturbation_level,
-            'preconditioner': self.preconditioner_name
         }
 
         for n in grid_sizes:
@@ -264,8 +256,7 @@ class CCDTester(ABC):
                 method=settings['method'],
                 options=settings['options'],
                 scaling=settings['scaling'],
-                backend=settings['backend'],
-                preconditioner=settings['preconditioner']
+                backend=settings['backend']
             )
             tester.perturbation_level = settings['perturbation_level']
             result = tester.run_test(test_func)
@@ -297,24 +288,6 @@ class CCDTester(ABC):
         # ソルバー初期化
         self._init_solver()
         
-        # 前処理器を確実に適用するために、ソルバー設定を再適用
-        if self.preconditioner_name:
-            self.solver.set_solver(
-                method=self.solver_method,
-                options=self.solver_options,
-                scaling_method=self.scaling_method,
-                preconditioner=self.preconditioner_name
-            )
-            
-            # linear_solverも更新されていることを確認
-            if hasattr(self.solver, 'linear_solver'):
-                print(f"前処理器 '{self.preconditioner_name}' を行列可視化用に設定しました")
-                # 念のため、設定されているか確認
-                if hasattr(self.solver.linear_solver, 'preconditioner'):
-                    precond = self.solver.linear_solver.preconditioner
-                    if precond:
-                        print(f"  実際の前処理器: {precond.name if hasattr(precond, 'name') else type(precond).__name__}")
-        
         A = self.matrix_A
         b = self._build_rhs(test_func)
         
@@ -323,17 +296,6 @@ class CCDTester(ABC):
             
         # 厳密解計算
         exact_x = self._compute_exact(test_func) if x is not None else None
-        
-        # 前処理器を取得
-        preconditioner = self._get_preconditioner()
-        
-        # 前処理器情報をデバッグ出力
-        if preconditioner:
-            print(f"前処理器を可視化に渡します: {type(preconditioner).__name__}")
-            if hasattr(preconditioner, '__dict__'):
-                print(f"前処理器の属性: {list(preconditioner.__dict__.keys())}")
-        else:
-            print("前処理器が見つかりませんでした")
         
         # 外部ビジュアライザーを使用して可視化
         visualizer = MatrixVisualizer(self.results_dir)
@@ -348,51 +310,11 @@ class CCDTester(ABC):
             title = self.matrix_basename
         else:
             title = f"{eq_name}_{test_func.name}"
-            if self.preconditioner_name:
-                title += f"_{self.preconditioner_name}"
         
         return visualizer.visualize(
             A, b, x, exact_x, title,
-            self.get_dimension(), self.scaling_method, preconditioner
+            self.get_dimension(), self.scaling_method, None
         )
-    
-    def _get_preconditioner(self):
-        """
-        前処理器インスタンスを取得する（改善版）
-        
-        Returns:
-            前処理器インスタンスまたはNone
-        """
-        # 前処理器インスタンスを取得する複数の方法を試す
-        preconditioner = None
-        
-        # 方法1: linear_solverから取得
-        if hasattr(self.solver, 'linear_solver'):
-            linear_solver = self.solver.linear_solver
-            
-            # 標準的な方法: preconditioner属性
-            if hasattr(linear_solver, 'preconditioner'):
-                preconditioner = linear_solver.preconditioner
-            
-            # 代替方法: get_preconditioner()メソッド
-            elif hasattr(linear_solver, 'get_preconditioner'):
-                try:
-                    preconditioner = linear_solver.get_preconditioner()
-                except:
-                    pass
-        
-        # 方法2: solverから直接取得
-        if preconditioner is None and hasattr(self.solver, 'preconditioner'):
-            preconditioner = self.solver.preconditioner
-        
-        # 方法3: solverからget_preconditioner()メソッドで取得
-        if preconditioner is None and hasattr(self.solver, 'get_preconditioner'):
-            try:
-                preconditioner = self.solver.get_preconditioner()
-            except:
-                pass
-        
-        return preconditioner
     
     def _solve_for_visualization(self, A, b):
         """
@@ -427,12 +349,11 @@ class CCDTester(ABC):
         if not self.solver:
             self._create_solver()
             
-        if self.solver_method != "direct" or self.solver_options or self.scaling_method or self.preconditioner_name:
+        if self.solver_method != "direct" or self.solver_options or self.scaling_method:
             self.solver.set_solver(
                 method=self.solver_method, 
                 options=self.solver_options, 
-                scaling_method=self.scaling_method,
-                preconditioner=self.preconditioner_name
+                scaling_method=self.scaling_method
             )
     
     def _create_grid(self, n, x_range, y_range=None):

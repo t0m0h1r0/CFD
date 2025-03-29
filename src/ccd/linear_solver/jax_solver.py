@@ -36,9 +36,6 @@ class JAXLinearSolver(LinearSolver):
             # 行列をJAX形式に変換
             self.A = self._to_jax_matrix(self.original_A)
             
-            # 前処理器のセットアップ
-            self.setup_preconditioner()
-            
             # 解法メソッド辞書
             self.solvers = {
                 "direct": self._solve_direct,
@@ -58,7 +55,7 @@ class JAXLinearSolver(LinearSolver):
             self.enable_dirichlet, 
             self.enable_neumann,
             None,  # scaling_method
-            self.preconditioner  # 前処理器は引き継ぐ
+            None   # preconditioner
         )
         # CPU版のsolversをコピー
         self.solvers = self.cpu_solver.solvers
@@ -174,7 +171,7 @@ class JAXLinearSolver(LinearSolver):
             return A
     
     def _to_numpy_matrix(self, A):
-        """行列をNumPy形式に変換 (前処理用)"""
+        """行列をNumPy形式に変換"""
         # JAX配列の場合はNumPyに変換
         if 'jax' in str(type(A)):
             return np.array(A)
@@ -183,31 +180,6 @@ class JAXLinearSolver(LinearSolver):
             return A.get()
         # 既にNumPy/SciPyの場合はそのまま
         return A
-    
-    def _create_preconditioner_operator(self):
-        """
-        前処理演算子を作成
-        
-        Returns:
-            前処理演算子またはNone
-        """
-        if self.preconditioner is None or not self.has_jax:
-            return None
-            
-        # JAX用のLinearOperatorを作成
-        from jax.scipy.sparse.linalg import LinearOperator
-        
-        n = self.A.shape[0]
-        
-        def precond_matvec(x):
-            # JAX配列を前提とした前処理適用
-            try:
-                return self.preconditioner(x)
-            except Exception as e:
-                print(f"前処理適用エラー: {e}")
-                return x
-                
-        return LinearOperator((n, n), matvec=precond_matvec)
     
     # 解法メソッド
     
@@ -250,18 +222,13 @@ class JAXLinearSolver(LinearSolver):
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
         try:
-            # 前処理演算子を取得
-            M = self._create_preconditioner_operator()
-            
             # GMRES実行
-            result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, restart=restart, M=M)
+            result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, restart=restart)
             return result[0], result[1]
         except Exception as e:
             print(f"GMRES実行エラー: {e}")
-            print("前処理なしでGMRESを再試行します")
-            # 前処理なしで再試行
-            result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, restart=restart)
-            return result[0], result[1]
+            # 直接解法にフォールバック
+            return self._solve_direct(A, b)
     
     def _solve_cg(self, A, b, options=None):
         """共役勾配法"""
@@ -272,18 +239,13 @@ class JAXLinearSolver(LinearSolver):
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
         try:
-            # 前処理演算子を取得
-            M = self._create_preconditioner_operator()
-            
             # CG実行
-            result = self.splinalg.cg(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, M=M)
+            result = self.splinalg.cg(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
             return result[0], result[1]
         except Exception as e:
             print(f"CG実行エラー: {e}")
-            print("前処理なしでCGを再試行します")
-            # 前処理なしで再試行
-            result = self.splinalg.cg(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
-            return result[0], result[1]
+            # 直接解法にフォールバック
+            return self._solve_direct(A, b)
     
     def _solve_bicgstab(self, A, b, options=None):
         """BiCGSTAB法"""
@@ -294,15 +256,10 @@ class JAXLinearSolver(LinearSolver):
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
         try:
-            # 前処理演算子を取得
-            M = self._create_preconditioner_operator()
-            
             # BiCGSTAB実行
-            result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, M=M)
+            result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
             return result[0], result[1]
         except Exception as e:
             print(f"BiCGSTAB実行エラー: {e}")
-            print("前処理なしでBiCGSTABを再試行します")
-            # 前処理なしで再試行
-            result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
-            return result[0], result[1]
+            # 直接解法にフォールバック
+            return self._solve_direct(A, b)
