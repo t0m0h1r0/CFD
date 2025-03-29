@@ -13,13 +13,11 @@ from equation.dim1.compact_internal import (
 )
 from equation.dim1.compact_left_boundary import (
     LeftBoundary1stDerivativeEquation,
-    LeftBoundary2ndDerivativeEquation,
-    LeftBoundary3rdDerivativeEquation
+    LeftBoundary2ndDerivativeEquation
 )
 from equation.dim1.compact_right_boundary import (
     RightBoundary1stDerivativeEquation,
-    RightBoundary2ndDerivativeEquation,
-    RightBoundary3rdDerivativeEquation
+    RightBoundary2ndDerivativeEquation
 )
 from equation.converter import Equation1Dto2DConverter
 

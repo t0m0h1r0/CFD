@@ -246,7 +246,6 @@ class CCDTester(ABC):
             # デフォルトテスト関数
             from test_function.test_function1d import TestFunction1DFactory
             from test_function.test_function2d import TestFunction2DFactory
-            from test_function.test_function3d import TestFunction3DFactory
             if self.get_dimension() == 1:
                 test_func = TestFunction1DFactory.create_standard_functions()[3]  # Sine
             else:

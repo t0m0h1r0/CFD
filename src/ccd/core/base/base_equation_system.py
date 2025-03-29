@@ -176,3 +176,57 @@ class BaseEquationSystem(ABC):
             "memory_dense_MB": memory_dense_MB,
             "memory_sparse_MB": memory_sparse_MB
         }
+    
+    def analyze_matrix_memory(self):
+        """
+        行列構築のメモリ効率を分析
+        
+        Returns:
+            メモリ使用情報の辞書
+        """
+        # 次元に応じたサイズの計算
+        if self.is_3d:
+            nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
+            var_per_point = 10  # 1点あたりの変数数 [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy, ψ_z, ψ_zz, ψ_zzz]
+            system_size = nx * ny * nz * var_per_point
+        elif self.is_2d:
+            nx, ny = self.grid.nx_points, self.grid.ny_points
+            var_per_point = 7  # 1点あたりの変数数 [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy]
+            system_size = nx * ny * var_per_point
+        else:
+            n = self.grid.n_points
+            var_per_point = 4  # 1点あたりの変数数 [ψ, ψ', ψ'', ψ''']
+            system_size = n * var_per_point
+        
+        # CSR行列を構築（ベンチマーク用）
+        A = self.build_matrix_system()
+        nnz = A.nnz
+        
+        # メモリ使用量の推定
+        memory_dense_MB = (system_size * system_size * 8) / (1024 * 1024)  # 密行列 (8バイト/要素)
+        memory_csr_MB = (nnz * 12) / (1024 * 1024)  # CSR形式 (値8バイト + インデックス4バイト)
+        memory_lil_MB = (nnz * 16) / (1024 * 1024)  # LIL形式 (値8バイト + インデックス8バイト)
+        
+        # 中間処理の一時メモリ（リスト形式時）
+        memory_lists_MB = (nnz * 20) / (1024 * 1024)  # 値8バイト + 2つのインデックス各4バイト + Pythonオーバーヘッド4バイト
+        
+        print("\n行列メモリ使用量の分析:")
+        print(f"  行列サイズ: {system_size} x {system_size}")
+        print(f"  非ゼロ要素数: {nnz}")
+        print(f"  疎密比率: {nnz / (system_size * system_size):.6f}")
+        print(f"  密行列形式使用量: {memory_dense_MB:.2f} MB")
+        print(f"  CSR形式使用量: {memory_csr_MB:.2f} MB")
+        print(f"  LIL形式使用量: {memory_lil_MB:.2f} MB")
+        print(f"  リスト形式(一時記憶)使用量: {memory_lists_MB:.2f} MB")
+        print(f"  メモリ節約量(リスト→LIL): {memory_lists_MB - memory_lil_MB:.2f} MB")
+        
+        return {
+            "matrix_size": system_size,
+            "non_zeros": nnz,
+            "density": nnz / (system_size * system_size),
+            "memory_dense_MB": memory_dense_MB,
+            "memory_csr_MB": memory_csr_MB,
+            "memory_lil_MB": memory_lil_MB,
+            "memory_lists_MB": memory_lists_MB,
+            "memory_savings_MB": memory_lists_MB - memory_lil_MB
+        }

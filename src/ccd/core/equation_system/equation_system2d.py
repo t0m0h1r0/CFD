@@ -5,7 +5,6 @@
 2次元問題の格子点方程式を管理し、線形方程式系の行列を構築するための機能を提供します。
 """
 
-import numpy as np
 import scipy.sparse as sp_cpu
 from typing import Dict, List, Any
 
@@ -144,10 +143,8 @@ class EquationSystem2D(BaseEquationSystem):
         var_per_point = 7  # 1点あたりの変数数 [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy]
         system_size = nx * ny * var_per_point
         
-        # 行列要素の蓄積用 (CPU処理)
-        data = []
-        row_indices = []
-        col_indices = []
+        # LIL形式で行列を初期化（メモリ効率の良い構築）
+        A_lil = sp_cpu.lil_matrix((system_size, system_size))
         
         # 各格子点について処理
         for j in range(ny):
@@ -194,15 +191,10 @@ class EquationSystem2D(BaseEquationSystem):
                             col_base = (nj * nx + ni) * var_per_point
                             for k, coeff in enumerate(coeffs):
                                 if coeff != 0.0:  # 非ゼロ要素のみ追加
-                                    row_indices.append(row)
-                                    col_indices.append(col_base + k)
-                                    # CuPy配列があればNumPyに変換
-                                    data.append(float(self._to_numpy(coeff)))
+                                    # LIL形式に直接値を設定
+                                    A_lil[row, col_base + k] = float(self._to_numpy(coeff))
         
-        # SciPyを使用してCSR行列を構築
-        A = sp_cpu.csr_matrix(
-            (np.array(data), (np.array(row_indices), np.array(col_indices))), 
-            shape=(system_size, system_size)
-        )
+        # LIL行列をCSR形式に変換（計算効率向上）
+        A = A_lil.tocsr()
         
         return A

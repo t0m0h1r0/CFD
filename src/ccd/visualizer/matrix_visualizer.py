@@ -71,7 +71,7 @@ class MatrixVisualizer:
         else:
             ax_matrix.imshow(np.abs(A_np), cmap='viridis', aspect='auto')
             
-        ax_matrix.set_title(f"System Matrix A")
+        ax_matrix.set_title("System Matrix A")
         ax_matrix.set_xlabel("Column Index")
         ax_matrix.set_ylabel("Row Index")
         

@@ -13,14 +13,10 @@ from equation.dim1.compact_internal import (
     Internal3rdDerivativeEquation
 )
 from equation.dim1.compact_left_boundary import (
-    LeftBoundary1stDerivativeEquation,
-    LeftBoundary2ndDerivativeEquation,
-    LeftBoundary3rdDerivativeEquation
+    LeftBoundary1stDerivativeEquation
 )
 from equation.dim1.compact_right_boundary import (
-    RightBoundary1stDerivativeEquation,
-    RightBoundary2ndDerivativeEquation,
-    RightBoundary3rdDerivativeEquation
+    RightBoundary1stDerivativeEquation
 )
 
 

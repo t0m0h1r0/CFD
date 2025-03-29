@@ -7,12 +7,10 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
 from matplotlib.colors import LogNorm, Normalize
 from matplotlib.gridspec import GridSpec
 from skimage import measure
-from typing import List, Optional, Tuple, Dict
+from typing import List
 
 from core.base.base_visualizer import BaseVisualizer
 
@@ -416,7 +414,7 @@ class CCDVisualizer3D(BaseVisualizer):
         # 横向きバーチャート
         bars = ax.barh(y_pos, plot_errors, color='skyblue')
         ax.set_xscale('log')
-        ax.set_title(f"Error Summary")
+        ax.set_title("Error Summary")
         ax.set_xlabel('Maximum Error (log scale)')
         ax.set_yticks(y_pos)
         ax.set_yticklabels(component_names)
