@@ -74,6 +74,15 @@ class LinearSolver(ABC):
             
         return None
     
+    def get_preconditioner(self):
+        """
+        前処理器オブジェクトを取得（視覚化用）
+        
+        Returns:
+            前処理器オブジェクトまたはNone
+        """
+        return self.preconditioner
+    
     @abstractmethod
     def _initialize(self):
         """各実装による初期化処理"""
