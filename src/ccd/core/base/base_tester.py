@@ -10,13 +10,7 @@ import os
 import numpy as np
 import scipy.sparse as sp
 
-from core.grid.grid1d import Grid1D
-from core.grid.grid2d import Grid2D
-from equation_set.equation_sets import EquationSet
-from visualizer.matrix_visualizer import MatrixVisualizer
-
-
-class CCDTester(ABC):
+class BaseTester(ABC):
     """CCDテスト基底クラス"""
 
     def __init__(self, grid):
@@ -51,11 +45,12 @@ class CCDTester(ABC):
             options: ソルバーオプション辞書
             scaling: スケーリング手法名
             backend: 計算バックエンド名
-            preconditioner: 無視される (従来互換性のため)
+            preconditioner: プリコンディショナー (未使用・後方互換性のため)
         
         Returns:
             self: メソッドチェーン用
         """
+        from equation_set.equation_sets import EquationSet
         self.equation_set = EquationSet.create(equation, dimension=self.get_dimension())
         self.solver_method = method
         self.solver_options = options or {}
@@ -101,7 +96,7 @@ class CCDTester(ABC):
             method: 解法メソッド名
             options: ソルバーオプション辞書
             scaling_method: スケーリング手法
-            preconditioner: 無視される (従来互換性のため)
+            preconditioner: プリコンディショナー (未使用・後方互換性のため)
             
         Returns:
             self: メソッドチェーン用
@@ -133,6 +128,7 @@ class CCDTester(ABC):
         Returns:
             self: メソッドチェーン用
         """
+        from equation_set.equation_sets import EquationSet
         self.equation_set = EquationSet.create(equation_set_name, dimension=self.get_dimension())
         return self
         
@@ -179,36 +175,45 @@ class CCDTester(ABC):
             test_func = self.get_test_function(test_func)
         
         if not self.equation_set:
+            from equation_set.equation_sets import EquationSet
             self.equation_set = EquationSet.create("poisson", dimension=self.get_dimension())
 
         self._init_solver()
         
-        # 厳密解を初期値として使用する場合、計算して摂動を加える
+        # 厳密解を初期値として使用する場合の準備
         if self.perturbation_level is not None and self.solver_method != 'direct':
-            # まず厳密解を計算
-            exact_solution_original = self._compute_exact(test_func)
-            
-            # 厳密解に摂動を加え、self.exact_solutionに保存
-            self.exact_solution = self._add_perturbation(exact_solution_original, self.perturbation_level)
-            
-            print(f"厳密解を初期値として使用 (サイズ: {self.exact_solution.shape}, メソッド: {self.solver_method})")
-            
-            # ソルバーオプションにx0を設定
-            options = self.solver_options.copy()
-            options['x0'] = self.exact_solution
-            
-            # ソルバーに設定を適用（このタイミングでのみ適用する）
-            self.solver.set_solver(
-                method=self.solver_method, 
-                options=options, 
-                scaling_method=self.scaling_method
-            )
+            self._prepare_initial_guess(test_func)
         else:
             self.exact_solution = None
         
-        # 上記でソルバー設定を適用済みなので、ここでの再適用は不要
-        
+        # 解を計算して処理
         return self._process_solution(test_func)
+    
+    def _prepare_initial_guess(self, test_func):
+        """
+        初期推定値を準備
+        
+        Args:
+            test_func: テスト関数
+        """
+        # 厳密解を計算
+        exact_solution_original = self._compute_exact(test_func)
+        
+        # 厳密解に摂動を加え、self.exact_solutionに保存
+        self.exact_solution = self._add_perturbation(exact_solution_original, self.perturbation_level)
+        
+        print(f"厳密解を初期値として使用 (サイズ: {self.exact_solution.shape}, メソッド: {self.solver_method})")
+        
+        # ソルバーオプションの設定
+        options = self.solver_options.copy()
+        options['x0'] = self.exact_solution
+        
+        # ソルバーに設定を適用
+        self.solver.set_solver(
+            method=self.solver_method, 
+            options=options, 
+            scaling_method=self.scaling_method
+        )
     
     def run_test_with_options(self, test_func):
         """旧APIとの互換性用"""
@@ -280,8 +285,12 @@ class CCDTester(ABC):
             from test_function.test_function2d import TestFunction2DFactory
             if self.get_dimension() == 1:
                 test_func = TestFunction1DFactory.create_standard_functions()[3]  # Sine
-            else:
+            elif self.get_dimension() == 2:
                 test_func = TestFunction2DFactory.create_standard_functions()[0]  # Sine2D
+            else:
+                # 3Dの場合
+                from test_function.test_function3d import TestFunction3DFactory
+                test_func = TestFunction3DFactory.create_standard_functions()[0]
         elif isinstance(test_func, str):
             test_func = self.get_test_function(test_func)
         
@@ -298,6 +307,7 @@ class CCDTester(ABC):
         exact_x = self._compute_exact(test_func) if x is not None else None
         
         # 外部ビジュアライザーを使用して可視化
+        from visualizer.matrix_visualizer import MatrixVisualizer
         visualizer = MatrixVisualizer(self.results_dir)
         
         # 方程式セット名を取得
@@ -340,7 +350,7 @@ class CCDTester(ABC):
             try:
                 from scipy.sparse.linalg import spsolve
                 return spsolve(A, b)
-            except Exception as fallback_error:  # 具体的な例外に変更
+            except Exception as fallback_error:
                 print(f"SciPy fallback solver also failed: {fallback_error}")
                 return None
     
@@ -356,7 +366,7 @@ class CCDTester(ABC):
                 scaling_method=self.scaling_method
             )
     
-    def _create_grid(self, n, x_range, y_range=None):
+    def _create_grid(self, n, x_range, y_range=None, z_range=None):
         """
         グリッド作成
         
@@ -364,13 +374,21 @@ class CCDTester(ABC):
             n: 格子点数
             x_range: x方向の範囲
             y_range: y方向の範囲（1Dの場合はNone）
+            z_range: z方向の範囲（1D/2Dの場合はNone）
             
         Returns:
             生成したグリッド
         """
-        if self.get_dimension() == 1:
+        dim = self.get_dimension()
+        if dim == 1:
+            from core.grid.grid1d import Grid1D
             return Grid1D(n, x_range=x_range)
-        return Grid2D(n, n, x_range=x_range, y_range=y_range or x_range)
+        elif dim == 2:
+            from core.grid.grid2d import Grid2D
+            return Grid2D(n, n, x_range=x_range, y_range=y_range or x_range)
+        else:  # dim == 3
+            from core.grid.grid3d import Grid3D
+            return Grid3D(n, n, n, x_range=x_range, y_range=y_range or x_range, z_range=z_range or x_range)
     
     # NumPyに変換するユーティリティ関数
     def _to_numpy(self, arr):

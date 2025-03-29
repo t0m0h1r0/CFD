@@ -5,14 +5,13 @@
 """
 
 import numpy as np
-
-from core.base.base_tester import CCDTester
+from core.base.base_tester import BaseTester
 from core.solver.solver3d import CCDSolver3D
 from equation_set.equation_sets import DerivativeEquationSet3D
 
 
-class CCDTester3D(CCDTester):
-    """3D CCDテスター"""
+class CCDTester3D(BaseTester):
+    """3次元CCDテスタークラス"""
     
     def __init__(self, grid):
         """
@@ -87,7 +86,7 @@ class CCDTester3D(CCDTester):
     
     def _build_rhs(self, test_func):
         """
-        3D右辺構築
+        3D右辺ベクトル構築（簡略化）
         
         Args:
             test_func: テスト関数
@@ -95,13 +94,28 @@ class CCDTester3D(CCDTester):
         Returns:
             np.ndarray: 右辺ベクトル
         """
-        nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
-        x_min, x_max = self.grid.x_min, self.grid.x_max
-        y_min, y_max = self.grid.y_min, self.grid.y_max
-        z_min, z_max = self.grid.z_min, self.grid.z_max
-        
-        # ソース項 (方程式タイプに依存)
+        # ソース項の計算
         is_derivative = isinstance(self.equation_set, DerivativeEquationSet3D)
+        f_values = self._compute_source_term(test_func, is_derivative)
+        
+        # 境界条件辞書を作成
+        boundary = self._create_3d_boundary_conditions(test_func)
+        
+        self._init_solver()
+        return self.solver.rhs_builder.build_rhs_vector(f_values=f_values, **boundary)
+    
+    def _compute_source_term(self, test_func, is_derivative):
+        """
+        ソース項を計算（ヘルパーメソッド）
+        
+        Args:
+            test_func: テスト関数
+            is_derivative: 微分方程式かどうか
+            
+        Returns:
+            ソース項の値
+        """
+        nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
         f_values = np.zeros((nx, ny, nz))
         
         for i in range(nx):
@@ -112,53 +126,59 @@ class CCDTester3D(CCDTester):
                         test_func.d2f_dx2(x, y, z) + test_func.d2f_dy2(x, y, z) + test_func.d2f_dz2(x, y, z)
                     )
         
-        # 境界値（面、辺、頂点）
+        return f_values
+    
+    def _create_3d_boundary_conditions(self, test_func):
+        """
+        3D境界条件を作成（ヘルパーメソッド）
+        
+        Args:
+            test_func: テスト関数
+            
+        Returns:
+            境界条件の辞書
+        """
+        nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
+        x_min, x_max = self.grid.x_min, self.grid.x_max
+        y_min, y_max = self.grid.y_min, self.grid.y_max
+        z_min, z_max = self.grid.z_min, self.grid.z_max
+        
         boundary = {}
         
-        # 面（x方向）
-        x_min_values = np.array([[test_func.f(x_min, y, z) for z in self.grid.z] for y in self.grid.y])
-        x_max_values = np.array([[test_func.f(x_max, y, z) for z in self.grid.z] for y in self.grid.y])
-        boundary['face_x_min_dirichlet'] = x_min_values
-        boundary['face_x_max_dirichlet'] = x_max_values
+        # 面のディリクレ境界条件
+        boundary['face_x_min_dirichlet'] = np.array([[test_func.f(x_min, y, z) 
+                                                   for z in self.grid.z] for y in self.grid.y])
+        boundary['face_x_max_dirichlet'] = np.array([[test_func.f(x_max, y, z) 
+                                                   for z in self.grid.z] for y in self.grid.y])
+        boundary['face_y_min_dirichlet'] = np.array([[test_func.f(x, y_min, z) 
+                                                   for z in self.grid.z] for x in self.grid.x])
+        boundary['face_y_max_dirichlet'] = np.array([[test_func.f(x, y_max, z) 
+                                                   for z in self.grid.z] for x in self.grid.x])
+        boundary['face_z_min_dirichlet'] = np.array([[test_func.f(x, y, z_min) 
+                                                   for y in self.grid.y] for x in self.grid.x])
+        boundary['face_z_max_dirichlet'] = np.array([[test_func.f(x, y, z_max) 
+                                                   for y in self.grid.y] for x in self.grid.x])
         
-        # 面（y方向）
-        y_min_values = np.array([[test_func.f(x, y_min, z) for z in self.grid.z] for x in self.grid.x])
-        y_max_values = np.array([[test_func.f(x, y_max, z) for z in self.grid.z] for x in self.grid.x])
-        boundary['face_y_min_dirichlet'] = y_min_values
-        boundary['face_y_max_dirichlet'] = y_max_values
-        
-        # 面（z方向）
-        z_min_values = np.array([[test_func.f(x, y, z_min) for y in self.grid.y] for x in self.grid.x])
-        z_max_values = np.array([[test_func.f(x, y, z_max) for y in self.grid.y] for x in self.grid.x])
-        boundary['face_z_min_dirichlet'] = z_min_values
-        boundary['face_z_max_dirichlet'] = z_max_values
-        
-        # ノイマン境界条件（必要に応じて）
+        # ノイマン境界条件も必要に応じて追加
         if self.equation_set.enable_neumann:
-            # x方向ノイマン
-            x_min_neumann = np.array([[test_func.df_dx(x_min, y, z) for z in self.grid.z] for y in self.grid.y])
-            x_max_neumann = np.array([[test_func.df_dx(x_max, y, z) for z in self.grid.z] for y in self.grid.y])
-            boundary['face_x_min_neumann_x'] = x_min_neumann
-            boundary['face_x_max_neumann_x'] = x_max_neumann
-            
-            # y方向ノイマン
-            y_min_neumann = np.array([[test_func.df_dy(x, y_min, z) for z in self.grid.z] for x in self.grid.x])
-            y_max_neumann = np.array([[test_func.df_dy(x, y_max, z) for z in self.grid.z] for x in self.grid.x])
-            boundary['face_y_min_neumann_y'] = y_min_neumann
-            boundary['face_y_max_neumann_y'] = y_max_neumann
-            
-            # z方向ノイマン
-            z_min_neumann = np.array([[test_func.df_dz(x, y, z_min) for y in self.grid.y] for x in self.grid.x])
-            z_max_neumann = np.array([[test_func.df_dz(x, y, z_max) for y in self.grid.y] for x in self.grid.x])
-            boundary['face_z_min_neumann_z'] = z_min_neumann
-            boundary['face_z_max_neumann_z'] = z_max_neumann
+            boundary['face_x_min_neumann_x'] = np.array([[test_func.df_dx(x_min, y, z) 
+                                                      for z in self.grid.z] for y in self.grid.y])
+            boundary['face_x_max_neumann_x'] = np.array([[test_func.df_dx(x_max, y, z) 
+                                                      for z in self.grid.z] for y in self.grid.y])
+            boundary['face_y_min_neumann_y'] = np.array([[test_func.df_dy(x, y_min, z) 
+                                                      for z in self.grid.z] for x in self.grid.x])
+            boundary['face_y_max_neumann_y'] = np.array([[test_func.df_dy(x, y_max, z) 
+                                                      for z in self.grid.z] for x in self.grid.x])
+            boundary['face_z_min_neumann_z'] = np.array([[test_func.df_dz(x, y, z_min) 
+                                                      for y in self.grid.y] for x in self.grid.x])
+            boundary['face_z_max_neumann_z'] = np.array([[test_func.df_dz(x, y, z_max) 
+                                                      for y in self.grid.y] for x in self.grid.x])
         
-        self._init_solver()
-        return self.solver.rhs_builder.build_rhs_vector(f_values=f_values, **boundary)
+        return boundary
     
     def _compute_exact(self, test_func):
         """
-        3D厳密解計算
+        3D厳密解計算（簡略化）
         
         Args:
             test_func: テスト関数
@@ -188,24 +208,19 @@ class CCDTester3D(CCDTester):
                 
         return exact
     
-    def _process_solution(self, test_func):
+    def _compute_exact_components(self, test_func):
         """
-        3D解処理（NumPy/CuPy互換性を考慮）
+        3D厳密解のコンポーネントを計算（ヘルパーメソッド）
         
         Args:
             test_func: テスト関数
             
         Returns:
-            Dict: 処理結果を含む辞書
+            厳密解の各コンポーネント
         """
         nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
-        X, Y, Z = self.grid.get_points()
-        x_min, x_max = self.grid.x_min, self.grid.x_max
-        y_min, y_max = self.grid.y_min, self.grid.y_max
-        z_min, z_max = self.grid.z_min, self.grid.z_max
-        is_derivative = isinstance(self.equation_set, DerivativeEquationSet3D)
-
-        # 厳密解準備（NumPy配列として）
+        
+        # 厳密解準備
         exact = {
             'psi': np.zeros((nx, ny, nz)),
             'psi_x': np.zeros((nx, ny, nz)),
@@ -218,7 +233,7 @@ class CCDTester3D(CCDTester):
             'psi_yyy': np.zeros((nx, ny, nz)),
             'psi_zzz': np.zeros((nx, ny, nz))
         }
-
+        
         # 各点で厳密値計算
         for i in range(nx):
             for j in range(ny):
@@ -234,63 +249,38 @@ class CCDTester3D(CCDTester):
                     exact['psi_xxx'][i, j, k] = test_func.d3f_dx3(x, y, z)
                     exact['psi_yyy'][i, j, k] = test_func.d3f_dy3(x, y, z)
                     exact['psi_zzz'][i, j, k] = test_func.d3f_dz3(x, y, z)
-
-        # 右辺値準備
-        f_values = np.zeros((nx, ny, nz))
-        for i in range(nx):
-            for j in range(ny):
-                for k in range(nz):
-                    x, y, z = self.grid.get_point(i, j, k)
-                    f_values[i, j, k] = test_func.f(x, y, z) if is_derivative else (
-                        test_func.d2f_dx2(x, y, z) + test_func.d2f_dy2(x, y, z) + test_func.d2f_dz2(x, y, z)
-                    )
-
+        
+        return exact
+    
+    def _process_solution(self, test_func):
+        """
+        3D解処理（簡略化）
+        
+        Args:
+            test_func: テスト関数
+            
+        Returns:
+            Dict: 処理結果を含む辞書
+        """
+        nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
+        is_derivative = isinstance(self.equation_set, DerivativeEquationSet3D)
+        
+        # 厳密解の計算
+        exact_components = self._compute_exact_components(test_func)
+        
+        # ソース項準備
+        f_values = self._compute_source_term(test_func, is_derivative)
+        
         # 境界条件
-        boundary = {}
+        boundary = self._create_3d_boundary_conditions(test_func)
         
-        # 面（x方向）
-        boundary['face_x_min_dirichlet'] = np.array([[test_func.f(x_min, y, z) for z in self.grid.z] for y in self.grid.y])
-        boundary['face_x_max_dirichlet'] = np.array([[test_func.f(x_max, y, z) for z in self.grid.z] for y in self.grid.y])
-        
-        # 面（y方向）
-        boundary['face_y_min_dirichlet'] = np.array([[test_func.f(x, y_min, z) for z in self.grid.z] for x in self.grid.x])
-        boundary['face_y_max_dirichlet'] = np.array([[test_func.f(x, y_max, z) for z in self.grid.z] for x in self.grid.x])
-        
-        # 面（z方向）
-        boundary['face_z_min_dirichlet'] = np.array([[test_func.f(x, y, z_min) for y in self.grid.y] for x in self.grid.x])
-        boundary['face_z_max_dirichlet'] = np.array([[test_func.f(x, y, z_max) for y in self.grid.y] for x in self.grid.x])
-        
-        # ノイマン境界条件（必要に応じて）
-        if self.equation_set.enable_neumann:
-            # x方向ノイマン
-            boundary['face_x_min_neumann_x'] = np.array([[test_func.df_dx(x_min, y, z) for z in self.grid.z] for y in self.grid.y])
-            boundary['face_x_max_neumann_x'] = np.array([[test_func.df_dx(x_max, y, z) for z in self.grid.z] for y in self.grid.y])
-            
-            # y方向ノイマン
-            boundary['face_y_min_neumann_y'] = np.array([[test_func.df_dy(x, y_min, z) for z in self.grid.z] for x in self.grid.x])
-            boundary['face_y_max_neumann_y'] = np.array([[test_func.df_dy(x, y_max, z) for z in self.grid.z] for x in self.grid.x])
-            
-            # z方向ノイマン
-            boundary['face_z_min_neumann_z'] = np.array([[test_func.df_dz(x, y, z_min) for y in self.grid.y] for x in self.grid.x])
-            boundary['face_z_max_neumann_z'] = np.array([[test_func.df_dz(x, y, z_max) for y in self.grid.y] for x in self.grid.x])
-
-        # 厳密解を初期値として使用する場合
+        # ソルバーオプション設定と実行
         if self.perturbation_level is not None and self.solver_method != 'direct' and self.exact_solution is not None:
-            print("摂動が加えられた初期値を使用してsolve()を呼び出します")
-            # オプションを作成して厳密解（摂動あり）を含める
             solve_options = {
                 'tol': self.solver_options.get('tol', 1e-10),
                 'maxiter': self.solver_options.get('maxiter', 1000),
-                'x0': self.exact_solution  # 摂動が加えられた初期値を使用
+                'x0': self.exact_solution
             }
-            
-            # x0のサイズを確認
-            x0_shape = solve_options['x0'].shape
-            expected_shape = (nx * ny * nz * 10,)  # [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy, ψ_z, ψ_zz, ψ_zzz] for each point
-            if x0_shape != expected_shape:
-                print(f"警告: x0のサイズが期待値と異なります: {x0_shape} vs {expected_shape}")
-            
-            # 解計算（カスタムオプション付き）
             sol = self.solver.solve_with_options(
                 analyze_before_solve=False, 
                 f_values=f_values, 
@@ -298,44 +288,22 @@ class CCDTester3D(CCDTester):
                 **boundary
             )
         else:
-            # 通常の解計算
             sol = self.solver.solve(
                 analyze_before_solve=False, 
                 f_values=f_values, 
                 **boundary
             )
             
-        psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy, psi_z, psi_zz, psi_zzz = sol
-
-        # NumPy配列に変換（CuPyの場合）
-        psi = self._to_numpy(psi)
-        psi_x = self._to_numpy(psi_x)
-        psi_y = self._to_numpy(psi_y)
-        psi_z = self._to_numpy(psi_z)
-        psi_xx = self._to_numpy(psi_xx)
-        psi_yy = self._to_numpy(psi_yy)
-        psi_zz = self._to_numpy(psi_zz)
-        psi_xxx = self._to_numpy(psi_xxx)
-        psi_yyy = self._to_numpy(psi_yyy)
-        psi_zzz = self._to_numpy(psi_zzz)
-
-        # 誤差計算（NumPy配列として）
-        errors = [
-            float(np.max(np.abs(psi - exact['psi']))),
-            float(np.max(np.abs(psi_x - exact['psi_x']))),
-            float(np.max(np.abs(psi_y - exact['psi_y']))),
-            float(np.max(np.abs(psi_z - exact['psi_z']))),
-            float(np.max(np.abs(psi_xx - exact['psi_xx']))),
-            float(np.max(np.abs(psi_yy - exact['psi_yy']))),
-            float(np.max(np.abs(psi_zz - exact['psi_zz']))),
-            float(np.max(np.abs(psi_xxx - exact['psi_xxx']))),
-            float(np.max(np.abs(psi_yyy - exact['psi_yyy']))),
-            float(np.max(np.abs(psi_zzz - exact['psi_zzz'])))
-        ]
-
+        # 数値解のコンポーネント抽出と変換
+        numerical_vals = [self._to_numpy(comp) for comp in sol]
+        exact_vals = [comp for comp in exact_components.values()]
+        
+        # 誤差計算
+        errors = [float(np.max(np.abs(n - e))) for n, e in zip(numerical_vals, exact_vals)]
+        
         return {
             "function": test_func.name,
-            "numerical": [psi, psi_x, psi_y, psi_z, psi_xx, psi_yy, psi_zz, psi_xxx, psi_yyy, psi_zzz],
-            "exact": [v for v in exact.values()],
+            "numerical": numerical_vals,
+            "exact": exact_vals,
             "errors": errors
         }

@@ -5,16 +5,15 @@
 """
 
 import numpy as np
-
-from core.base.base_tester import CCDTester
+from core.base.base_tester import BaseTester
 from core.solver.solver2d import CCDSolver2D
 from equation_set.equation_sets import DerivativeEquationSet2D
 from test_function.test_function1d import TestFunction1DFactory
 from test_function.test_function2d import TestFunction2DFactory
 
 
-class CCDTester2D(CCDTester):
-    """2D CCDテスター"""
+class CCDTester2D(BaseTester):
+    """2次元CCDテスタークラス"""
     
     def __init__(self, grid):
         """
@@ -80,7 +79,7 @@ class CCDTester2D(CCDTester):
     
     def _build_rhs(self, test_func):
         """
-        2D右辺構築
+        2D右辺ベクトル構築（簡略化）
         
         Args:
             test_func: テスト関数
@@ -92,7 +91,7 @@ class CCDTester2D(CCDTester):
         x_min, x_max = self.grid.x_min, self.grid.x_max
         y_min, y_max = self.grid.y_min, self.grid.y_max
         
-        # ソース項 (方程式タイプに依存)
+        # ソース項の計算
         is_derivative = isinstance(self.equation_set, DerivativeEquationSet2D)
         f_values = np.zeros((nx, ny))
         for i in range(nx):
@@ -102,7 +101,7 @@ class CCDTester2D(CCDTester):
                     test_func.d2f_dx2(x, y) + test_func.d2f_dy2(x, y)
                 )
         
-        # 境界値
+        # 境界条件
         boundary = {
             'left_dirichlet': np.array([test_func.f(x_min, y) for y in self.grid.y]),
             'right_dirichlet': np.array([test_func.f(x_max, y) for y in self.grid.y]),
@@ -119,7 +118,7 @@ class CCDTester2D(CCDTester):
     
     def _compute_exact(self, test_func):
         """
-        2D厳密解計算
+        2D厳密解計算（簡略化）
         
         Args:
             test_func: テスト関数
@@ -147,7 +146,7 @@ class CCDTester2D(CCDTester):
     
     def _process_solution(self, test_func):
         """
-        2D解処理（NumPy/CuPy互換性を考慮）
+        2D解処理（簡略化）
         
         Args:
             test_func: テスト関数
@@ -161,7 +160,7 @@ class CCDTester2D(CCDTester):
         y_min, y_max = self.grid.y_min, self.grid.y_max
         is_derivative = isinstance(self.equation_set, DerivativeEquationSet2D)
 
-        # 厳密解準備（NumPy配列として）
+        # 厳密解準備
         exact = {
             'psi': np.zeros((nx, ny)),
             'psi_x': np.zeros((nx, ny)),
@@ -172,7 +171,7 @@ class CCDTester2D(CCDTester):
             'psi_yyy': np.zeros((nx, ny))
         }
 
-        # 各点で厳密値計算
+        # 厳密値計算
         for i in range(nx):
             for j in range(ny):
                 x, y = self.grid.get_point(i, j)
@@ -184,7 +183,7 @@ class CCDTester2D(CCDTester):
                 exact['psi_xxx'][i, j] = test_func.d3f_dx3(x, y)
                 exact['psi_yyy'][i, j] = test_func.d3f_dy3(x, y)
 
-        # 右辺値準備
+        # ソース項準備
         f_values = np.zeros((nx, ny))
         for i in range(nx):
             for j in range(ny):
@@ -205,23 +204,13 @@ class CCDTester2D(CCDTester):
             'top_neumann': np.array([test_func.df_dy(x, y_max) for x in self.grid.x])
         }
 
-        # 厳密解を初期値として使用する場合は、直接オプションを渡す
+        # ソルバーオプション設定と実行
         if self.perturbation_level is not None and self.solver_method != 'direct' and self.exact_solution is not None:
-            print("摂動が加えられた初期値を使用してsolve()を呼び出します")
-            # オプションを作成して厳密解（摂動あり）を含める
             solve_options = {
                 'tol': self.solver_options.get('tol', 1e-10),
                 'maxiter': self.solver_options.get('maxiter', 1000),
-                'x0': self.exact_solution  # 摂動が加えられた初期値を使用
+                'x0': self.exact_solution
             }
-            
-            # x0のサイズを確認
-            x0_shape = solve_options['x0'].shape
-            expected_shape = (nx * ny * 7,)  # [ψ, ψ_x, ψ_xx, ψ_xxx, ψ_y, ψ_yy, ψ_yyy] x (nx * ny)
-            if x0_shape != expected_shape:
-                print(f"警告: x0のサイズが期待値と異なります: {x0_shape} vs {expected_shape}")
-            
-            # 解計算（カスタムオプション付き）
             sol = self.solver.solve_with_options(
                 analyze_before_solve=False, 
                 f_values=f_values, 
@@ -229,7 +218,6 @@ class CCDTester2D(CCDTester):
                 **boundary
             )
         else:
-            # 通常の解計算
             sol = self.solver.solve(
                 analyze_before_solve=False, 
                 f_values=f_values, 
@@ -238,29 +226,25 @@ class CCDTester2D(CCDTester):
             
         psi, psi_x, psi_xx, psi_xxx, psi_y, psi_yy, psi_yyy = sol
 
-        # NumPy配列に変換（CuPyの場合）
-        psi = self._to_numpy(psi)
-        psi_x = self._to_numpy(psi_x)
-        psi_y = self._to_numpy(psi_y)
-        psi_xx = self._to_numpy(psi_xx)
-        psi_yy = self._to_numpy(psi_yy)
-        psi_xxx = self._to_numpy(psi_xxx)
-        psi_yyy = self._to_numpy(psi_yyy)
-
-        # 誤差計算（NumPy配列として）
-        errors = [
-            float(np.max(np.abs(psi - exact['psi']))),
-            float(np.max(np.abs(psi_x - exact['psi_x']))),
-            float(np.max(np.abs(psi_y - exact['psi_y']))),
-            float(np.max(np.abs(psi_xx - exact['psi_xx']))),
-            float(np.max(np.abs(psi_yy - exact['psi_yy']))),
-            float(np.max(np.abs(psi_xxx - exact['psi_xxx']))),
-            float(np.max(np.abs(psi_yyy - exact['psi_yyy'])))
+        # NumPy配列に変換
+        numerical_vals = [
+            self._to_numpy(psi),
+            self._to_numpy(psi_x),
+            self._to_numpy(psi_y),
+            self._to_numpy(psi_xx),
+            self._to_numpy(psi_yy),
+            self._to_numpy(psi_xxx),
+            self._to_numpy(psi_yyy)
         ]
+        
+        exact_vals = [v for v in exact.values()]
+
+        # 誤差計算
+        errors = [float(np.max(np.abs(n - e))) for n, e in zip(numerical_vals, exact_vals)]
 
         return {
             "function": test_func.name,
-            "numerical": [psi, psi_x, psi_y, psi_xx, psi_yy, psi_xxx, psi_yyy],
-            "exact": [v for v in exact.values()],
+            "numerical": numerical_vals,
+            "exact": exact_vals,
             "errors": errors
         }
