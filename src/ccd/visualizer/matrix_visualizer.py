@@ -35,31 +35,306 @@ class MatrixVisualizer:
         Returns:
             NumPy array or None if conversion fails
         """
+        if arr is None:
+            return None
+            
         try:
+            # Handle scalar values
+            import numpy as np
+            if np.isscalar(arr):
+                return np.array([arr])
+                
             # Handle CuPy arrays
-            if hasattr(arr, 'get'):
+            if hasattr(arr, 'get') and callable(getattr(arr, 'get')):
                 arr = arr.get()
             
-            # Handle sparse matrices
-            if hasattr(arr, 'toarray'):
-                arr = arr.toarray()
+            # Import scipy.sparse inside the function to avoid global dependency
+            import scipy.sparse as sparse
             
-            # Handle LinearOperator by extracting approximation
+            # Handle scipy.sparse matrices
+            if isinstance(arr, sparse.spmatrix):
+                # For large sparse matrices, convert more efficiently
+                if max(arr.shape) > 1000:
+                    # Sample a smaller representation
+                    n = arr.shape[0]
+                    sample_size = min(n, 64)
+                    indices = np.linspace(0, n-1, sample_size, dtype=int)
+                    M_sample = np.zeros((n, sample_size))
+                    
+                    for idx, i in enumerate(indices):
+                        e_i = np.zeros(n)
+                        e_i[i] = 1.0
+                        if arr.shape[1] == n:  # Square matrix
+                            M_sample[:, idx] = arr @ e_i
+                        else:
+                            # Non-square: Just extract the column if possible
+                            if i < arr.shape[1]:
+                                if hasattr(arr, 'getcol'):
+                                    M_sample[:, idx] = arr.getcol(i).toarray().flatten()
+                                else:
+                                    M_sample[:, idx] = arr[:, i].toarray().flatten()
+                    
+                    return M_sample
+                else:
+                    # For smaller matrices, direct conversion is fine
+                    return arr.toarray()
+            
+            # Handle sparse matrices with toarray method
+            if hasattr(arr, 'toarray') and callable(getattr(arr, 'toarray')):
+                return arr.toarray()
+            
+            # Handle LinearOperator
             if isinstance(arr, ScipyLinearOperator):
-                # Try to create an approximation matrix
                 try:
                     n = arr.shape[0]
-                    # Create an identity-like matrix and apply operator
-                    test_matrix = np.eye(min(n, 500))  # Limit size to avoid memory issues
-                    return arr(test_matrix)
+                    sample_size = min(n, 64)
+                    indices = np.linspace(0, n-1, sample_size, dtype=int)
+                    M = np.zeros((n, sample_size))
+                    
+                    for idx, i in enumerate(indices):
+                        e_i = np.zeros(n)
+                        e_i[i] = 1.0
+                        M[:, idx] = arr.matvec(e_i)
+                    
+                    return M
                 except Exception as e:
                     print(f"LinearOperator approximation failed: {e}")
                     return None
             
-            # Ensure NumPy array
+            # Handle JAX arrays
+            if 'jax' in str(type(arr)):
+                return np.array(arr)
+            
+            # Handle Python lists, tuples, or other array-like objects
             return np.asarray(arr)
         except Exception as e:
             print(f"Array conversion error: {e}")
+            return None
+    
+    def _get_preconditioner_matrix(self, preconditioner, A_size=None):
+        """
+        Extract matrix representation from preconditioner
+        
+        Args:
+            preconditioner: Preconditioner object
+            A_size: Size of system matrix for identity creation (optional)
+            
+        Returns:
+            Matrix representation of preconditioner or None
+        """
+        if preconditioner is None:
+            return None
+        
+        try:
+            precond_type = type(preconditioner).__name__
+            print(f"Extracting matrix from {precond_type}")
+            
+            # Special case for IdentityPreconditioner
+            if precond_type == 'IdentityPreconditioner':
+                # Create identity matrix of appropriate size
+                if A_size is not None:
+                    n = A_size[0]
+                    return np.eye(n)
+                else:
+                    # Default size if we can't determine actual size
+                    return np.eye(128)
+            
+            # For AMGPreconditioner, try to extract from ml
+            if precond_type == 'AMGPreconditioner' and hasattr(preconditioner, 'ml'):
+                try:
+                    print("Extracting AMG matrix representation...")
+                    # Get size from pyAMG levels
+                    n = 128  # Default
+                    if hasattr(preconditioner.ml, 'levels'):
+                        levels = preconditioner.ml.levels
+                        if levels and hasattr(levels[0], 'A'):
+                            n = levels[0].A.shape[0]
+                    elif A_size is not None:
+                        n = A_size[0]
+                    
+                    # Sample some columns for visualization
+                    sample_size = min(n, 64)
+                    indices = np.linspace(0, n-1, sample_size, dtype=int)
+                    
+                    # Create approximation matrix
+                    M = np.zeros((n, sample_size))
+                    for idx, i in enumerate(indices):
+                        e_i = np.zeros(n)
+                        e_i[i] = 1.0
+                        # Apply one cycle of AMG
+                        try:
+                            M[:, idx] = preconditioner.ml.solve(e_i, tol=1e-12, maxiter=1, cycle=preconditioner.cycle_type)
+                        except Exception as solve_err:
+                            print(f"AMG solve error: {solve_err}")
+                            # Try fallback to __call__
+                            try:
+                                M[:, idx] = self._to_numpy(preconditioner(e_i))
+                            except:
+                                M[:, idx] = e_i  # Default to identity
+                    
+                    return M
+                except Exception as e:
+                    print(f"AMG matrix extraction failed: {e}")
+            
+            # For SSORPreconditioner, build from components
+            if precond_type == 'SSORPreconditioner' and all(hasattr(preconditioner, attr) for attr in ['D', 'L', 'U']):
+                try:
+                    print("Extracting SSOR matrix representation...")
+                    import scipy.sparse as sparse
+                    
+                    # Extract SSOR components
+                    D = self._to_numpy(preconditioner.D)
+                    L = self._to_numpy(preconditioner.L)
+                    U = self._to_numpy(preconditioner.U)
+                    omega = preconditioner.omega if hasattr(preconditioner, 'omega') else 1.0
+                    
+                    if D is not None and L is not None and U is not None:
+                        n = D.shape[0]
+                        
+                        # Sample some columns for visualization
+                        sample_size = min(n, 64)
+                        indices = np.linspace(0, n-1, sample_size, dtype=int)
+                        
+                        # Create approximation matrix
+                        M = np.zeros((n, sample_size))
+                        
+                        # Extract D diagonal
+                        if hasattr(D, 'diagonal'):
+                            D_diag = D.diagonal()
+                        else:
+                            D_diag = np.diag(D)
+                        
+                        D_inv_diag = 1.0 / (D_diag + 1e-15)  # Add small value to avoid division by zero
+                        
+                        # Create identity matrix
+                        I = np.eye(n)
+                        
+                        # Apply SSOR steps directly through __call__ if possible
+                        if hasattr(preconditioner, '__call__') and callable(getattr(preconditioner, '__call__')):
+                            for idx, i in enumerate(indices):
+                                e_i = np.zeros(n)
+                                e_i[i] = 1.0
+                                try:
+                                    M[:, idx] = self._to_numpy(preconditioner(e_i))
+                                except Exception as call_err:
+                                    print(f"SSOR call error: {call_err}")
+                                    M[:, idx] = e_i  # Default to identity
+                        else:
+                            # Manual SSOR implementation
+                            import scipy.sparse.linalg as spla
+                            for idx, i in enumerate(indices):
+                                e_i = np.zeros(n)
+                                e_i[i] = 1.0
+                                
+                                try:
+                                    # Forward sweep: (I + ω D⁻¹ L) z = e_i
+                                    L_term = I + omega * np.diag(D_inv_diag) @ L
+                                    z = np.linalg.solve(L_term, e_i)
+                                    
+                                    # Diagonal scaling: y = ω D⁻¹ z
+                                    y = omega * D_inv_diag * z
+                                    
+                                    # Backward sweep: (I + ω D⁻¹ U) x = y
+                                    U_term = I + omega * np.diag(D_inv_diag) @ U
+                                    M[:, idx] = np.linalg.solve(U_term, y)
+                                except Exception as solve_err:
+                                    print(f"SSOR solve error: {solve_err}")
+                                    M[:, idx] = e_i  # Default to identity
+                        
+                        return M
+                except Exception as e:
+                    print(f"SSOR matrix extraction failed: {e}")
+            
+            # Check for explicit matrix M
+            if hasattr(preconditioner, 'M') and preconditioner.M is not None:
+                M = preconditioner.M
+                print(f"Found explicit M attribute of type: {type(M)}")
+                
+                # Special handling for SciPy sparse matrix
+                import scipy.sparse as sparse
+                if isinstance(M, sparse.spmatrix):
+                    print(f"Converting sparse matrix of format {M.format} with shape {M.shape}")
+                    
+                    # Sample the sparse matrix for visualization
+                    n = M.shape[0]
+                    sample_size = min(n, 64)
+                    indices = np.linspace(0, n-1, sample_size, dtype=int)
+                    
+                    # Extract columns by multiplying with unit vectors
+                    M_sample = np.zeros((n, sample_size))
+                    for idx, i in enumerate(indices):
+                        e_i = np.zeros(n)
+                        e_i[i] = 1.0
+                        M_sample[:, idx] = M @ e_i
+                    
+                    return M_sample
+                
+                return self._to_numpy(M)
+            
+            # Check for matrix attribute
+            if hasattr(preconditioner, 'matrix') and preconditioner.matrix is not None:
+                return self._to_numpy(preconditioner.matrix)
+            
+            # Check for toarray method
+            if hasattr(preconditioner, 'toarray') and callable(getattr(preconditioner, 'toarray')):
+                return self._to_numpy(preconditioner.toarray())
+            
+            # Handle diagonal preconditioners (like JacobiPreconditioner)
+            if hasattr(preconditioner, 'diag_vals') and preconditioner.diag_vals is not None:
+                diag_vals = self._to_numpy(preconditioner.diag_vals)
+                if diag_vals is not None:
+                    n = len(diag_vals)
+                    # Create diagonal matrix efficiently
+                    M = np.zeros((n, n))
+                    np.fill_diagonal(M, diag_vals)
+                    return M
+            
+            # For other callable preconditioners, sample the action
+            if hasattr(preconditioner, '__call__') and callable(getattr(preconditioner, '__call__')):
+                try:
+                    print("Sampling callable preconditioner...")
+                    # Get size from A_size
+                    if A_size is not None:
+                        n = A_size[0]
+                    else:
+                        # Try to guess from other attributes
+                        n = 128
+                        for attr_name in ['D', 'M', 'ml']:
+                            if hasattr(preconditioner, attr_name):
+                                attr = getattr(preconditioner, attr_name)
+                                if hasattr(attr, 'shape'):
+                                    n = attr.shape[0]
+                                    break
+                    
+                    # Sample some columns for visualization
+                    sample_size = min(n, 64)
+                    indices = np.linspace(0, n-1, sample_size, dtype=int)
+                    
+                    # Create approximation matrix
+                    M = np.zeros((n, sample_size))
+                    for idx, i in enumerate(indices):
+                        e_i = np.zeros(n)
+                        e_i[i] = 1.0
+                        try:
+                            # Apply the preconditioner
+                            result = preconditioner(e_i)
+                            M[:, idx] = self._to_numpy(result)
+                        except Exception as call_err:
+                            print(f"Preconditioner call error: {call_err}")
+                            M[:, idx] = e_i  # Default to identity
+                    
+                    return M
+                except Exception as e:
+                    print(f"General preconditioner sampling failed: {e}")
+            
+            # Last resort: debug info
+            print(f"Could not extract matrix from {precond_type}")
+            if hasattr(preconditioner, '__dict__'):
+                print(f"Available attributes: {list(preconditioner.__dict__.keys())}")
+                
+            return None
+        except Exception as e:
+            print(f"Preconditioner matrix extraction failed: {e}")
             return None
     
     def _safe_matrix_abs(self, matrix):
@@ -88,64 +363,72 @@ class MatrixVisualizer:
             print(f"Matrix absolute value computation error: {e}")
             return None
     
-    def _get_preconditioner_matrix(self, preconditioner, A_size=None):
+    def _plot_matrix_product(self, A, M):
         """
-        Extract matrix representation from preconditioner
+        Visualize matrix-preconditioner product with robust error handling
         
         Args:
-            preconditioner: Preconditioner object
-            A_size: Size of system matrix for identity creation (optional)
-            
-        Returns:
-            Matrix representation of preconditioner or None
+            A: System matrix
+            M: Preconditioner matrix
         """
-        if preconditioner is None:
-            return None
+        plt.title("Matrix Product")
+        
+        if A is None or M is None:
+            plt.text(0.5, 0.5, "Cannot Compute Product", ha='center', va='center')
+            return
         
         try:
-            # Special case for IdentityPreconditioner
-            precond_type = type(preconditioner).__name__
-            if precond_type == 'IdentityPreconditioner':
-                # Create identity matrix of appropriate size
-                if A_size is not None:
-                    n = A_size[0]
-                    return np.eye(n)
-                else:
-                    # Default size if we can't determine actual size
-                    print("Creating default sized identity matrix for visualization")
-                    return np.eye(128)
-            
-            # Check for explicit matrix M
-            if hasattr(preconditioner, 'M') and preconditioner.M is not None:
-                return self._to_numpy(preconditioner.M)
-            
-            # Check for matrix attribute
-            if hasattr(preconditioner, 'matrix') and preconditioner.matrix is not None:
-                return self._to_numpy(preconditioner.matrix)
-            
-            # Check for toarray method
-            if hasattr(preconditioner, 'toarray') and callable(getattr(preconditioner, 'toarray')):
-                return self._to_numpy(preconditioner.toarray())
-            
-            # Handle diagonal preconditioners (like JacobiPreconditioner)
-            if hasattr(preconditioner, 'diag_vals') and preconditioner.diag_vals is not None:
-                diag_vals = self._to_numpy(preconditioner.diag_vals)
-                if diag_vals is not None:
-                    n = len(diag_vals)
-                    # Create diagonal matrix efficiently
-                    M = np.zeros((n, n))
-                    np.fill_diagonal(M, diag_vals)
-                    return M
-            
-            # Debug info
-            print(f"Attempting to extract matrix from {precond_type}")
-            if hasattr(preconditioner, '__dict__'):
-                print(f"Available attributes: {list(preconditioner.__dict__.keys())}")
+            # For large matrices, compute a sampled product
+            if A.shape[0] > 500 or (hasattr(M, 'shape') and M.shape[0] > 500):
+                n = A.shape[0]
+                sample_size = min(n, 32)
+                indices = np.linspace(0, n-1, sample_size, dtype=int)
                 
-            return None
+                # Sample rows and columns for visualization
+                A_sample = A[indices, :]
+                if hasattr(M, 'shape') and M.shape[1] == n:
+                    M_sample = M[:, indices]
+                    product = A_sample @ M_sample
+                else:
+                    # If M doesn't have right shape, sample the action
+                    product = np.zeros((sample_size, sample_size))
+                    for i, idx_i in enumerate(indices):
+                        for j, idx_j in enumerate(indices):
+                            e_j = np.zeros(n)
+                            e_j[idx_j] = 1.0
+                            
+                            # Apply M to e_j, then extract idx_i component
+                            if hasattr(M, 'shape') and len(M.shape) == 2 and M.shape[1] > idx_j:
+                                Me_j = M[:, idx_j]
+                            else:
+                                # Try calling M as function
+                                try:
+                                    Me_j = self._to_numpy(M(e_j))
+                                except:
+                                    Me_j = e_j  # Fallback to identity
+                            
+                            # Apply A to Me_j, then extract idx_i component
+                            product[i, j] = A[idx_i, :] @ Me_j
+            else:
+                # For smaller matrices, direct multiplication
+                product = self._safe_matrix_abs(A @ M)
+            
+            if product is None or product.size == 0:
+                plt.text(0.5, 0.5, "Product Computation Failed", ha='center', va='center')
+                return
+            
+            non_zero = product[product > 0]
+            if len(non_zero) == 0:
+                plt.imshow(product, cmap='inferno')
+            else:
+                plt.imshow(product, norm=LogNorm(vmin=non_zero.min(), vmax=non_zero.max()), cmap='inferno')
+            
+            plt.colorbar(label='Product Magnitude')
+            plt.xlabel("Column Index")
+            plt.ylabel("Row Index")
         except Exception as e:
-            print(f"Preconditioner matrix extraction failed: {e}")
-            return None
+            print(f"Matrix product visualization error: {e}")
+            plt.text(0.5, 0.5, f"Product Error: {str(e)}", ha='center', va='center')
     
     def visualize(self, A, b, x, exact_x, title, dimension, scaling=None, preconditioner=None):
         """
@@ -314,41 +597,6 @@ class MatrixVisualizer:
         
         plt.text(0.05, 0.95, f"Max Error: {np.max(error):.2e}", 
                  transform=plt.gca().transAxes, va='top')
-    
-    def _plot_matrix_product(self, A, M):
-        """
-        Visualize matrix-preconditioner product with robust error handling
-        
-        Args:
-            A: System matrix
-            M: Preconditioner matrix
-        """
-        plt.title("Matrix Product")
-        
-        if A is None or M is None:
-            plt.text(0.5, 0.5, "Cannot Compute Product", ha='center', va='center')
-            return
-        
-        try:
-            # Compute and visualize matrix product
-            product = self._safe_matrix_abs(A @ M)
-            
-            if product is None or product.size == 0:
-                plt.text(0.5, 0.5, "Product Computation Failed", ha='center', va='center')
-                return
-            
-            non_zero = product[product > 0]
-            if len(non_zero) == 0:
-                plt.imshow(product, cmap='inferno')
-            else:
-                plt.imshow(product, norm=LogNorm(), cmap='inferno')
-            
-            plt.colorbar(label='Product Magnitude')
-            plt.xlabel("Column Index")
-            plt.ylabel("Row Index")
-        except Exception as e:
-            print(f"Matrix product visualization error: {e}")
-            plt.text(0.5, 0.5, f"Product Error: {str(e)}", ha='center', va='center')
     
     def _plot_system_statistics(self, A, M, error, dimension, scaling, preconditioner):
         """
