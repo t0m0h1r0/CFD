@@ -1,24 +1,38 @@
+# preconditioner/__init__.py
 """
-前処理（プリコンディショナー）モジュール
+前処理器プラグインパッケージ
 
-高精度コンパクト差分法(CCD)用の前処理手法を提供します。
+このパッケージは、反復法ソルバーの収束を加速するための
+前処理行列を計算する機能を提供します。
 """
 
-# 標準ライブラリのインポート
-import sys
-import os
-
-# モジュールレベルのインポート
 from .plugin_manager import PreconditionerPluginManager
+from .base import BasePreconditioner
 
-# 明示的にパスを追加して、importの問題を解決
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
-# 簡単にアクセスできるようにプラグインマネージャーのインスタンスを作成
+# プラグインマネージャーのインスタンス
 plugin_manager = PreconditionerPluginManager()
 
-# 最初の呼び出し時にプラグインを読み込む
-plugin_manager.discover_plugins()
+# 簡単にアクセスできる関数
+def get_preconditioner(name=None):
+    """
+    指定名の前処理器を取得
+    
+    Args:
+        name: 前処理器名（Noneの場合はデフォルト）
+        
+    Returns:
+        前処理器インスタンス
+    """
+    return plugin_manager.get_plugin(name)
+
+def list_preconditioners():
+    """
+    利用可能な前処理器の一覧を取得
+    
+    Returns:
+        前処理器名のリスト
+    """
+    return plugin_manager.list_plugins()
+
+# 基底クラスもエクスポート
+__all__ = ['BasePreconditioner', 'get_preconditioner', 'list_preconditioners']
