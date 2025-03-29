@@ -7,6 +7,8 @@ CPU (SciPy) を使用した線形方程式系ソルバー
 
 import numpy as np
 import scipy.sparse.linalg as splinalg
+from scipy.sparse.linalg import LinearOperator
+
 from .base import LinearSolver
 
 class CPULinearSolver(LinearSolver):
@@ -16,6 +18,9 @@ class CPULinearSolver(LinearSolver):
         """CPU固有の初期化処理"""
         # 行列をNumPy/SciPy形式に変換
         self.A = self._ensure_scipy_matrix(self.original_A)
+        
+        # 前処理器のセットアップ
+        self.setup_preconditioner()
         
         # 解法メソッド辞書
         self.solvers = {
@@ -60,6 +65,38 @@ class CPULinearSolver(LinearSolver):
         # 既にNumPy配列の場合はそのまま
         return b
     
+    def _to_numpy_matrix(self, A):
+        """行列をNumPy形式に変換 (前処理用)"""
+        # CuPy配列からの変換
+        if hasattr(A, 'get'):
+            return A.get()
+        
+        # JAX配列からの変換
+        if 'jax' in str(type(A)):
+            return np.array(A)
+            
+        # 既にNumPy/SciPyの場合はそのまま
+        return A
+    
+    def _create_preconditioner_operator(self):
+        """
+        前処理演算子を作成
+        
+        Returns:
+            前処理演算子またはNone
+        """
+        if self.preconditioner is None:
+            return None
+            
+        # 前処理器の__call__メソッドをLinearOperatorでラップ
+        n = self.A.shape[0]
+        
+        def precond_matvec(x):
+            # 前処理を適用
+            return self.preconditioner(x)
+            
+        return LinearOperator((n, n), matvec=precond_matvec)
+    
     # 各解法メソッド
     
     def _solve_direct(self, A, b, options=None):
@@ -74,7 +111,10 @@ class CPULinearSolver(LinearSolver):
         restart = options.get("restart", 200)
         x0 = options.get("x0", np.zeros_like(b))
         
-        result = splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        
+        result = splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, M=M)
         return result[0], result[1]
     
     def _solve_lgmres(self, A, b, options=None):
@@ -86,8 +126,11 @@ class CPULinearSolver(LinearSolver):
         outer_k = options.get("outer_k", 3)
         x0 = options.get("x0", np.zeros_like(b))
         
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        
         result = splinalg.lgmres(A, b, x0=x0, tol=tol, maxiter=maxiter, 
-                                inner_m=inner_m, outer_k=outer_k)
+                                inner_m=inner_m, outer_k=outer_k, M=M)
         return result[0], result[1]
     
     def _solve_cg(self, A, b, options=None):
@@ -97,7 +140,10 @@ class CPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        result = splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        
+        result = splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_bicg(self, A, b, options=None):
@@ -107,7 +153,10 @@ class CPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        result = splinalg.bicg(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        
+        result = splinalg.bicg(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_bicgstab(self, A, b, options=None):
@@ -117,7 +166,10 @@ class CPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        result = splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        
+        result = splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_cgs(self, A, b, options=None):
@@ -127,7 +179,10 @@ class CPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        result = splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        
+        result = splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_qmr(self, A, b, options=None):
@@ -137,7 +192,14 @@ class CPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        result = splinalg.qmr(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        # QMRは左右で異なる前処理に対応
+        M1, M2 = None, None
+        if M is not None:
+            M1 = M  # M2は不要な場合が多い
+        
+        result = splinalg.qmr(A, b, x0=x0, tol=tol, maxiter=maxiter, M1=M1, M2=M2)
         return result[0], result[1]
     
     def _solve_tfqmr(self, A, b, options=None):
@@ -147,7 +209,10 @@ class CPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        result = splinalg.tfqmr(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        
+        result = splinalg.tfqmr(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_minres(self, A, b, options=None):
@@ -157,7 +222,10 @@ class CPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", 1000)
         x0 = options.get("x0", np.zeros_like(b))
         
-        result = splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter)
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        
+        result = splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_gcrotmk(self, A, b, options=None):
@@ -169,7 +237,10 @@ class CPULinearSolver(LinearSolver):
         k = options.get("k", 10)
         x0 = options.get("x0", np.zeros_like(b))
         
-        result = splinalg.gcrotmk(A, b, x0=x0, tol=tol, maxiter=maxiter, m=m, k=k)
+        # 前処理演算子を取得
+        M = self._create_preconditioner_operator()
+        
+        result = splinalg.gcrotmk(A, b, x0=x0, tol=tol, maxiter=maxiter, m=m, k=k, M=M)
         return result[0], result[1]
     
     def _solve_lsqr(self, A, b, options=None):
@@ -181,6 +252,7 @@ class CPULinearSolver(LinearSolver):
         conlim = options.get("conlim", 1e8)
         iter_lim = options.get("maxiter", options.get("iter_lim", None))
         
+        # LSQRには前処理器のサポートがないことに注意
         result = splinalg.lsqr(A, b, damp=damp, atol=atol, btol=btol,
                              conlim=conlim, iter_lim=iter_lim)
         return result[0], result[2]
@@ -195,6 +267,7 @@ class CPULinearSolver(LinearSolver):
         maxiter = options.get("maxiter", None)
         x0 = options.get("x0", None)
         
+        # LSMRには前処理器のサポートがないことに注意
         result = splinalg.lsmr(A, b, damp=damp, atol=atol, btol=btol,
                              conlim=conlim, maxiter=maxiter, x0=x0)
         return result[0], result[2]

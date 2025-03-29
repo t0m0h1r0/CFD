@@ -23,8 +23,8 @@ def create_solver(A, enable_dirichlet=False, enable_neumann=False, scaling_metho
         A: システム行列
         enable_dirichlet: ディリクレ境界条件を使用するか
         enable_neumann: ノイマン境界条件を使用するか
-        scaling_method: 無視される (以前はスケーリング手法名)
-        preconditioner: 無視される (以前は前処理手法)
+        scaling_method: 無視される (従来との互換性のため)
+        preconditioner: 前処理器名または前処理器インスタンス
         backend: 計算バックエンド ("cpu", "cuda", "jax")
         
     Returns:
