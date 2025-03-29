@@ -53,7 +53,8 @@ class JAXLinearSolver(LinearSolver):
             self.original_A, 
             self.enable_dirichlet, 
             self.enable_neumann, 
-            self.scaling_method
+            self.scaling_method,
+            self.preconditioner_name if self.preconditioner_name else self.preconditioner
         )
         # CPU版のsolversをコピー
         self.solvers = self.cpu_solver.solvers
@@ -86,6 +87,20 @@ class JAXLinearSolver(LinearSolver):
                 print(f"x0変換エラー: {e}")
                 # 変換に失敗した場合は削除
                 del options["x0"]
+        
+        # 前処理機能の設定
+        if self.preconditioner and hasattr(self.preconditioner, 'setup') and not hasattr(self.preconditioner, 'M'):
+            try:
+                # GPU行列に対して前処理を設定
+                self.preconditioner.setup(self.A)
+                
+                # JAX用の前処理演算子に変換（必要な場合）
+                if hasattr(self.preconditioner, 'M') and self.preconditioner.M is not None:
+                    if not 'jax' in str(type(self.preconditioner.M)):
+                        # CPU行列をJAXに変換
+                        self.preconditioner.M = self._to_jax_matrix(self.preconditioner.M)
+            except Exception as e:
+                print(f"JAX前処理設定エラー: {e}")
         
         # 通常の処理
         return super().solve(b, method, options)
@@ -229,6 +244,62 @@ class JAXLinearSolver(LinearSolver):
         """JAXベクトルをNumPy形式に変換"""
         return np.array(b)
     
+    # JAXでの前処理適用関数
+    def _create_preconditioner_operator(self):
+        """
+        JAXでの前処理演算子を作成
+        
+        Returns:
+            前処理演算子またはNone
+        """
+        if not self.has_jax or not self.preconditioner:
+            return None
+            
+        try:
+            # 前処理器の実体がある場合
+            if hasattr(self.preconditioner, 'matrix') and self.preconditioner.matrix is not None:
+                # 行列としての前処理
+                precond_matrix = self.preconditioner.matrix
+                
+                # JAX配列へ変換
+                if not 'jax' in str(type(precond_matrix)):
+                    precond_matrix = self.jnp.array(
+                        precond_matrix.toarray() if hasattr(precond_matrix, 'toarray') else precond_matrix
+                    )
+                
+                # JAX対応のLinearOperatorを作成
+                from jax.scipy.sparse.linalg import LinearOperator
+                
+                # matvecメソッドの定義
+                def preconditioner_matvec(x):
+                    return self.jnp.matmul(precond_matrix, x)
+                
+                return LinearOperator((self.A.shape[0], self.A.shape[0]), matvec=preconditioner_matvec)
+            
+            # __call__メソッドを持つカスタム前処理器
+            elif hasattr(self.preconditioner, '__call__'):
+                from jax.scipy.sparse.linalg import LinearOperator
+                
+                # JAX用に関数を変換
+                def preconditioner_func(x):
+                    try:
+                        # 入力をNumPyに変換
+                        x_np = np.array(x)
+                        # 前処理適用
+                        y_np = self.preconditioner(x_np)
+                        # 結果をJAXに変換
+                        return self.jnp.array(y_np)
+                    except Exception as e:
+                        print(f"JAX前処理適用エラー: {e}")
+                        return x
+                
+                return LinearOperator((self.A.shape[0], self.A.shape[0]), matvec=preconditioner_func)
+        
+        except Exception as e:
+            print(f"JAX前処理演算子作成エラー: {e}")
+        
+        return None
+    
     def _solve_direct(self, A, b, options=None):
         """直接解法"""
         # JAXでの直接解法の実装がない場合はCG法を使用
@@ -267,8 +338,11 @@ class JAXLinearSolver(LinearSolver):
         # 初期解ベクトルの取得
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
+        # 前処理演算子の作成
+        M = self._create_preconditioner_operator()
+        
         # GMRES実行（オプションを最適化）
-        result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, restart=restart)
+        result = self.splinalg.gmres(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, restart=restart, M=M)
         return result[0], result[1]
     
     def _solve_cg(self, A, b, options=None):
@@ -281,8 +355,11 @@ class JAXLinearSolver(LinearSolver):
         # 初期解ベクトルの取得
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
+        # 前処理演算子の作成
+        M = self._create_preconditioner_operator()
+        
         # CG実行
-        result = self.splinalg.cg(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
+        result = self.splinalg.cg(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_bicgstab(self, A, b, options=None):
@@ -295,6 +372,9 @@ class JAXLinearSolver(LinearSolver):
         # 初期解ベクトルの取得
         x0 = options.get("x0", self.jnp.zeros_like(b))
         
+        # 前処理演算子の作成
+        M = self._create_preconditioner_operator()
+        
         # BiCGSTAB実行
-        result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter)
+        result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, atol=atol, maxiter=maxiter, M=M)
         return result[0], result[1]

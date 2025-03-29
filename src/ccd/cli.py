@@ -10,9 +10,10 @@ import os
 import sys
 import time
 import argparse
+import numpy as np
 import importlib
 import inspect
-from typing import List, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 
 # 相対インポートのためのパス設定
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,6 +26,7 @@ from tester.tester1d import CCDTester1D
 from tester.tester2d import CCDTester2D
 from tester.tester3d import CCDTester3D
 from equation_set.equation_sets import EquationSet
+from linear_solver import create_solver
 from test_function.test_function1d import TestFunction1DFactory
 from test_function.test_function2d import TestFunction2DFactory
 from test_function.test_function3d import TestFunction3DFactory
@@ -37,6 +39,15 @@ except ImportError:
     HAS_SCALING = False
     scaling_plugins = None
     print("警告: スケーリングプラグインがインポートできませんでした。")
+
+# 前処理プラグインのインポート（存在する場合）
+try:
+    from preconditioner import plugin_manager as precond_plugins
+    HAS_PRECOND = True
+except ImportError:
+    HAS_PRECOND = False
+    precond_plugins = None
+    print("警告: 前処理プラグインがインポートできませんでした。")
 
 def list_available_solvers(dim: int = None) -> List[str]:
     """
@@ -183,6 +194,69 @@ def list_available_scaling_methods() -> None:
         for m in methods: print(f"- {m}")
     else:
         print("利用可能なスケーリングメソッドが見つかりません。")
+
+def get_available_preconditioners() -> List[str]:
+    """
+    利用可能な前処理手法の一覧を取得
+    
+    Returns:
+        利用可能な前処理手法名のリスト
+    """
+    if not HAS_PRECOND:
+        return []
+    
+    methods = []
+    
+    try:
+        # 1. よく使われる前処理手法をチェック
+        for m in ["IdentityPreconditioner", "JacobiPreconditioner", "ILUPreconditioner", "SPAIPreconditioner", "AMGPreconditioner"]:
+            try:
+                if precond_plugins.get_plugin(m): methods.append(m)
+            except: pass
+            
+        # 2. ファイルシステムから追加のメソッドを検出
+        try:
+            for f in os.listdir(os.path.dirname(precond_plugins.__file__)):
+                if f.endswith('.py') and f not in ['__init__.py', 'plugin_manager.py', 'base.py']:
+                    m = f[:-3]  # .pyを削除
+                    if m == "identity":
+                        m = "IdentityPreconditioner"
+                    elif m == "jacobi":
+                        m = "JacobiPreconditioner"
+                    elif m == "ilu":
+                        m = "ILUPreconditioner"
+                    elif m == "spai":
+                        m = "SPAIPreconditioner"
+                    elif m == "amg":
+                        m = "AMGPreconditioner"
+                    
+                    if m not in methods:
+                        try:
+                            if precond_plugins.get_plugin(m): methods.append(m)
+                        except: pass
+        except: pass
+        
+        # 結果を整理
+        return sorted(methods)
+    except Exception as e:
+        print(f"前処理手法取得エラー: {e}")
+        return []
+
+def list_available_preconditioners() -> None:
+    """利用可能な前処理手法の一覧を表示"""
+    print("=== 利用可能な前処理手法 ===")
+    
+    if not HAS_PRECOND:
+        print("前処理プラグインが利用できません。")
+        return
+    
+    methods = get_available_preconditioners()
+    
+    # 結果表示
+    if methods:
+        for m in methods: print(f"- {m}")
+    else:
+        print("利用可能な前処理手法が見つかりません。")
 
 def get_available_equation_sets(dim: int) -> List[str]:
     """
@@ -408,6 +482,8 @@ def main():
                         help="使用するソルバー (例: direct, gmres, cg, 'all'で全て)")
     parser.add_argument("--scaling", type=str, default=None,
                         help="使用するスケーリング手法 ('all'で全て)")
+    parser.add_argument("--preconditioner", type=str, default=None,
+                        help="使用する前処理手法 ('all'で全て)")
     parser.add_argument("--tol", type=float, default=1e-10,
                         help="反復法の収束許容値")
     parser.add_argument("--maxiter", type=int, default=1000,
@@ -436,6 +512,8 @@ def main():
                         help="利用可能なソルバーを一覧表示")
     parser.add_argument("--list-scaling", action="store_true",
                         help="利用可能なスケーリング手法を一覧表示")
+    parser.add_argument("--list-preconditioners", action="store_true",
+                        help="利用可能な前処理手法を一覧表示")
     parser.add_argument("--list-functions", action="store_true",
                         help="利用可能なテスト関数を一覧表示")
     
@@ -452,6 +530,10 @@ def main():
         
     if args.list_scaling:
         list_available_scaling_methods()
+        return
+        
+    if args.list_preconditioners:
+        list_available_preconditioners()
         return
         
     if args.list_functions:
@@ -478,8 +560,16 @@ def main():
         if 'NoScaling' not in scaling_list:
             scaling_list.append('NoScaling')
     
+    preconditioner_list = [args.preconditioner]
+    if args.preconditioner and args.preconditioner.lower() == 'all':
+        preconditioner_list = get_available_preconditioners()
+        # IdentityPreconditionerを必ず含める
+        if 'IdentityPreconditioner' not in preconditioner_list:
+            preconditioner_list.append('IdentityPreconditioner')
+    
     # 組み合わせ数をチェック
-    total_combinations = len(function_list) * len(equation_list) * len(solver_list) * len(scaling_list)
+    total_combinations = len(function_list) * len(equation_list) * len(solver_list) * \
+                         len(scaling_list) * len(preconditioner_list)
     
     if total_combinations > 1:
         print(f"実行する組み合わせ数: {total_combinations}")
@@ -520,92 +610,113 @@ def main():
                     scaling_to_use = None
                 else:
                     scaling_to_use = scaling_name
+                    
+                for preconditioner_name in preconditioner_list:
+                    if preconditioner_name is None and args.preconditioner is None:
+                        # None の場合は1回だけ実行
+                        preconditioner_to_use = None
+                    else:
+                        preconditioner_to_use = preconditioner_name
                 
-                print(f"\nセットアップ: {equation_name}, {solver_name}, {scaling_to_use or 'スケーリングなし'}")
-                
-                try:
-                    # テスターを作成（方程式・ソルバー・スケーリングの組み合わせごとに1回）
-                    tester = create_tester(args.dim, grid)
+                    print(f"\nセットアップ: {equation_name}, {solver_name}, {scaling_to_use or 'スケーリングなし'}, {preconditioner_to_use or '前処理なし'}")
                     
-                    # 方程式セットを設定
-                    tester.set_equation_set(equation_name)
-                    
-                    # ソルバーを設定
-                    tester.set_solver_options(solver_name, solver_options)
-                    
-                    # スケーリング手法を設定
-                    tester.scaling_method = scaling_to_use
-                    
-                    # 初期値摂動を設定
-                    if args.perturbation is not None:
-                        tester.perturbation_level = args.perturbation
-                    
-                    # 関数の内側ループ（行列Aを再利用）
-                    for function_name in function_list:
-                        print(f"  テスト関数: {function_name}")
+                    try:
+                        # テスターを作成（方程式・ソルバー・スケーリングの組み合わせごとに1回）
+                        tester = create_tester(args.dim, grid)
                         
-                        # テスト関数を取得
-                        test_func = tester.get_test_function(function_name)
+                        # 方程式セットを設定
+                        tester.set_equation_set(equation_name)
                         
-                        # テスト実行
-                        result = run_single_test(tester, test_func, args, args.verbose)
+                        # ソルバーを設定
+                        tester.set_solver_options(solver_name, solver_options)
                         
-                        # 結果をメタデータで拡張
-                        result['equation'] = equation_name
-                        result['solver'] = solver_name
-                        result['scaling'] = scaling_to_use
+                        # スケーリング手法を設定
+                        tester.scaling_method = scaling_to_use
                         
-                        # 結果を保存
-                        all_results.append(result)
+                        # 前処理手法を設定
+                        if hasattr(tester, 'linear_solver'):
+                            # 既に作成されているソルバーを更新
+                            if hasattr(tester.linear_solver, 'preconditioner'):
+                                tester.linear_solver.preconditioner_name = preconditioner_to_use
+                            # ソルバーを再作成
+                            tester.set_solver(
+                                method=solver_name,
+                                options=solver_options,
+                                scaling_method=scaling_to_use,
+                                preconditioner=preconditioner_to_use
+                            )
                         
-                        # 解の可視化（--no-visで無効化された場合を除く）
-                        if not args.no_vis:
-                            try:
-                                # 各次元に応じた可視化処理
-                                if args.dim == 1:
-                                    from visualizer.visualizer1d import CCDVisualizer1D
-                                    visualizer = CCDVisualizer1D(output_dir="results")
-                                    vis_file = visualizer.visualize_derivatives(
-                                        grid, result['function'], result['numerical'], 
-                                        result['exact'], result['errors'],
-                                        prefix=f"{function_name}_{equation_name}_{solver_name}_{scaling_to_use or 'noscale'}"
-                                    )
-                                elif args.dim == 2:
-                                    from visualizer.visualizer2d import CCDVisualizer2D
-                                    visualizer = CCDVisualizer2D(output_dir="results")
-                                    vis_file = visualizer.visualize_solution(
-                                        grid, result['function'], result['numerical'], 
-                                        result['exact'], result['errors'],
-                                        prefix=f"{function_name}_{equation_name}_{solver_name}_{scaling_to_use or 'noscale'}"
-                                    )
-                                elif args.dim == 3:
-                                    from visualizer.visualizer3d import CCDVisualizer3D
-                                    visualizer = CCDVisualizer3D(output_dir="results")
-                                    vis_file = visualizer.visualize_solution(
-                                        grid, result['function'], result['numerical'], 
-                                        result['exact'], result['errors'],
-                                        prefix=f"{function_name}_{equation_name}_{solver_name}_{scaling_to_use or 'noscale'}"
-                                    )
-                                
-                                if vis_file:
-                                    print(f"  解の可視化を保存しました: {vis_file}")
-                            except Exception as e:
-                                print(f"  解の可視化エラー: {e}")
+                        # 初期値摂動を設定
+                        if args.perturbation is not None:
+                            tester.perturbation_level = args.perturbation
                         
-                        # 行列システム可視化（--visualizeが指定された場合のみ）
-                        if args.visualize:
-                            try:
-                                # 元のメソッドシグネチャに合わせる
-                                vis_output = tester.visualize_matrix_system(test_func)
-                                print(f"  行列システムの可視化: {vis_output}")
-                            except Exception as e:
-                                print(f"  行列可視化エラー: {e}")
-                    
-                except Exception as e:
-                    print(f"エラー: {e}")
-                    if args.verbose:
-                        import traceback
-                        traceback.print_exc()
+                        # 関数の内側ループ（行列Aを再利用）
+                        for function_name in function_list:
+                            print(f"  テスト関数: {function_name}")
+                            
+                            # テスト関数を取得
+                            test_func = tester.get_test_function(function_name)
+                            
+                            # テスト実行
+                            result = run_single_test(tester, test_func, args, args.verbose)
+                            
+                            # 結果をメタデータで拡張
+                            result['equation'] = equation_name
+                            result['solver'] = solver_name
+                            result['scaling'] = scaling_to_use
+                            result['preconditioner'] = preconditioner_to_use
+                            
+                            # 結果を保存
+                            all_results.append(result)
+                            
+                            # 解の可視化（--no-visで無効化された場合を除く）
+                            if not args.no_vis:
+                                try:
+                                    # 各次元に応じた可視化処理
+                                    if args.dim == 1:
+                                        from visualizer.visualizer1d import CCDVisualizer1D
+                                        visualizer = CCDVisualizer1D(output_dir="results")
+                                        vis_file = visualizer.visualize_derivatives(
+                                            grid, result['function'], result['numerical'], 
+                                            result['exact'], result['errors'],
+                                            prefix=f"{function_name}_{equation_name}_{solver_name}_{scaling_to_use or 'noscale'}_{preconditioner_to_use or 'nopc'}"
+                                        )
+                                    elif args.dim == 2:
+                                        from visualizer.visualizer2d import CCDVisualizer2D
+                                        visualizer = CCDVisualizer2D(output_dir="results")
+                                        vis_file = visualizer.visualize_solution(
+                                            grid, result['function'], result['numerical'], 
+                                            result['exact'], result['errors'],
+                                            prefix=f"{function_name}_{equation_name}_{solver_name}_{scaling_to_use or 'noscale'}_{preconditioner_to_use or 'nopc'}"
+                                        )
+                                    elif args.dim == 3:
+                                        from visualizer.visualizer3d import CCDVisualizer3D
+                                        visualizer = CCDVisualizer3D(output_dir="results")
+                                        vis_file = visualizer.visualize_solution(
+                                            grid, result['function'], result['numerical'], 
+                                            result['exact'], result['errors'],
+                                            prefix=f"{function_name}_{equation_name}_{solver_name}_{scaling_to_use or 'noscale'}_{preconditioner_to_use or 'nopc'}"
+                                        )
+                                    
+                                    if vis_file:
+                                        print(f"  解の可視化を保存しました: {vis_file}")
+                                except Exception as e:
+                                    print(f"  解の可視化エラー: {e}")
+                            
+                            # 行列システム可視化（--visualizeが指定された場合のみ）
+                            if args.visualize:
+                                try:
+                                    # 元のメソッドシグネチャに合わせる
+                                    vis_output = tester.visualize_matrix_system(test_func)
+                                    print(f"  行列システムの可視化: {vis_output}")
+                                except Exception as e:
+                                    print(f"  行列可視化エラー: {e}")
+                        
+                    except Exception as e:
+                        print(f"エラー: {e}")
+                        if args.verbose:
+                            import traceback
+                            traceback.print_exc()
     
     # 結果サマリーを表示
     if len(all_results) > 1:
@@ -614,11 +725,12 @@ def main():
         
         # 最良の結果
         best_result = min(all_results, key=lambda x: x['errors'][0])
-        print("\n最良の結果（ψ誤差で比較）:")
+        print(f"\n最良の結果（ψ誤差で比較）:")
         print(f"  関数: {best_result['function']}")
         print(f"  方程式: {best_result['equation']}")
         print(f"  ソルバー: {best_result['solver']}")
         print(f"  スケーリング: {best_result['scaling'] or 'なし'}")
+        print(f"  前処理: {best_result['preconditioner'] or 'なし'}")
         print(f"  エラー: {format_errors(best_result['errors'], args.dim)}")
         print(f"  計算時間: {best_result['elapsed_time']:.4f}秒")
         if best_result['iterations'] is not None:
@@ -629,10 +741,10 @@ def main():
         min_time = min(all_results, key=lambda x: x['elapsed_time'])
         max_time = max(all_results, key=lambda x: x['elapsed_time'])
         
-        print("\n計算時間統計:")
+        print(f"\n計算時間統計:")
         print(f"  平均時間: {avg_time:.4f}秒")
-        print(f"  最短時間: {min_time['elapsed_time']:.4f}秒 ({min_time['function']}, {min_time['equation']}, {min_time['solver']}, {min_time['scaling'] or 'なし'})")
-        print(f"  最長時間: {max_time['elapsed_time']:.4f}秒 ({max_time['function']}, {max_time['equation']}, {max_time['solver']}, {max_time['scaling'] or 'なし'})")
+        print(f"  最短時間: {min_time['elapsed_time']:.4f}秒 ({min_time['function']}, {min_time['equation']}, {min_time['solver']}, {min_time['scaling'] or 'なし'}, {min_time['preconditioner'] or 'なし'})")
+        print(f"  最長時間: {max_time['elapsed_time']:.4f}秒 ({max_time['function']}, {max_time['equation']}, {max_time['solver']}, {max_time['scaling'] or 'なし'}, {max_time['preconditioner'] or 'なし'})")
     
     # 出力ファイルに保存（リクエストされた場合）
     if args.output:

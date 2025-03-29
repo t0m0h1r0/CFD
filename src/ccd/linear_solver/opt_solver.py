@@ -112,7 +112,7 @@ class OptimizedGPULinearSolver(GPULinearSolver):
             
             self.memory_savings = (original_sparse_size - pattern_size) / (1024 * 1024)  # MB単位
             
-            print("パターン圧縮を適用しました:")
+            print(f"パターン圧縮を適用しました:")
             print(f"  元の行列: {n}x{n}, 非ゼロ要素: {nnz}")
             print(f"  ブロックサイズ: {block_size}x{block_size}")
             print(f"  検出されたユニークパターン: {unique_count}/{n//block_size}")
@@ -314,6 +314,17 @@ class OptimizedGPULinearSolver(GPULinearSolver):
         
         return PatternOperator(self.optimized_A['shape'], pattern_matvec)
     
+    # GPUでの前処理適用関数
+    def _create_preconditioner_operator(self):
+        """
+        前処理演算子を作成
+        
+        Returns:
+            前処理演算子またはNone
+        """
+        # 親クラスの前処理演算子作成メソッドを呼び出す
+        return super()._create_preconditioner_operator()
+    
     # 各ソルバーメソッドを最適化版にオーバーライド
     def _solve_gmres(self, A, b, options=None):
         """GMRES法（パターン圧縮最適化版）"""
@@ -335,8 +346,11 @@ class OptimizedGPULinearSolver(GPULinearSolver):
         # パターン圧縮された演算子を作成
         op = self._create_pattern_operator()
         
+        # 前処理演算子の取得
+        M = self._create_preconditioner_operator()
+        
         # GMRES実行
-        result = self.splinalg.gmres(op, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
+        result = self.splinalg.gmres(op, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, M=M)
         return result[0], result[1]
     
     def _solve_cg(self, A, b, options=None):
@@ -358,8 +372,11 @@ class OptimizedGPULinearSolver(GPULinearSolver):
         # パターン圧縮された演算子を作成
         op = self._create_pattern_operator()
         
+        # 前処理演算子の取得
+        M = self._create_preconditioner_operator()
+        
         # CG実行
-        result = self.splinalg.cg(op, b, x0=x0, tol=tol, maxiter=maxiter)
+        result = self.splinalg.cg(op, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_cgs(self, A, b, options=None):
@@ -381,8 +398,11 @@ class OptimizedGPULinearSolver(GPULinearSolver):
         # パターン圧縮された演算子を作成
         op = self._create_pattern_operator()
         
+        # 前処理演算子の取得
+        M = self._create_preconditioner_operator()
+        
         # CGS実行
-        result = self.splinalg.cgs(op, b, x0=x0, tol=tol, maxiter=maxiter)
+        result = self.splinalg.cgs(op, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_minres(self, A, b, options=None):
@@ -404,8 +424,11 @@ class OptimizedGPULinearSolver(GPULinearSolver):
         # パターン圧縮された演算子を作成
         op = self._create_pattern_operator()
         
+        # 前処理演算子の取得
+        M = self._create_preconditioner_operator()
+        
         # MINRES実行
-        result = self.splinalg.minres(op, b, x0=x0, tol=tol, maxiter=maxiter)
+        result = self.splinalg.minres(op, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
     
     def _solve_bicgstab(self, A, b, options=None):
@@ -427,8 +450,11 @@ class OptimizedGPULinearSolver(GPULinearSolver):
         # パターン圧縮された演算子を作成
         op = self._create_pattern_operator()
         
+        # 前処理演算子の取得
+        M = self._create_preconditioner_operator()
+        
         # BiCGSTAB実行
-        result = self.splinalg.bicgstab(op, b, x0=x0, tol=tol, maxiter=maxiter)
+        result = self.splinalg.bicgstab(op, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
         return result[0], result[1]
         
     def _solve_lsqr(self, A, b, options=None):
@@ -444,22 +470,19 @@ class OptimizedGPULinearSolver(GPULinearSolver):
             import inspect
             sig = inspect.signature(self.splinalg.lsqr)
             
+            # パターン圧縮された演算子を作成
+            op = self._create_pattern_operator()
+            
             # 引数に応じてlsqrを呼び出し
             if 'x0' in sig.parameters:
                 x0 = options.get("x0")
                 if x0 is not None:
                     x0 = self.cp.asarray(x0)
                     print(f"CuPy x0を設定しました (shape: {x0.shape})")
-                    
-                # パターン圧縮された演算子を作成
-                op = self._create_pattern_operator()
                 
                 # LSQR実行 (x0あり)
                 result = self.splinalg.lsqr(op, b, x0=x0)
             else:
-                # パターン圧縮された演算子を作成
-                op = self._create_pattern_operator()
-                
                 # LSQR実行 (x0なし)
                 result = self.splinalg.lsqr(op, b)
                 

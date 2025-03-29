@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 class LinearSolver(ABC):
     """線形方程式系 Ax=b を解くための抽象基底クラス"""
     
-    def __init__(self, A, enable_dirichlet=False, enable_neumann=False, scaling_method=None):
+    def __init__(self, A, enable_dirichlet=False, enable_neumann=False, scaling_method=None, preconditioner=None):
         """
         ソルバーを初期化
         
@@ -16,11 +16,14 @@ class LinearSolver(ABC):
             enable_dirichlet: ディリクレ境界条件を使用するか
             enable_neumann: ノイマン境界条件を使用するか
             scaling_method: スケーリング手法名（オプション）
+            preconditioner: 前処理手法名またはインスタンス（オプション）
         """
         self.original_A = A
         self.enable_dirichlet = enable_dirichlet
         self.enable_neumann = enable_neumann
         self.scaling_method = scaling_method
+        self.preconditioner_name = preconditioner if isinstance(preconditioner, str) else None
+        self.preconditioner = preconditioner if not isinstance(preconditioner, str) else None
         self.last_iterations = None
         
         # ソルバーメソッドとオプションの初期化
@@ -31,8 +34,24 @@ class LinearSolver(ABC):
         self.scaler = None
         self.scaling_info = None
         
+        # 前処理関連
+        self._initialize_preconditioner()
+        
         # 実装によるプロパティ初期化
         self._initialize()
+    
+    def _initialize_preconditioner(self):
+        """前処理を初期化"""
+        if self.preconditioner_name:
+            try:
+                from preconditioner import plugin_manager
+                self.preconditioner = plugin_manager.get_plugin(self.preconditioner_name)
+            except ImportError:
+                print("警告: preconditionerモジュールが見つかりません。")
+                self.preconditioner = None
+            except Exception as e:
+                print(f"前処理初期化エラー: {e}")
+                self.preconditioner = None
     
     @abstractmethod
     def _initialize(self):
@@ -76,6 +95,13 @@ class LinearSolver(ABC):
         if actual_method not in self.solvers:
             print(f"Unsupported solver: {actual_method}, falling back to direct solver")
             actual_method = "direct"
+        
+        # 行列Aに対して前処理を設定（未設定の場合）
+        if self.preconditioner and hasattr(self.preconditioner, 'setup') and not hasattr(self.preconditioner, 'M'):
+            try:
+                self.preconditioner.setup(self.A)
+            except Exception as e:
+                print(f"前処理設定エラー: {e}")
         
         # 線形システムを解く（エラー処理を一元化）
         try:
