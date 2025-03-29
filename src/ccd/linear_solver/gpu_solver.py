@@ -35,13 +35,83 @@ class GPULinearSolver(LinearSolver):
                 "cgs": self._solve_cgs,
                 "minres": self._solve_minres,
                 "lsqr": self._solve_lsqr,
-                "lsmr": self._solve_lsmr
+                "lsmr": self._solve_lsmr,
+                "bicgstab": self._solve_bicgstab
             }
+            
+            # 前処理器の初期セットアップ
+            if self.preconditioner and hasattr(self.preconditioner, 'setup'):
+                try:
+                    # CPUで前処理をセットアップしてからGPUに転送
+                    A_cpu = self._to_numpy_matrix(self.A)
+                    self.preconditioner.setup(A_cpu)
+                    print(f"GPU前処理器をセットアップしました: {self.preconditioner.name}")
+                    
+                    # GPU向けに前処理行列を変換
+                    if hasattr(self.preconditioner, 'M') and self.preconditioner.M is not None:
+                        if not hasattr(self.preconditioner.M, 'device'):
+                            # CPU行列を確実にGPUに転送
+                            self._convert_preconditioner_to_gpu()
+                except Exception as e:
+                    print(f"GPU前処理器セットアップエラー: {e}")
             
         except ImportError as e:
             print(f"警告: CuPyが利用できません: {e}")
             self.has_cupy = False
             self._init_cpu_fallback()
+    
+    def _convert_preconditioner_to_gpu(self):
+        """
+        前処理行列をGPU(CuPy)形式に変換
+        """
+        if not hasattr(self.preconditioner, 'M') or self.preconditioner.M is None:
+            return
+            
+        try:
+            # 現在の前処理行列
+            M = self.preconditioner.M
+            
+            # 行列形式の前処理
+            if hasattr(M, 'toarray') or hasattr(M, 'todense'):
+                # 疎行列をCuPy CSR形式に変換
+                M_cpu = M.toarray() if hasattr(M, 'toarray') else M.todense()
+                M_gpu = self.cp.array(M_cpu)
+                
+                # 疎行列に戻す処理
+                if hasattr(M, 'format') and M.format == 'csr':
+                    from cupyx.scipy.sparse import csr_matrix
+                    M_gpu = csr_matrix(M_gpu)
+                
+                # 前処理器の行列を更新
+                self.preconditioner.M = M_gpu
+                print(f"前処理行列をGPUに転送しました ({M_gpu.shape})")
+            
+            # LinearOperator形式の前処理
+            elif hasattr(M, 'matvec'):
+                # cupyx.scipy.sparse.linalg.LinearOperatorと互換性を持つラッパーを作成
+                from cupyx.scipy.sparse.linalg import LinearOperator
+                
+                shape = M.shape
+                
+                # GPU対応のmatvec関数を定義
+                def gpu_matvec(x):
+                    if hasattr(x, 'get'):
+                        x_cpu = x.get()
+                    else:
+                        x_cpu = np.array(x)
+                    
+                    # CPU上で前処理を適用
+                    y_cpu = M.matvec(x_cpu)
+                    
+                    # 結果をGPUに転送
+                    return self.cp.array(y_cpu)
+                
+                # GPU対応のLinearOperatorを作成
+                self.preconditioner.M = LinearOperator(shape, matvec=gpu_matvec)
+                print("LinearOperator形式の前処理をGPU対応に変換しました")
+        except Exception as e:
+            print(f"前処理行列のGPU変換エラー: {e}")
+            # エラー時はCPU版の前処理を維持
     
     def _init_cpu_fallback(self):
         """CPUソルバーにフォールバック"""
@@ -54,6 +124,10 @@ class GPULinearSolver(LinearSolver):
         )
         # CPU版のsolversをコピー
         self.solvers = self.cpu_solver.solvers
+        
+        # 前処理器も引き継ぐ
+        if hasattr(self.cpu_solver, 'preconditioner'):
+            self.preconditioner = self.cpu_solver.preconditioner
     
     def solve(self, b, method=None, options=None):
         """
@@ -84,19 +158,19 @@ class GPULinearSolver(LinearSolver):
                 # 変換に失敗した場合は削除
                 del options["x0"]
         
-        # 前処理機能の設定
-        if self.preconditioner and hasattr(self.preconditioner, 'setup') and not hasattr(self.preconditioner, 'M'):
-            try:
-                # GPU行列に対して前処理を設定
-                self.preconditioner.setup(self.A)
-                
-                # GPU用の前処理演算子に変換（必要な場合）
-                if hasattr(self.preconditioner, 'M') and self.preconditioner.M is not None:
-                    if not hasattr(self.preconditioner.M, 'device'):
-                        # CPU行列をGPUに変換
-                        self.preconditioner.M = self._to_cupy_matrix(self.preconditioner.M)
-            except Exception as e:
-                print(f"GPU前処理設定エラー: {e}")
+        # 前処理機能の設定（未設定の場合のみ）
+        if self.preconditioner and hasattr(self.preconditioner, 'setup'):
+            if not hasattr(self.preconditioner, 'M') or self.preconditioner.M is None:
+                try:
+                    # CPU版の行列を使って前処理を設定
+                    A_cpu = self._to_numpy_matrix(self.A)
+                    self.preconditioner.setup(A_cpu)
+                    print(f"前処理を設定しました: {self.preconditioner.name}")
+                    
+                    # GPU変換を試みる
+                    self._convert_preconditioner_to_gpu()
+                except Exception as e:
+                    print(f"GPU前処理設定エラー: {e}")
         
         # 通常の処理
         return super().solve(b, method, options)
@@ -110,6 +184,10 @@ class GPULinearSolver(LinearSolver):
             # すでにCuPy上にある場合は何もしない
             if hasattr(A, 'device') and str(type(A)).find('cupy') >= 0:
                 return A
+            
+            # Noneの場合はそのまま返す
+            if A is None:
+                return None
                 
             # 疎行列変換（CSR形式が最適）
             if hasattr(A, 'format'):
@@ -124,6 +202,24 @@ class GPULinearSolver(LinearSolver):
                      self.cp.array(A.indptr)),
                     shape=A.shape
                 )
+            # LinearOperatorの場合
+            elif hasattr(A, 'matvec'):
+                from cupyx.scipy.sparse.linalg import LinearOperator
+                
+                # CuPy対応のmatvec関数を作成
+                def gpu_matvec(x):
+                    if hasattr(x, 'get'):
+                        x_cpu = x.get()
+                    else:
+                        x_cpu = np.array(x)
+                    
+                    # CPU上でmatvecを実行
+                    y_cpu = A.matvec(x_cpu)
+                    
+                    # 結果をGPUに転送
+                    return self.cp.array(y_cpu)
+                
+                return LinearOperator(A.shape, matvec=gpu_matvec)
             else:
                 # 密行列の場合
                 if hasattr(A, 'toarray'):
@@ -249,7 +345,6 @@ class GPULinearSolver(LinearSolver):
             return b.get()
         return b
     
-    # GPUでの前処理適用関数
     def _create_preconditioner_operator(self):
         """
         GPUでの前処理演算子を作成
@@ -261,34 +356,64 @@ class GPULinearSolver(LinearSolver):
             return None
             
         try:
-            # 前処理器の実体がある場合
-            if hasattr(self.preconditioner, 'matrix') and self.preconditioner.matrix is not None:
+            # 前処理行列が既に設定されている場合
+            if hasattr(self.preconditioner, 'M') and self.preconditioner.M is not None:
                 # 行列としての前処理
-                precond_matrix = self.preconditioner.matrix
+                M = self.preconditioner.M
                 
-                # GPU対応のLinearOperatorを作成
-                from cupyx.scipy.sparse.linalg import LinearOperator
+                # すでにGPU上にある場合はそのまま返す
+                if hasattr(M, 'device') or 'cupy' in str(type(M)):
+                    return M
                 
-                # matvecメソッドの定義
-                def preconditioner_matvec(x):
-                    if hasattr(precond_matrix, '__matmul__'):
-                        return precond_matrix @ x
-                    elif hasattr(precond_matrix, 'dot'):
-                        return precond_matrix.dot(x)
-                    else:
-                        # フォールバック
-                        return x
+                # まだCPU上にある場合はGPUに変換
+                if not hasattr(M, 'device'):
+                    print("CPU前処理行列をGPUに変換します")
+                    self._convert_preconditioner_to_gpu()
+                    M = self.preconditioner.M
+                    if hasattr(M, 'device') or 'cupy' in str(type(M)):
+                        return M
                 
-                return LinearOperator(self.A.shape, matvec=preconditioner_matvec)
+                # LinearOperatorの場合
+                if hasattr(M, 'matvec'):
+                    from cupyx.scipy.sparse.linalg import LinearOperator
+                    
+                    # GPU対応のmatvec
+                    def gpu_matvec(x):
+                        try:
+                            if hasattr(x, 'get'):
+                                x_cpu = x.get()
+                            else:
+                                x_cpu = np.array(x)
+                            
+                            # CPU上で前処理を適用
+                            y_cpu = M.matvec(x_cpu)
+                            
+                            # 結果をGPUに転送
+                            return self.cp.array(y_cpu)
+                        except Exception as e:
+                            print(f"前処理matvecエラー: {e}")
+                            return x
+                    
+                    return LinearOperator(self.A.shape, matvec=gpu_matvec)
             
             # __call__メソッドを持つカスタム前処理器
             elif hasattr(self.preconditioner, '__call__'):
                 from cupyx.scipy.sparse.linalg import LinearOperator
                 
-                # 前処理関数を定義
+                # GPU対応の前処理関数
                 def preconditioner_func(x):
                     try:
-                        return self.preconditioner(x)
+                        # CuPy配列をNumPyに変換
+                        if hasattr(x, 'get'):
+                            x_cpu = x.get()
+                        else:
+                            x_cpu = np.array(x)
+                        
+                        # CPU上で前処理を適用
+                        y_cpu = self.preconditioner(x_cpu)
+                        
+                        # 結果をGPUに転送
+                        return self.cp.array(y_cpu)
                     except Exception as e:
                         print(f"前処理適用エラー: {e}")
                         return x
@@ -332,9 +457,16 @@ class GPULinearSolver(LinearSolver):
         # 前処理演算子の作成
         M = self._create_preconditioner_operator()
         
-        # GMRES実行（オプションを最適化）
-        result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, M=M)
-        return result[0], result[1]
+        try:
+            # GMRES実行（オプションを最適化）
+            result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart, M=M)
+            return result[0], result[1]
+        except Exception as e:
+            print(f"GMRES実行エラー: {e}")
+            print("前処理なしでGMRESを再試行します")
+            # 前処理なしで再試行
+            result = self.splinalg.gmres(A, b, x0=x0, tol=tol, maxiter=maxiter, restart=restart)
+            return result[0], result[1]
     
     def _solve_cg(self, A, b, options=None):
         """共役勾配法"""
@@ -348,9 +480,16 @@ class GPULinearSolver(LinearSolver):
         # 前処理演算子の作成
         M = self._create_preconditioner_operator()
         
-        # CG実行
-        result = self.splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
-        return result[0], result[1]
+        try:
+            # CG実行
+            result = self.splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
+            return result[0], result[1]
+        except Exception as e:
+            print(f"CG実行エラー: {e}")
+            print("前処理なしでCGを再試行します")
+            # 前処理なしで再試行
+            result = self.splinalg.cg(A, b, x0=x0, tol=tol, maxiter=maxiter)
+            return result[0], result[1]
     
     def _solve_cgs(self, A, b, options=None):
         """CGS法"""
@@ -364,9 +503,16 @@ class GPULinearSolver(LinearSolver):
         # 前処理演算子の作成
         M = self._create_preconditioner_operator()
         
-        # CGS実行
-        result = self.splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
-        return result[0], result[1]
+        try:
+            # CGS実行
+            result = self.splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
+            return result[0], result[1]
+        except Exception as e:
+            print(f"CGS実行エラー: {e}")
+            print("前処理なしでCGSを再試行します")
+            # 前処理なしで再試行
+            result = self.splinalg.cgs(A, b, x0=x0, tol=tol, maxiter=maxiter)
+            return result[0], result[1]
     
     def _solve_minres(self, A, b, options=None):
         """MINRES法"""
@@ -380,18 +526,48 @@ class GPULinearSolver(LinearSolver):
         # 前処理演算子の作成
         M = self._create_preconditioner_operator()
         
-        # MINRES実行
-        result = self.splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
-        return result[0], result[1]
+        try:
+            # MINRES実行
+            result = self.splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
+            return result[0], result[1]
+        except Exception as e:
+            print(f"MINRES実行エラー: {e}")
+            print("前処理なしでMINRESを再試行します")
+            # 前処理なしで再試行
+            result = self.splinalg.minres(A, b, x0=x0, tol=tol, maxiter=maxiter)
+            return result[0], result[1]
+    
+    def _solve_bicgstab(self, A, b, options=None):
+        """BiCGSTAB法"""
+        options = options or {}
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
+        
+        # 初期解ベクトル
+        x0 = options.get("x0", self.cp.zeros_like(b))
+        
+        # 前処理演算子の作成
+        M = self._create_preconditioner_operator()
+        
+        try:
+            # BiCGSTAB実行
+            result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
+            return result[0], result[1]
+        except Exception as e:
+            print(f"BiCGSTAB実行エラー: {e}")
+            print("前処理なしでBiCGSTABを再試行します")
+            # 前処理なしで再試行
+            result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter)
+            return result[0], result[1]
     
     def _solve_lsqr(self, A, b, options=None):
         """LSQR最小二乗法ソルバー"""
         options = options or {}
-        options.get("tol", 1e-10)
-        options.get("maxiter", 1000)
+        tol = options.get("tol", 1e-10)
+        maxiter = options.get("maxiter", 1000)
         
         # CuPy cupyx.scipy.sparse.linalg.lsqr は前処理をサポートしていない
-        result = self.splinalg.lsqr(A, b)
+        result = self.splinalg.lsqr(A, b, atol=tol, btol=tol, iter_lim=maxiter)
         return result[0], result[2]
     
     def _solve_lsmr(self, A, b, options=None):
