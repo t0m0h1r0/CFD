@@ -27,6 +27,7 @@ class BaseCCDSolver(ABC):
         self.equation_set = equation_set
         self.grid = grid
         self.backend = backend
+        self.preconditioner_name = None
         
         # 次元に応じたシステムを初期化し、行列Aを構築 (CPU処理)
         self.system = self._create_equation_system(grid)
@@ -64,7 +65,7 @@ class BaseCCDSolver(ABC):
         """次元に応じたRHSビルダーを作成"""
         pass
     
-    def set_solver(self, method="direct", options=None, scaling_method=None):
+    def set_solver(self, method="direct", options=None, scaling_method=None, preconditioner=None):
         """
         ソルバーの設定
         
@@ -72,9 +73,13 @@ class BaseCCDSolver(ABC):
             method: 解法メソッド
             options: ソルバーオプション辞書
             scaling_method: スケーリング手法名
+            preconditioner: 前処理手法名
         """
         # オプションの初期化
         options = options or {}
+        
+        # 前処理器名を保存（後で取得できるようにするため）
+        self.preconditioner_name = preconditioner
         
         # バックエンド指定を取得
         backend = options.get("backend", self.backend)
@@ -96,6 +101,7 @@ class BaseCCDSolver(ABC):
             enable_dirichlet=self.enable_dirichlet,
             enable_neumann=self.enable_neumann,
             scaling_method=scaling_method,
+            preconditioner=preconditioner,
             backend=backend
         )
         
@@ -118,7 +124,7 @@ class BaseCCDSolver(ABC):
     def scaling_method(self, value):
         """スケーリング手法を設定"""
         # 新しいソルバーを作成する必要がある
-        self.set_solver(method=self.method, scaling_method=value, options={"backend": self.backend})
+        self.set_solver(method=self.method, scaling_method=value, options={"backend": self.backend}, preconditioner=self.preconditioner_name)
     
     @property
     def last_iterations(self):
@@ -128,6 +134,19 @@ class BaseCCDSolver(ABC):
     def get_boundary_settings(self):
         """境界条件の設定を取得"""
         return self.enable_dirichlet, self.enable_neumann
+    
+    def get_preconditioner(self):
+        """
+        前処理器を取得（行列可視化用）
+        
+        Returns:
+            前処理器オブジェクトまたは前処理器名
+        """
+        if hasattr(self.linear_solver, 'get_preconditioner'):
+            return self.linear_solver.get_preconditioner()
+        elif hasattr(self.linear_solver, 'preconditioner'):
+            return self.linear_solver.preconditioner
+        return self.preconditioner_name
 
     def analyze_system(self):
         """

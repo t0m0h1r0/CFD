@@ -36,11 +36,12 @@ class CCDTester(ABC):
         self.matrix_basename = None  # 行列可視化用のベース名
         self.perturbation_level = None  # 厳密解に加える摂動レベル (None=厳密解を使用しない、0=摂動なし)
         self.exact_solution = None  # 厳密解を保存
+        self.preconditioner_name = None  # 前処理器の名前を保存
         
         # 結果ディレクトリの作成
         os.makedirs(self.results_dir, exist_ok=True)
 
-    def setup(self, equation="poisson", method="direct", options=None, scaling=None, backend="cpu"):
+    def setup(self, equation="poisson", method="direct", options=None, scaling=None, backend="cpu", preconditioner=None):
         """
         テスター設定のショートカット
         
@@ -50,6 +51,7 @@ class CCDTester(ABC):
             options: ソルバーオプション辞書
             scaling: スケーリング手法名
             backend: 計算バックエンド名
+            preconditioner: 前処理器の名前
         
         Returns:
             self: メソッドチェーン用
@@ -59,6 +61,7 @@ class CCDTester(ABC):
         self.solver_options = options or {}
         self.scaling_method = scaling
         self.backend = backend
+        self.preconditioner_name = preconditioner
         return self
         
     def set_solver_options(self, method, options=None, analyze_matrix=False):
@@ -86,9 +89,43 @@ class CCDTester(ABC):
             self.solver.set_solver(
                 method=self.solver_method, 
                 options=self.solver_options, 
-                scaling_method=self.scaling_method
+                scaling_method=self.scaling_method,
+                preconditioner=self.preconditioner_name
             )
         
+        return self
+    
+    def set_solver(self, method=None, options=None, scaling_method=None, preconditioner=None):
+        """
+        ソルバーの設定（全パラメータを一度に設定）
+        
+        Args:
+            method: 解法メソッド名
+            options: ソルバーオプション辞書
+            scaling_method: スケーリング手法
+            preconditioner: 前処理器名
+            
+        Returns:
+            self: メソッドチェーン用
+        """
+        if method is not None:
+            self.solver_method = method
+        if options is not None:
+            self.solver_options = options
+        if scaling_method is not None:
+            self.scaling_method = scaling_method
+        if preconditioner is not None:
+            self.preconditioner_name = preconditioner
+            
+        # ソルバーが既に作成されている場合は、設定を適用
+        if hasattr(self, 'solver') and self.solver:
+            self.solver.set_solver(
+                method=self.solver_method,
+                options=self.solver_options,
+                scaling_method=self.scaling_method,
+                preconditioner=self.preconditioner_name
+            )
+            
         return self
         
     def set_equation_set(self, equation_set_name):
@@ -169,7 +206,8 @@ class CCDTester(ABC):
             self.solver.set_solver(
                 method=self.solver_method, 
                 options=options, 
-                scaling_method=self.scaling_method
+                scaling_method=self.scaling_method,
+                preconditioner=self.preconditioner_name
             )
         else:
             self.exact_solution = None
@@ -205,7 +243,8 @@ class CCDTester(ABC):
             'equation_set': self.equation_set,
             'scaling': self.scaling_method,
             'backend': self.backend,
-            'perturbation_level': self.perturbation_level
+            'perturbation_level': self.perturbation_level,
+            'preconditioner': self.preconditioner_name
         }
 
         for n in grid_sizes:
@@ -224,7 +263,8 @@ class CCDTester(ABC):
                 method=settings['method'],
                 options=settings['options'],
                 scaling=settings['scaling'],
-                backend=settings['backend']
+                backend=settings['backend'],
+                preconditioner=settings['preconditioner']
             )
             tester.perturbation_level = settings['perturbation_level']
             result = tester.run_test(test_func)
@@ -253,7 +293,27 @@ class CCDTester(ABC):
         elif isinstance(test_func, str):
             test_func = self.get_test_function(test_func)
         
+        # ソルバー初期化
         self._init_solver()
+        
+        # 前処理器を確実に適用するために、ソルバー設定を再適用
+        if self.preconditioner_name:
+            self.solver.set_solver(
+                method=self.solver_method,
+                options=self.solver_options,
+                scaling_method=self.scaling_method,
+                preconditioner=self.preconditioner_name
+            )
+            
+            # linear_solverも更新されていることを確認
+            if hasattr(self.solver, 'linear_solver'):
+                print(f"前処理器 '{self.preconditioner_name}' を行列可視化用に設定しました")
+                # 念のため、設定されているか確認
+                if hasattr(self.solver.linear_solver, 'preconditioner'):
+                    precond = self.solver.linear_solver.preconditioner
+                    if precond:
+                        print(f"  実際の前処理器: {precond.name if hasattr(precond, 'name') else 'Unknown'}")
+        
         A = self.matrix_A
         b = self._build_rhs(test_func)
         
@@ -283,6 +343,8 @@ class CCDTester(ABC):
             title = self.matrix_basename
         else:
             title = f"{eq_name}_{test_func.name}"
+            if self.preconditioner_name:
+                title += f"_{self.preconditioner_name}"
         
         return visualizer.visualize(
             A, b, x, exact_x, title,
@@ -302,7 +364,11 @@ class CCDTester(ABC):
         """
         try:
             # LinearSolverを使用
-            return self.solver.linear_solver.solve(b, method=self.solver_method, options=self.solver_options)
+            if hasattr(self.solver, 'linear_solver'):
+                current_solver = self.solver.linear_solver
+                return current_solver.solve(b, method=self.solver_method, options=self.solver_options)
+            else:
+                return self.solver.solve(b)
         except Exception as e:
             print(f"Solver error: {e}")
             # フォールバック: 直接SciPyを使用
@@ -318,11 +384,12 @@ class CCDTester(ABC):
         if not self.solver:
             self._create_solver()
             
-        if self.solver_method != "direct" or self.solver_options or self.scaling_method:
+        if self.solver_method != "direct" or self.solver_options or self.scaling_method or self.preconditioner_name:
             self.solver.set_solver(
                 method=self.solver_method, 
                 options=self.solver_options, 
-                scaling_method=self.scaling_method
+                scaling_method=self.scaling_method,
+                preconditioner=self.preconditioner_name
             )
     
     def _create_grid(self, n, x_range, y_range=None):
