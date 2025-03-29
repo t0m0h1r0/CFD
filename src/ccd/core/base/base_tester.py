@@ -263,6 +263,13 @@ class CCDTester(ABC):
         # 厳密解計算
         exact_x = self._compute_exact(test_func) if x is not None else None
         
+        # 前処理器を取得
+        preconditioner = None
+        if hasattr(self.solver, 'linear_solver') and hasattr(self.solver.linear_solver, 'get_preconditioner'):
+            preconditioner = self.solver.linear_solver.get_preconditioner()
+        elif hasattr(self.solver, 'get_preconditioner'):
+            preconditioner = self.solver.get_preconditioner()
+        
         # 外部ビジュアライザーを使用して可視化
         visualizer = MatrixVisualizer(self.results_dir)
         
@@ -276,10 +283,10 @@ class CCDTester(ABC):
             title = self.matrix_basename
         else:
             title = f"{eq_name}_{test_func.name}"
-            
+        
         return visualizer.visualize(
             A, b, x, exact_x, title,
-            self.get_dimension(), self.scaling_method
+            self.get_dimension(), self.scaling_method, preconditioner
         )
     
     def _solve_for_visualization(self, A, b):

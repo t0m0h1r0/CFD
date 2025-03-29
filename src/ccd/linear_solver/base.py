@@ -46,12 +46,42 @@ class LinearSolver(ABC):
             try:
                 from preconditioner import plugin_manager
                 self.preconditioner = plugin_manager.get_plugin(self.preconditioner_name)
+                print(f"前処理 '{self.preconditioner.name}' を初期化しました。")
             except ImportError:
                 print("警告: preconditionerモジュールが見つかりません。")
                 self.preconditioner = None
             except Exception as e:
                 print(f"前処理初期化エラー: {e}")
                 self.preconditioner = None
+    
+    def _create_preconditioner_operator(self):
+        """
+        前処理演算子を作成
+        
+        Returns:
+            前処理演算子またはNone
+        """
+        if not self.preconditioner:
+            return None
+            
+        # 前処理器は既に設定されているはず
+        if hasattr(self.preconditioner, 'M') and self.preconditioner.M is not None:
+            return self.preconditioner.M
+            
+        # __call__メソッドを持つ場合
+        if hasattr(self.preconditioner, '__call__'):
+            return self.preconditioner
+            
+        return None
+    
+    def get_preconditioner(self):
+        """
+        前処理器オブジェクトを取得（視覚化用）
+        
+        Returns:
+            前処理器オブジェクトまたはNone
+        """
+        return self.preconditioner
     
     @abstractmethod
     def _initialize(self):
@@ -100,6 +130,7 @@ class LinearSolver(ABC):
         if self.preconditioner and hasattr(self.preconditioner, 'setup') and not hasattr(self.preconditioner, 'M'):
             try:
                 self.preconditioner.setup(self.A)
+                print(f"前処理 '{self.preconditioner.name}' をセットアップしました。")
             except Exception as e:
                 print(f"前処理設定エラー: {e}")
         
@@ -134,7 +165,7 @@ class LinearSolver(ABC):
                         except Exception:
                             pass
                     return x
-                except Exception as fallback_error:
+                except Exception as fallback_error:  # 具体的な例外に変更
                     print(f"Direct solver fallback error: {fallback_error}")
             
             # すべてのフォールバックが失敗した場合
