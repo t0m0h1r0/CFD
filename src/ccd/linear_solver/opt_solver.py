@@ -112,7 +112,7 @@ class OptimizedGPULinearSolver(GPULinearSolver):
             
             self.memory_savings = (original_sparse_size - pattern_size) / (1024 * 1024)  # MB単位
             
-            print(f"パターン圧縮を適用しました:")
+            print("パターン圧縮を適用しました:")
             print(f"  元の行列: {n}x{n}, 非ゼロ要素: {nnz}")
             print(f"  ブロックサイズ: {block_size}x{block_size}")
             print(f"  検出されたユニークパターン: {unique_count}/{n//block_size}")

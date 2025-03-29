@@ -6,7 +6,6 @@
 """
 
 from abc import ABC, abstractmethod
-import numpy as np
 
 class BasePreconditioner(ABC):
     """前処理手法の抽象基底クラス"""

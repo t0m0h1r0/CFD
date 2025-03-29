@@ -5,7 +5,6 @@
 システム行列の疎行列近似逆行列を計算する前処理手法を提供します。
 """
 
-import numpy as np
 from .base import BasePreconditioner
 
 class SPAIPreconditioner(BasePreconditioner):

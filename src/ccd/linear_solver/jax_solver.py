@@ -96,7 +96,7 @@ class JAXLinearSolver(LinearSolver):
                 
                 # JAX用の前処理演算子に変換（必要な場合）
                 if hasattr(self.preconditioner, 'M') and self.preconditioner.M is not None:
-                    if not 'jax' in str(type(self.preconditioner.M)):
+                    if 'jax' not in str(type(self.preconditioner.M)):
                         # CPU行列をJAXに変換
                         self.preconditioner.M = self._to_jax_matrix(self.preconditioner.M)
             except Exception as e:
@@ -262,7 +262,7 @@ class JAXLinearSolver(LinearSolver):
                 precond_matrix = self.preconditioner.matrix
                 
                 # JAX配列へ変換
-                if not 'jax' in str(type(precond_matrix)):
+                if 'jax' not in str(type(precond_matrix)):
                     precond_matrix = self.jnp.array(
                         precond_matrix.toarray() if hasattr(precond_matrix, 'toarray') else precond_matrix
                     )

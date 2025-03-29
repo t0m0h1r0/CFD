@@ -10,10 +10,9 @@ import os
 import sys
 import time
 import argparse
-import numpy as np
 import importlib
 import inspect
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Any, Tuple
 
 # 相対インポートのためのパス設定
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,7 +25,6 @@ from tester.tester1d import CCDTester1D
 from tester.tester2d import CCDTester2D
 from tester.tester3d import CCDTester3D
 from equation_set.equation_sets import EquationSet
-from linear_solver import create_solver
 from test_function.test_function1d import TestFunction1DFactory
 from test_function.test_function2d import TestFunction2DFactory
 from test_function.test_function3d import TestFunction3DFactory
@@ -725,7 +723,7 @@ def main():
         
         # 最良の結果
         best_result = min(all_results, key=lambda x: x['errors'][0])
-        print(f"\n最良の結果（ψ誤差で比較）:")
+        print("\n最良の結果（ψ誤差で比較）:")
         print(f"  関数: {best_result['function']}")
         print(f"  方程式: {best_result['equation']}")
         print(f"  ソルバー: {best_result['solver']}")
@@ -741,7 +739,7 @@ def main():
         min_time = min(all_results, key=lambda x: x['elapsed_time'])
         max_time = max(all_results, key=lambda x: x['elapsed_time'])
         
-        print(f"\n計算時間統計:")
+        print("\n計算時間統計:")
         print(f"  平均時間: {avg_time:.4f}秒")
         print(f"  最短時間: {min_time['elapsed_time']:.4f}秒 ({min_time['function']}, {min_time['equation']}, {min_time['solver']}, {min_time['scaling'] or 'なし'}, {min_time['preconditioner'] or 'なし'})")
         print(f"  最長時間: {max_time['elapsed_time']:.4f}秒 ({max_time['function']}, {max_time['equation']}, {max_time['solver']}, {max_time['scaling'] or 'なし'}, {max_time['preconditioner'] or 'なし'})")
