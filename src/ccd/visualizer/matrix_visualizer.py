@@ -88,6 +88,65 @@ class MatrixVisualizer:
             print(f"Matrix absolute value computation error: {e}")
             return None
     
+    def _get_preconditioner_matrix(self, preconditioner, A_size=None):
+        """
+        Extract matrix representation from preconditioner
+        
+        Args:
+            preconditioner: Preconditioner object
+            A_size: Size of system matrix for identity creation (optional)
+            
+        Returns:
+            Matrix representation of preconditioner or None
+        """
+        if preconditioner is None:
+            return None
+        
+        try:
+            # Special case for IdentityPreconditioner
+            precond_type = type(preconditioner).__name__
+            if precond_type == 'IdentityPreconditioner':
+                # Create identity matrix of appropriate size
+                if A_size is not None:
+                    n = A_size[0]
+                    return np.eye(n)
+                else:
+                    # Default size if we can't determine actual size
+                    print("Creating default sized identity matrix for visualization")
+                    return np.eye(128)
+            
+            # Check for explicit matrix M
+            if hasattr(preconditioner, 'M') and preconditioner.M is not None:
+                return self._to_numpy(preconditioner.M)
+            
+            # Check for matrix attribute
+            if hasattr(preconditioner, 'matrix') and preconditioner.matrix is not None:
+                return self._to_numpy(preconditioner.matrix)
+            
+            # Check for toarray method
+            if hasattr(preconditioner, 'toarray') and callable(getattr(preconditioner, 'toarray')):
+                return self._to_numpy(preconditioner.toarray())
+            
+            # Handle diagonal preconditioners (like JacobiPreconditioner)
+            if hasattr(preconditioner, 'diag_vals') and preconditioner.diag_vals is not None:
+                diag_vals = self._to_numpy(preconditioner.diag_vals)
+                if diag_vals is not None:
+                    n = len(diag_vals)
+                    # Create diagonal matrix efficiently
+                    M = np.zeros((n, n))
+                    np.fill_diagonal(M, diag_vals)
+                    return M
+            
+            # Debug info
+            print(f"Attempting to extract matrix from {precond_type}")
+            if hasattr(preconditioner, '__dict__'):
+                print(f"Available attributes: {list(preconditioner.__dict__.keys())}")
+                
+            return None
+        except Exception as e:
+            print(f"Preconditioner matrix extraction failed: {e}")
+            return None
+    
     def visualize(self, A, b, x, exact_x, title, dimension, scaling=None, preconditioner=None):
         """
         Generate comprehensive matrix system visualization with robust error handling
@@ -118,19 +177,8 @@ class MatrixVisualizer:
             except Exception as e:
                 print(f"Error computation failed: {e}")
         
-        # Preconditioner handling
-        M_np = None
-        try:
-            # Multiple ways to extract preconditioner matrix
-            if preconditioner is not None:
-                if hasattr(preconditioner, 'M'):
-                    M_np = self._to_numpy(preconditioner.M)
-                elif hasattr(preconditioner, 'matrix'):
-                    M_np = self._to_numpy(preconditioner.matrix)
-                elif hasattr(preconditioner, 'toarray'):
-                    M_np = self._to_numpy(preconditioner.toarray())
-        except Exception as e:
-            print(f"Preconditioner matrix extraction failed: {e}")
+        # Preconditioner matrix extraction using improved method
+        M_np = self._get_preconditioner_matrix(preconditioner, A.shape if hasattr(A, 'shape') else None)
         
         # Create visualization with fallback mechanism
         try:
@@ -341,9 +389,16 @@ class MatrixVisualizer:
                 f"Mean Error: {np.mean(error):.2e}"
             ])
         
-        # Additional info
-        if scaling:
-            stats.append(f"\nScaling: {scaling}")
+        # Preconditioner info
+        if preconditioner:
+            precond_name = type(preconditioner).__name__
+            stats.append(f"\nPreconditioner: {precond_name}")
+            if hasattr(preconditioner, 'description'):
+                desc = preconditioner.description
+                # Check if description is in Japanese and convert to English if needed
+                if "単位行列" in desc:
+                    desc = "Identity matrix preconditioner (effectively no preconditioning)"
+                stats.append(f"{desc}")
         
         plt.text(0.05, 0.95, '\n'.join(stats), 
                  transform=plt.gca().transAxes, va='top', fontsize=9)
