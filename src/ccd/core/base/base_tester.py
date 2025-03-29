@@ -8,6 +8,7 @@
 from abc import ABC, abstractmethod
 import os
 import numpy as np
+import scipy.sparse as sp
 
 from core.grid.grid1d import Grid1D
 from core.grid.grid2d import Grid2D
@@ -312,7 +313,7 @@ class CCDTester(ABC):
                 if hasattr(self.solver.linear_solver, 'preconditioner'):
                     precond = self.solver.linear_solver.preconditioner
                     if precond:
-                        print(f"  実際の前処理器: {precond.name if hasattr(precond, 'name') else 'Unknown'}")
+                        print(f"  実際の前処理器: {precond.name if hasattr(precond, 'name') else type(precond).__name__}")
         
         A = self.matrix_A
         b = self._build_rhs(test_func)
@@ -324,11 +325,15 @@ class CCDTester(ABC):
         exact_x = self._compute_exact(test_func) if x is not None else None
         
         # 前処理器を取得
-        preconditioner = None
-        if hasattr(self.solver, 'linear_solver') and hasattr(self.solver.linear_solver, 'get_preconditioner'):
-            preconditioner = self.solver.linear_solver.get_preconditioner()
-        elif hasattr(self.solver, 'get_preconditioner'):
-            preconditioner = self.solver.get_preconditioner()
+        preconditioner = self._get_preconditioner()
+        
+        # 前処理器情報をデバッグ出力
+        if preconditioner:
+            print(f"前処理器を可視化に渡します: {type(preconditioner).__name__}")
+            if hasattr(preconditioner, '__dict__'):
+                print(f"前処理器の属性: {list(preconditioner.__dict__.keys())}")
+        else:
+            print("前処理器が見つかりませんでした")
         
         # 外部ビジュアライザーを使用して可視化
         visualizer = MatrixVisualizer(self.results_dir)
@@ -350,6 +355,44 @@ class CCDTester(ABC):
             A, b, x, exact_x, title,
             self.get_dimension(), self.scaling_method, preconditioner
         )
+    
+    def _get_preconditioner(self):
+        """
+        前処理器インスタンスを取得する（改善版）
+        
+        Returns:
+            前処理器インスタンスまたはNone
+        """
+        # 前処理器インスタンスを取得する複数の方法を試す
+        preconditioner = None
+        
+        # 方法1: linear_solverから取得
+        if hasattr(self.solver, 'linear_solver'):
+            linear_solver = self.solver.linear_solver
+            
+            # 標準的な方法: preconditioner属性
+            if hasattr(linear_solver, 'preconditioner'):
+                preconditioner = linear_solver.preconditioner
+            
+            # 代替方法: get_preconditioner()メソッド
+            elif hasattr(linear_solver, 'get_preconditioner'):
+                try:
+                    preconditioner = linear_solver.get_preconditioner()
+                except:
+                    pass
+        
+        # 方法2: solverから直接取得
+        if preconditioner is None and hasattr(self.solver, 'preconditioner'):
+            preconditioner = self.solver.preconditioner
+        
+        # 方法3: solverからget_preconditioner()メソッドで取得
+        if preconditioner is None and hasattr(self.solver, 'get_preconditioner'):
+            try:
+                preconditioner = self.solver.get_preconditioner()
+            except:
+                pass
+        
+        return preconditioner
     
     def _solve_for_visualization(self, A, b):
         """

@@ -195,3 +195,12 @@ class LinearSolver(ABC):
     def get_available_solvers(self):
         """利用可能なソルバーの一覧を取得"""
         return list(getattr(self, 'solvers', {}).keys())
+        
+    def get_preconditioner(self):
+        """
+        現在の前処理器を取得
+        
+        Returns:
+            前処理器インスタンスまたはNone
+        """
+        return self.preconditioner
