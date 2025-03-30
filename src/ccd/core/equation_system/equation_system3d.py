@@ -6,8 +6,7 @@
 """
 
 import scipy.sparse as sp_cpu
-from typing import Dict, List, Any, Tuple, Optional
-from collections import defaultdict
+from typing import Dict, List, Any
 
 from core.base.base_equation_system import BaseEquationSystem
 
@@ -180,7 +179,6 @@ class EquationSystem3D(BaseEquationSystem):
         equation_cache = {}
         
         # 非ゼロ要素カウント (デバッグ用)
-        nnz_count = 0
         
         # 各格子点について処理
         for k in range(nz):

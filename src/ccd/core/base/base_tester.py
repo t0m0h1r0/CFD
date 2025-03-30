@@ -8,7 +8,6 @@
 from abc import ABC, abstractmethod
 import os
 import numpy as np
-import scipy.sparse as sp
 
 class BaseTester(ABC):
     """CCDテスト基底クラス"""

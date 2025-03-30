@@ -260,25 +260,25 @@ class RHSBuilder3D(RHSBuilder):
         if 'face_x' in location:
             # x面: (j, k) が変数
             idx1, idx2 = j, k
-            max1, max2 = ny, nz
+            _max1, _max2 = ny, nz
         elif 'face_y' in location:
             # y面: (i, k) が変数
             idx1, idx2 = i, k
-            max1, max2 = nx, nz
+            _max1, _max2 = nx, nz
         elif 'face_z' in location:
             # z面: (i, j) が変数
             idx1, idx2 = i, j
-            max1, max2 = nx, ny
+            _max1, _max2 = nx, ny
         # 辺の場合（1次元添え字）
         elif 'edge_x' in location:
             # x辺: i が変数
-            idx1, max1 = i, nx
+            idx1, _max1 = i, nx
         elif 'edge_y' in location:
             # y辺: j が変数
-            idx1, max1 = j, ny
+            idx1, _max1 = j, ny
         elif 'edge_z' in location:
             # z辺: k が変数
-            idx1, max1 = k, nz
+            idx1, _max1 = k, nz
         # 頂点の場合（添え字は不要）
         else:
             return value if np.isscalar(value) else value.item()
