@@ -36,7 +36,7 @@ class CCDVisualizer3D(BaseVisualizer):
         return ["ψ", "ψ_x", "ψ_y", "ψ_z", "ψ_xx", "ψ_yy", "ψ_zz", "ψ_xxx", "ψ_yyy", "ψ_zzz"]
     
     def visualize_solution(self, grid, function_name, numerical, exact, errors, prefix="",
-                          save=True, show=False, dpi=180):
+                          save=True, show=False, dpi=180, isosurface_levels=None, num_isosurfaces=2):
         """
         Visualize 3D solution with isosurface display and analysis dashboard
         
@@ -50,6 +50,8 @@ class CCDVisualizer3D(BaseVisualizer):
             save: Whether to save the figure
             show: Whether to display the figure
             dpi: Resolution
+            isosurface_levels: Optional custom levels for isosurfaces
+            num_isosurfaces: Number of isosurface levels to display (default: 2)
             
         Returns:
             Output file path
@@ -72,7 +74,7 @@ class CCDVisualizer3D(BaseVisualizer):
         
         # 1. 3D Isosurface visualization (top-left)
         ax1 = fig.add_subplot(gs[0, 0], projection='3d')
-        self._plot_3d_isosurface(ax1, grid, psi)
+        self._plot_3d_isosurface(ax1, grid, psi, num_levels=num_isosurfaces, user_levels=isosurface_levels)
         
         # 2. Solution slices (top-right)
         ax2 = fig.add_subplot(gs[0, 1])
@@ -114,7 +116,7 @@ class CCDVisualizer3D(BaseVisualizer):
         
         return filepath
     
-    def _plot_3d_isosurface(self, ax, grid, data):
+    def _plot_3d_isosurface(self, ax, grid, data, num_levels=2, user_levels=None):
         """
         Visualize 3D isosurfaces of the solution
         
@@ -122,24 +124,56 @@ class CCDVisualizer3D(BaseVisualizer):
             ax: matplotlib 3D Axes
             grid: Grid object
             data: 3D solution data
+            num_levels: Number of isosurface levels to display (default: 2)
+            user_levels: Optional custom levels provided by user
         """
         # Get grid coordinates
         x = self._to_numpy(grid.x)
         y = self._to_numpy(grid.y)
         z = self._to_numpy(grid.z)
         
-        # Compute value range for isosurface levels
-        vmin, vmax = np.min(data), np.max(data)
-        
-        # Define isosurface levels (3-4 levels distributed across the range)
-        if abs(vmin - vmax) < 1e-10:  # Handle near-constant data
-            levels = [vmin]
+        # Use user-provided levels if available
+        if user_levels is not None:
+            levels = user_levels
         else:
-            levels = [
-                vmin + (vmax - vmin) * 0.25,
-                vmin + (vmax - vmin) * 0.5,
-                vmin + (vmax - vmin) * 0.75
-            ]
+            # Compute value range for isosurface levels
+            vmin, vmax = np.min(data), np.max(data)
+            vrange = vmax - vmin
+            
+            # Define isosurface levels using percentiles to ensure meaningful values
+            if abs(vrange) < 1e-10:  # Handle near-constant data
+                levels = [vmin]
+            else:
+                # Use 25% and 75% percentiles for default 2 levels
+                if num_levels == 2:
+                    p_values = [25, 75]
+                    percentiles = [np.percentile(data, p) for p in p_values]
+                    
+                    # Check if percentiles give distinct values
+                    if len(set(percentiles)) < num_levels:
+                        # Fallback to evenly spaced levels
+                        levels = [vmin + vrange * 0.25, vmin + vrange * 0.75]
+                    else:
+                        levels = percentiles
+                else:
+                    # For other numbers of levels, distribute evenly across percentiles
+                    p_values = np.linspace(25, 75, num_levels)
+                    percentiles = [np.percentile(data, p) for p in p_values]
+                    
+                    # Check if percentiles give distinct values
+                    if len(set(percentiles)) < num_levels:
+                        # Fallback to evenly spaced levels
+                        levels = [vmin + vrange * (i+1)/(num_levels+1) for i in range(num_levels)]
+                    else:
+                        levels = percentiles
+                
+                # Make sure levels have significant values (not too close to zero if overall data is large)
+                if vmax > 1e-3:
+                    levels = [max(level, vmin + vrange * 0.01) for level in levels]
+                
+                # Ensure levels are distinct enough and avoid exactly 0.0 as it often creates complex surfaces
+                levels = [level if abs(level) > 1e-6 else 1e-6 * (1 if level >= 0 else -1) for level in levels]
+                levels = sorted(set([round(level, 6) for level in levels]))
         
         # Setup 3D coordinate scaling for proper display
         x_min, x_max = x[0], x[-1]
@@ -205,7 +239,7 @@ class CCDVisualizer3D(BaseVisualizer):
         for i, level in enumerate(levels):
             color_val = (level - vmin) / (vmax - vmin) if vmax > vmin else 0.5
             color = plt.cm.viridis(color_val)
-            patch = mpatches.Patch(color=color, alpha=0.5, label=f"Level: {level:.2e}")
+            patch = mpatches.Patch(color=color, alpha=0.5, label=f"Level: {level:.2f}")
             handles.append(patch)
         
         # Keep the legend outside the plot area for clarity

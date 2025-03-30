@@ -5,7 +5,7 @@
 """
 
 import numpy as np
-
+from itertools import product
 from core.base.base_grid import BaseGrid
 
 
@@ -52,6 +52,14 @@ class Grid3D(BaseGrid):
         # 後方互換性のため
         self.n_points = max(nx_points, ny_points, nz_points)
         self.h = self.hx
+        
+        # 境界識別用の定数
+        self._MIN_BOUNDARY = 0
+        self._MAX_BOUNDARY = 1
+        self._INTERIOR = 2
+        
+        # 境界タイプ名のキャッシュ
+        self._boundary_type_cache = {}
     
     def get_point(self, i, j=None, k=None):
         """
@@ -126,6 +134,31 @@ class Grid3D(BaseGrid):
         i = remainder % self.nx_points
         return i, j, k
     
+    def _get_boundary_status(self, i, j, k):
+        """
+        点の境界ステータスを判定する内部メソッド
+        
+        Args:
+            i, j, k: 格子インデックス
+            
+        Returns:
+            各方向の境界ステータスを示す3要素のタプル (x_status, y_status, z_status)
+            各ステータスは _MIN_BOUNDARY, _MAX_BOUNDARY, または _INTERIOR のいずれか
+        """
+        x_status = (self._MIN_BOUNDARY if i == 0 else 
+                   (self._MAX_BOUNDARY if i == self.nx_points - 1 else 
+                    self._INTERIOR))
+        
+        y_status = (self._MIN_BOUNDARY if j == 0 else 
+                   (self._MAX_BOUNDARY if j == self.ny_points - 1 else 
+                    self._INTERIOR))
+        
+        z_status = (self._MIN_BOUNDARY if k == 0 else 
+                   (self._MAX_BOUNDARY if k == self.nz_points - 1 else 
+                    self._INTERIOR))
+        
+        return (x_status, y_status, z_status)
+    
     def is_boundary_point(self, i, j=None, k=None):
         """
         境界点かどうかをチェック
@@ -141,9 +174,8 @@ class Grid3D(BaseGrid):
         if j is None or k is None:
             raise ValueError("3D格子ではj, kインデックスを指定する必要があります")
         
-        return (i == 0 or i == self.nx_points - 1 or 
-                j == 0 or j == self.ny_points - 1 or
-                k == 0 or k == self.nz_points - 1)
+        x_status, y_status, z_status = self._get_boundary_status(i, j, k)
+        return x_status != self._INTERIOR or y_status != self._INTERIOR or z_status != self._INTERIOR
     
     def is_interior_point(self, i, j=None, k=None):
         """
@@ -160,9 +192,8 @@ class Grid3D(BaseGrid):
         if j is None or k is None:
             raise ValueError("3D格子ではj, kインデックスを指定する必要があります")
         
-        return (0 < i < self.nx_points - 1 and 
-                0 < j < self.ny_points - 1 and
-                0 < k < self.nz_points - 1)
+        x_status, y_status, z_status = self._get_boundary_status(i, j, k)
+        return x_status == self._INTERIOR and y_status == self._INTERIOR and z_status == self._INTERIOR
     
     def is_face_point(self, i, j=None, k=None):
         """
@@ -178,12 +209,12 @@ class Grid3D(BaseGrid):
         """
         if j is None or k is None:
             raise ValueError("3D格子ではj, kインデックスを指定する必要があります")
-            
-        x_face = (i == 0 or i == self.nx_points - 1) and (0 < j < self.ny_points - 1) and (0 < k < self.nz_points - 1)
-        y_face = (j == 0 or j == self.ny_points - 1) and (0 < i < self.nx_points - 1) and (0 < k < self.nz_points - 1)
-        z_face = (k == 0 or k == self.nz_points - 1) and (0 < i < self.nx_points - 1) and (0 < j < self.ny_points - 1)
         
-        return x_face or y_face or z_face
+        x_status, y_status, z_status = self._get_boundary_status(i, j, k)
+        
+        # 1つの方向のみが境界上（他の2方向は内部）である点が面点
+        boundary_count = (x_status != self._INTERIOR) + (y_status != self._INTERIOR) + (z_status != self._INTERIOR)
+        return boundary_count == 1
     
     def is_edge_point(self, i, j=None, k=None):
         """
@@ -199,23 +230,12 @@ class Grid3D(BaseGrid):
         """
         if j is None or k is None:
             raise ValueError("3D格子ではj, kインデックスを指定する必要があります")
-            
-        x_edge = (0 < i < self.nx_points - 1) and ((j == 0 and k == 0) or 
-                                               (j == 0 and k == self.nz_points - 1) or 
-                                               (j == self.ny_points - 1 and k == 0) or 
-                                               (j == self.ny_points - 1 and k == self.nz_points - 1))
-                                                
-        y_edge = (0 < j < self.ny_points - 1) and ((i == 0 and k == 0) or 
-                                               (i == 0 and k == self.nz_points - 1) or 
-                                               (i == self.nx_points - 1 and k == 0) or 
-                                               (i == self.nx_points - 1 and k == self.nz_points - 1))
-                                                
-        z_edge = (0 < k < self.nz_points - 1) and ((i == 0 and j == 0) or 
-                                               (i == 0 and j == self.ny_points - 1) or 
-                                               (i == self.nx_points - 1 and j == 0) or 
-                                               (i == self.nx_points - 1 and j == self.ny_points - 1))
-                                                
-        return x_edge or y_edge or z_edge
+        
+        x_status, y_status, z_status = self._get_boundary_status(i, j, k)
+        
+        # 2つの方向が境界上（残りの1方向は内部）である点が辺点
+        boundary_count = (x_status != self._INTERIOR) + (y_status != self._INTERIOR) + (z_status != self._INTERIOR)
+        return boundary_count == 2
     
     def is_vertex_point(self, i, j=None, k=None):
         """
@@ -232,13 +252,14 @@ class Grid3D(BaseGrid):
         if j is None or k is None:
             raise ValueError("3D格子ではj, kインデックスを指定する必要があります")
         
-        return ((i == 0 or i == self.nx_points - 1) and 
-                (j == 0 or j == self.ny_points - 1) and
-                (k == 0 or k == self.nz_points - 1))
+        x_status, y_status, z_status = self._get_boundary_status(i, j, k)
+        
+        # 3つの方向全てが境界上である点が頂点
+        return (x_status != self._INTERIOR and y_status != self._INTERIOR and z_status != self._INTERIOR)
     
     def get_boundary_type(self, i, j=None, k=None):
         """
-        境界点のタイプを取得（修正版）
+        境界点のタイプを取得
         
         Args:
             i: x方向インデックス
@@ -247,58 +268,65 @@ class Grid3D(BaseGrid):
             
         Returns:
             境界タイプの文字列
-            'interior': 内部点
-            'face_x_min', 'face_x_max', 'face_y_min', 'face_y_max', 'face_z_min', 'face_z_max': 面
-            'edge_x_*', 'edge_y_*', 'edge_z_*': 辺 (主要方向_面1_面2)
-            'vertex_x_min_y_min_z_min' など: 頂点
         """
         if j is None or k is None:
             raise ValueError("3D格子ではj, kインデックスを指定する必要があります")
         
-        # 内部点
+        # キャッシュをチェック
+        cache_key = (i, j, k)
+        if cache_key in self._boundary_type_cache:
+            return self._boundary_type_cache[cache_key]
+        
+        # 内部点の場合
         if self.is_interior_point(i, j, k):
+            self._boundary_type_cache[cache_key] = 'interior'
             return 'interior'
         
-        # 頂点
+        # 境界ステータスを取得
+        x_status, y_status, z_status = self._get_boundary_status(i, j, k)
+        
+        # 頂点の場合
         if self.is_vertex_point(i, j, k):
-            x_part = 'x_min' if i == 0 else 'x_max'
-            y_part = 'y_min' if j == 0 else 'y_max'
-            z_part = 'z_min' if k == 0 else 'z_max'
-            return f'vertex_{x_part}_{y_part}_{z_part}'
+            x_part = 'x_min' if x_status == self._MIN_BOUNDARY else 'x_max'
+            y_part = 'y_min' if y_status == self._MIN_BOUNDARY else 'y_max'
+            z_part = 'z_min' if z_status == self._MIN_BOUNDARY else 'z_max'
+            result = f'vertex_{x_part}_{y_part}_{z_part}'
+            self._boundary_type_cache[cache_key] = result
+            return result
         
-        # 辺 - 統一された命名規則を使用
+        # 辺の場合
         if self.is_edge_point(i, j, k):
-            # x方向に沿ったエッジ
-            if 0 < i < self.nx_points - 1:
-                y_part = 'y_min' if j == 0 else 'y_max'
-                z_part = 'z_min' if k == 0 else 'z_max'
-                return f'edge_x_{y_part}_{z_part}'
+            # X方向の辺 (Y, Z方向が境界)
+            if x_status == self._INTERIOR:
+                y_part = 'y_min' if y_status == self._MIN_BOUNDARY else 'y_max'
+                z_part = 'z_min' if z_status == self._MIN_BOUNDARY else 'z_max'
+                result = f'edge_x_{y_part}_{z_part}'
+            # Y方向の辺 (X, Z方向が境界)
+            elif y_status == self._INTERIOR:
+                x_part = 'x_min' if x_status == self._MIN_BOUNDARY else 'x_max'
+                z_part = 'z_min' if z_status == self._MIN_BOUNDARY else 'z_max'
+                result = f'edge_y_{x_part}_{z_part}'
+            # Z方向の辺 (X, Y方向が境界)
+            else:
+                x_part = 'x_min' if x_status == self._MIN_BOUNDARY else 'x_max'
+                y_part = 'y_min' if y_status == self._MIN_BOUNDARY else 'y_max'
+                result = f'edge_z_{x_part}_{y_part}'
             
-            # y方向に沿ったエッジ
-            elif 0 < j < self.ny_points - 1:
-                x_part = 'x_min' if i == 0 else 'x_max'
-                z_part = 'z_min' if k == 0 else 'z_max'
-                return f'edge_y_{x_part}_{z_part}'
-            
-            # z方向に沿ったエッジ
-            elif 0 < k < self.nz_points - 1:
-                x_part = 'x_min' if i == 0 else 'x_max'
-                y_part = 'y_min' if j == 0 else 'y_max'
-                return f'edge_z_{x_part}_{y_part}'
+            self._boundary_type_cache[cache_key] = result
+            return result
         
-        # 面
-        if i == 0:
-            return 'face_x_min'
-        elif i == self.nx_points - 1:
-            return 'face_x_max'
-        elif j == 0:
-            return 'face_y_min'
-        elif j == self.ny_points - 1:
-            return 'face_y_max'
-        elif k == 0:
-            return 'face_z_min'
-        elif k == self.nz_points - 1:
-            return 'face_z_max'
+        # 面の場合
+        if self.is_face_point(i, j, k):
+            if x_status != self._INTERIOR:
+                result = 'face_x_min' if x_status == self._MIN_BOUNDARY else 'face_x_max'
+            elif y_status != self._INTERIOR:
+                result = 'face_y_min' if y_status == self._MIN_BOUNDARY else 'face_y_max'
+            else:
+                result = 'face_z_min' if z_status == self._MIN_BOUNDARY else 'face_z_max'
+            
+            self._boundary_type_cache[cache_key] = result
+            return result
         
         # 念のため
+        self._boundary_type_cache[cache_key] = 'unknown'
         return 'unknown'
