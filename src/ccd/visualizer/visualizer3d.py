@@ -10,7 +10,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.gridspec import GridSpec
-from mpl_toolkits.mplot3d import Axes3D
 from skimage import measure
 from typing import List
 
@@ -231,7 +230,7 @@ class CCDVisualizer3D(BaseVisualizer):
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
-        ax.set_title(f"3D Isosurfaces")
+        ax.set_title("3D Isosurfaces")
         
         # Add a legend for isosurface levels
         import matplotlib.patches as mpatches

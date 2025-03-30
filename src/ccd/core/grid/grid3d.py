@@ -5,7 +5,6 @@
 """
 
 import numpy as np
-from itertools import product
 from core.base.base_grid import BaseGrid
 
 

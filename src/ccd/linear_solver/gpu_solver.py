@@ -4,7 +4,6 @@ GPU (CuPy) を使用した線形方程式系ソルバー
 このモジュールは、GPUとCuPyを使用して線形方程式系を効率的に解くためのクラスを提供します。
 """
 
-import numpy as np
 from .base import LinearSolver
 from .cpu_solver import CPULinearSolver
 

@@ -6,8 +6,7 @@
 """
 
 import scipy.sparse as sp_cpu
-from typing import Dict, List, Any, Tuple, Optional
-from collections import defaultdict
+from typing import Dict, List, Any
 
 from core.base.base_equation_system import BaseEquationSystem
 

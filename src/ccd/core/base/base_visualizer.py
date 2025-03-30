@@ -9,7 +9,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import List
 
 
 class BaseVisualizer(ABC):
