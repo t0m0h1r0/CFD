@@ -30,7 +30,6 @@ class GPULinearSolver(LinearSolver):
                 "cg": self._solve_cg,
                 "cgs": self._solve_cgs,
                 "minres": self._solve_minres,
-                "bicgstab": self._solve_bicgstab,
                 "lsqr": self._solve_lsqr,
                 "lsmr": self._solve_lsmr
             }
@@ -211,24 +210,7 @@ class GPULinearSolver(LinearSolver):
             
             # 直接解法にフォールバック
             return self._solve_direct(A, b)
-    
-    def _solve_bicgstab(self, A, b, options=None):
-        """BiCGSTAB法"""
-        options = options or {}
-        tol = options.get("tol", 1e-10)
-        maxiter = options.get("maxiter", 1000)
-        x0 = options.get("x0", self.cp.zeros_like(b))
         
-        try:
-            # BiCGSTABを実行
-            result = self.splinalg.bicgstab(A, b, x0=x0, tol=tol, maxiter=maxiter)
-            return result[0], result[1]
-        except Exception as e:
-            print(f"BiCGSTAB実行エラー: {e}")
-            
-            # 直接解法にフォールバック
-            return self._solve_direct(A, b)
-    
     def _solve_lsqr(self, A, b, options=None):
         """LSQR最小二乗法ソルバー"""
         options = options or {}
