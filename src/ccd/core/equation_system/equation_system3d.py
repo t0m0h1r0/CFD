@@ -179,7 +179,6 @@ class EquationSystem3D(BaseEquationSystem):
         equation_cache = {}
         
         # 非ゼロ要素カウント (デバッグ用)
-        nnz_count = 0
         
         # 各格子点について処理
         for k in range(nz):

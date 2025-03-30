@@ -138,7 +138,7 @@ class CCDTester3D(BaseTester):
         Returns:
             境界条件の辞書
         """
-        nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
+        _nx, _ny, _nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
         x_min, x_max = self.grid.x_min, self.grid.x_max
         y_min, y_max = self.grid.y_min, self.grid.y_max
         z_min, z_max = self.grid.z_min, self.grid.z_max
@@ -262,7 +262,7 @@ class CCDTester3D(BaseTester):
         Returns:
             Dict: 処理結果を含む辞書
         """
-        nx, ny, nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
+        _nx, _ny, _nz = self.grid.nx_points, self.grid.ny_points, self.grid.nz_points
         is_derivative = isinstance(self.equation_set, DerivativeEquationSet3D)
         
         # 厳密解の計算

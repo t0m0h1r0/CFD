@@ -259,7 +259,7 @@ class BaseVisualizer(ABC):
                 
                 # Bar chart
                 x_pos = np.arange(len(func_names))
-                bars = ax.bar(x_pos, plot_errors)
+                ax.bar(x_pos, plot_errors)
                 ax.set_yscale('log')
                 ax.set_title(f"{error_type}")
                 ax.set_xticks(x_pos)
